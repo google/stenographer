@@ -21,6 +21,8 @@
 # rely very heavily on many Linux-specific features (particularly AF_PACKET), we
 # have no plans to make this portable to non-Linux or even older Linux distros.
 
+set -e
+
 function InstallPackage {
   echo "Checking for package '$1'"
   if ! dpkg -l $1 >/dev/null 2>/dev/null; then
@@ -39,3 +41,6 @@ g++ --std=c++0x \
   -g -O3 -rdynamic -Wall \
   aio.cc util.cc packets.cc index.cc stenotype.cc \
   -lleveldb -lrt -laio -lpthread -lsnappy
+
+echo "Setting capabilities"
+setcap 'CAP_NET_RAW+ep CAP_NET_ADMIN+ep' stenotype

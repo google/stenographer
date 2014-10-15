@@ -25,7 +25,7 @@ set -e
 
 function InstallPackage {
   echo "Checking for package '$1'"
-  if ! dpkg -l $1 >/dev/null 2>/dev/null; then
+  if ! dpkg -s $1 >/dev/null 2>/dev/null; then
     echo "Have to install package $1"
     sudo apt-get install $1
   fi
@@ -34,6 +34,8 @@ function InstallPackage {
 InstallPackage libaio-dev
 InstallPackage libleveldb-dev
 InstallPackage libsnappy-dev
+InstallPackage g++
+InstallPackage libcap2-bin
 
 echo "Building binary"
 g++ --std=c++0x \
@@ -43,4 +45,4 @@ g++ --std=c++0x \
   -lleveldb -lrt -laio -lpthread -lsnappy
 
 echo "Setting capabilities"
-setcap 'CAP_NET_RAW+ep CAP_NET_ADMIN+ep' stenotype
+sudo setcap 'CAP_NET_RAW+ep CAP_NET_ADMIN+ep' stenotype

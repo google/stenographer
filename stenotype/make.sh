@@ -45,4 +45,5 @@ g++ --std=c++0x \
   -lleveldb -lrt -laio -lpthread -lsnappy
 
 echo "Setting capabilities"
+chmod go-rwx stenotype
 sudo setcap 'CAP_NET_RAW+ep CAP_NET_ADMIN+ep' stenotype

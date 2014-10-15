@@ -162,6 +162,8 @@ void DropPrivileges() {
     CHECK(group != NULL) << "Unable to get info for user " << flag_gid;
     CHECK(0 == setgid(group->gr_gid))
         << "could not setgid: " << strerror(errno);
+  } else {
+    LOG(V1) << "Staying with GID=" << getgid();
   }
   if (getuid() == 0 || flag_uid != "") {
     if (flag_uid == "") {
@@ -173,6 +175,8 @@ void DropPrivileges() {
     flag_uid = passwd->pw_uid;
     CHECK(0 == setuid(passwd->pw_uid))
         << "could not setuid: " << strerror(errno);
+  } else {
+    LOG(V1) << "Staying with UID=" << getuid();
   }
 }
 
@@ -259,6 +263,7 @@ void RunThread(int thread,
 
   int64_t start = GetCurrentTimeMicros();
   int64_t blocks = 0;
+  int64_t block_offset = 0;
   int64_t errors = 0;  // allows us to ignore spurious errors.
   for (int64_t remaining = flag_count; remaining != 0 && run_threads;) {
     LOG_IF_ERROR(output.CheckForCompletedOps(false), "check for completed");
@@ -273,7 +278,7 @@ void RunThread(int thread,
     if (flag_index) {
       for (; remaining != 0 && b.Next(&p); remaining--) {
         if (flag_threads) {
-          index->Process(p, (blocks % flag_filesize_mb) << 20);
+          index->Process(p, block_offset << 20);
         }
       }
     }
@@ -281,6 +286,7 @@ void RunThread(int thread,
     // Iterate over all packets in the block.  Currently unused, but
     // eventually packet indexing will go here.
     blocks++;
+    block_offset++;
 
     // Start an async write of the current block.  Could block
     // waiting for the write 'aiops' writes ago.
@@ -296,10 +302,11 @@ void RunThread(int thread,
     // Rotate file if necessary.
     int64_t current_file_age_secs =
       (GetCurrentTimeMicros() - micros) / kNumMicrosPerSecond;
-    if (blocks % flag_filesize_mb == 0
+    if (block_offset == flag_filesize_mb
         || current_file_age_secs > flag_fileage_sec) {
       // File size got too big, rotate file.
       micros = GetCurrentTimeMicros();
+      block_offset = 0;
       CHECK_SUCCESS(output.Rotate(file_dirname, micros));
       if (flag_index) {
         write_index->Put(index);
@@ -369,9 +376,7 @@ int Main(int argc, char** argv) {
     threads.push_back(new std::thread(&RunThread, i, &write_index));
   }
   sockets_created->Block();
-  LOG(V1) << "Changing root and user";
   DropPrivileges();
-  LOG(V1) << "All privileges dropped";
   privileges_dropped.Notify();
 
   LOG(V1) << "Waiting for threads";

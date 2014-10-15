@@ -26,7 +26,7 @@ import (
 	"flag"
 	"log"
 
-	"preadlib"
+	"github.com/google/stenographer/preadlib"
 )
 
 var (

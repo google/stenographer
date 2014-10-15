@@ -18,19 +18,20 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
-	"flag"
-	"log"
 
 	"github.com/google/stenographer/preadlib"
 )
 
 var (
 	dirbase = flag.String("dir", "", "file to read from")
+	V       = preadlib.V
 )
 
 func main() {
@@ -51,12 +52,16 @@ func main() {
 			}
 		}
 		for _, file := range files {
+			V(1, "checking file %q", file.Name())
+			if file.IsDir() {
+				continue
+			}
 			filename := file.Name()
-			if filename[0] != '.' && strings.HasSuffix(filename, "_INDEX") {
-				filename = filepath.Join(dir, filename[:len(filename)-6])
+			if filename[0] != '.' {
+				filename = filepath.Join(dir, filename)
 				blockfile, err := preadlib.NewBlockFile(filename)
 				if err != nil {
-					log.Printf("error opening: %v", err)
+					log.Printf("error opening %q: %v", filename, err)
 				} else {
 					blockfiles = append(blockfiles, blockfile)
 				}

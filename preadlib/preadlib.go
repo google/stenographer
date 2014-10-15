@@ -20,28 +20,38 @@ import (
 	"bytes"
 	"container/heap"
 	"encoding/binary"
-  "path/filepath"
+	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unsafe"
-	"log"
 
-  "github.com/syndtr/goleveldb/leveldb/opt"
-  "github.com/syndtr/goleveldb/leveldb/table"
-  "github.com/syndtr/goleveldb/leveldb/util"
 	"code.google.com/p/gopacket"
 	"code.google.com/p/gopacket/layers"
 	"code.google.com/p/gopacket/pcapgo"
+	"github.com/syndtr/goleveldb/leveldb/opt"
+	"github.com/syndtr/goleveldb/leveldb/table"
+	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
 // #include <linux/if_packet.h>
 import "C"
+
+var verboseLogging = flag.Int("v", 0, "log many verbose logs")
+
+// V provides verbose logging which can be turned on/off with the -v flag.
+func V(level int, fmt string, args ...interface{}) {
+	if *verboseLogging >= level {
+		log.Printf(fmt, args...)
+	}
+}
 
 const SnapLen = 65536
 
@@ -52,6 +62,7 @@ type BlockFile struct {
 }
 
 func NewBlockFile(filename string) (*BlockFile, error) {
+	V(1, "opening blockfile %q", filename)
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("could not open %q: %v", filename, err)
@@ -128,36 +139,42 @@ func (a Int64Slice) Intersect(b Int64Slice) (out Int64Slice) {
 }
 
 type Index struct {
-	f *table.Reader
+	name string
+	f    *table.Reader
 }
 
 func NewIndex(filename string) (*Index, error) {
-  filename = filepath.Join(
-    filepath.Dir(filename),
-    "INDEX",
-    filepath.Base(filename))
+	filename = filepath.Join(
+		filepath.Dir(filename),
+		"INDEX",
+		filepath.Base(filename))
+	V(1, "opening index %q", filename)
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("error opening index %q: %v", filename, err)
 	}
-  defer func() { if f != nil { f.Close() } }()
-  stat, err := f.Stat()
-  if err != nil {
-    return nil, fmt.Errorf("error stat-ing file %q: %v", filename, err)
-  }
-  opts := &opt.Options{}
-  reader := table.NewReader(
-    f,
-    stat.Size(),
-    nil,
-    util.NewBufferPool(opts.GetBlockSize() * 5),
-    opts)
-  index := &Index{f: reader}
-  if _, err := index.positionsSingleKey([]byte{}); err != nil {
-    return nil, fmt.Errorf("unable to read from table %q: %v", filename, err)
-  }
-  f = nil  // File shouldn't be closed.
-  return index, nil
+	defer func() {
+		if f != nil {
+			f.Close()
+		}
+	}()
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("error stat-ing file %q: %v", filename, err)
+	}
+	opts := &opt.Options{}
+	reader := table.NewReader(
+		f,
+		stat.Size(),
+		nil,
+		util.NewBufferPool(opts.GetBlockSize()*5),
+		opts)
+	index := &Index{f: reader, name: filename}
+	if _, err := index.positionsSingleKey([]byte{}); err != nil {
+		return nil, fmt.Errorf("unable to read from table %q: %v", filename, err)
+	}
+	f = nil // File shouldn't be closed.
+	return index, nil
 }
 
 func (i *Index) IPPositions(from, to net.IP) (Int64Slice, error) {
@@ -192,7 +209,7 @@ var readOpts = &opt.ReadOptions{Strict: opt.StrictAll}
 
 func (i *Index) positionsSingleKey(key []byte) (Int64Slice, error) {
 	var sortedPos Int64Slice
-  iter := i.f.NewIterator(&util.Range{Start: key, Limit: append(key, 0)}, readOpts)
+	iter := i.f.NewIterator(&util.Range{Start: key, Limit: append(key, 0)}, readOpts)
 	count := int64(0)
 	for iter.Next() {
 		pos := binary.BigEndian.Uint32(iter.Value())
@@ -209,7 +226,7 @@ func (i *Index) positions(from, to []byte) (Int64Slice, error) {
 	if bytes.Equal(from, to) {
 		return i.positionsSingleKey(from)
 	}
-  iter := i.f.NewIterator(&util.Range{Start: from, Limit: append(to, 0)}, readOpts)
+	iter := i.f.NewIterator(&util.Range{Start: from, Limit: append(to, 0)}, readOpts)
 	positions := map[uint32]bool{}
 	count := int64(0)
 	for iter.Next() {
@@ -289,15 +306,16 @@ func (i *Index) lookupUnionArguments(arg string) Int64Slice {
 		go func() { c <- i.lookupSingleArgument(a) }()
 	}
 
-  first := true
+	first := true
 	for _ = range args {
-		p := <-c
+		pos := <-c
 		if first {
-			positions = p
-      first = false
+			positions = pos
+			first = false
 		} else {
-			positions = positions.Union(p)
+			positions = positions.Union(pos)
 		}
+		V(3, "%q %p U(%v) -> %v", i.name, &first, len(pos), len(positions))
 	}
 	return positions
 }
@@ -310,15 +328,16 @@ func (i *Index) Lookup(in string) Int64Slice {
 		go func() { c <- i.lookupUnionArguments(arg) }()
 	}
 	var positions Int64Slice
-  first := true
+	first := true
 	for _ = range actualArgs {
 		pos := <-c
 		if first {
 			positions = pos
-      first = false
+			first = false
 		} else {
 			positions = positions.Intersect(pos)
 		}
+		V(3, "%q %p U(%v) -> %v", i.name, &first, len(pos), len(positions))
 	}
 	return positions
 }
@@ -333,10 +352,11 @@ func (b *BlockFile) Lookup(in string) <-chan Packet {
 	go func() {
 		var ci gopacket.CaptureInfo
 		positions := b.i.Lookup(in)
+		V(2, "blockfile %q reading %v packets", b.name, len(positions))
 		for _, pos := range positions {
 			buffer, err := b.ReadPacket(pos, &ci)
 			if err != nil {
-				log.Fatalf("error reading packet: %v", err)
+				log.Fatalf("error reading packet from %q @ %v: %v", b.name, pos, err)
 			}
 			c <- Packet{
 				Data:        buffer,
@@ -385,11 +405,11 @@ func MergePackets(in []<-chan Packet) <-chan Packet {
 	go func() {
 		var h packetHeap
 		for i, c := range in {
-			p, ok := <-c
-			if ok {
+			for p := range c {
 				heap.Push(&h, indexedPacket{Packet: p, i: i})
 			}
 		}
+		V(1, "merged packet stream has %v packets", len(h))
 		for h.Len() > 0 {
 			p := heap.Pop(&h).(indexedPacket)
 			out <- p.Packet

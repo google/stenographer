@@ -18,64 +18,74 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/google/stenographer/preadlib"
 )
 
 var (
-	dirbase = flag.String("dir", "", "file to read from")
-	V       = preadlib.V
+	configFilename = flag.String("config", "", "File location to read configuration from")
+	V              = preadlib.V
 )
+
+type Directory struct {
+	threads int
+}
+
+func ReadConfig() (out preadlib.Config) {
+	log.Printf("Reading config %q", *configFilename)
+	data, err := ioutil.ReadFile(*configFilename)
+	if err != nil {
+		log.Fatalf("could not read config file %q: %v", *configFilename, err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&out); err != nil {
+		log.Fatalf("could not decode config file %q: %v", *configFilename, err)
+	}
+	return
+}
 
 func main() {
 	flag.Parse()
-	log.Printf("Starting")
+	config := ReadConfig()
+	V(1, "Using config:\n%v", config)
+	dir, err := config.Directory()
+	if err != nil {
+		log.Fatalf("unable to set up stenographer directory: %v", err)
+	}
+	defer dir.Close()
 
-	var blockfiles []*preadlib.BlockFile
-	for i := 0; ; i++ {
-		dir := fmt.Sprintf("%s/%d", *dirbase, i)
-		log.Printf("processing directory %q", dir)
-		files, err := ioutil.ReadDir(dir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				log.Printf("%q does not exist, not looking for new directories", dir)
-				break
-			} else {
-				log.Fatalf("could not read %q: %v", dir, err)
-			}
-		}
-		for _, file := range files {
-			V(1, "checking file %q", file.Name())
-			if file.IsDir() {
-				continue
-			}
-			filename := file.Name()
-			if filename[0] != '.' {
-				filename = filepath.Join(dir, filename)
-				blockfile, err := preadlib.NewBlockFile(filename)
-				if err != nil {
-					log.Printf("error opening %q: %v", filename, err)
-				} else {
-					blockfiles = append(blockfiles, blockfile)
-				}
-			}
-		}
+	// Start running stenotype.
+	cmd := config.Stenotype(dir)
+	if err := cmd.Start(); err != nil {
+		log.Fatalf("cannot start stenotype: %v", err)
 	}
+	defer cmd.Process.Signal(os.Interrupt)
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Fatalf("stenotype wait failed: %v", err)
+		}
+		log.Printf("stenotype stopped")
+	}()
 
-	query := strings.Join(flag.Args(), " ")
-	var inputs []<-chan preadlib.Packet
-	for _, file := range blockfiles {
-		inputs = append(inputs, file.Lookup(query))
-	}
-	if err := preadlib.PacketsToFile(preadlib.MergePackets(inputs), os.Stdout); err != nil {
-		log.Print(err)
-		os.Exit(1)
-	}
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		var buf bytes.Buffer
+		log.Printf("requesting %q", r.URL.Path)
+		packets := dir.Lookup(r.URL.Path[1:])
+		if err := preadlib.PacketsToFile(packets, &buf); err != nil {
+			http.Error(w, fmt.Sprintf("error: %v", err), 500)
+		} else {
+			w.Header().Set("Content-Type", "appliation/octet-stream")
+			io.Copy(w, &buf)
+		}
+	})
+	http.ListenAndServe("localhost:1234", nil)
 }

@@ -23,13 +23,16 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -248,7 +251,7 @@ func (i *Index) positions(from, to []byte) (Int64Slice, error) {
 func parseIP(in string) net.IP {
 	ip := net.ParseIP(in)
 	if ip == nil {
-		log.Fatalf("invalid IP: %q", in)
+		return nil
 	}
 	if ip4 := ip.To4(); ip4 != nil {
 		ip = ip4
@@ -256,10 +259,10 @@ func parseIP(in string) net.IP {
 	return ip
 }
 
-func (i *Index) lookupSingleArgument(arg string) Int64Slice {
+func (i *Index) lookupSingleArgument(arg string) (Int64Slice, error) {
 	parts := strings.Split(arg, "=")
 	if len(parts) != 2 {
-		log.Fatalf("invalid arg: %q", arg)
+		return nil, fmt.Errorf("invalid arg: %q", arg)
 	}
 	var pos Int64Slice
 	var err error
@@ -270,40 +273,56 @@ func (i *Index) lookupSingleArgument(arg string) Int64Slice {
 		switch len(ips) {
 		case 1:
 			from = parseIP(ips[0])
+			if from == nil {
+				return nil, fmt.Errorf("invalid IP %v", ips[0])
+			}
 			to = from
 		case 2:
 			from = parseIP(ips[0])
+			if from == nil {
+				return nil, fmt.Errorf("invalid IP %v", ips[0])
+			}
 			to = parseIP(ips[1])
+			if to == nil {
+				return nil, fmt.Errorf("invalid IP %v", ips[1])
+			}
 		default:
-			log.Fatalf("invalid #IPs: %q", arg)
+			return nil, fmt.Errorf("invalid #IPs: %q", arg)
 		}
 		pos, err = i.IPPositions(from, to)
 	case "port":
 		port, perr := strconv.Atoi(parts[1])
 		if err != nil {
-			log.Fatalf("invalid port %q: %v", parts[1], perr)
+			return nil, fmt.Errorf("invalid port %q: %v", parts[1], perr)
 		}
 		pos, err = i.PortPositions(uint16(port))
 	case "protocol":
 		proto, perr := strconv.Atoi(parts[1])
 		if err != nil {
-			log.Fatalf("invalid proto %q: %v", parts[1], perr)
+			return nil, fmt.Errorf("invalid proto %q: %v", parts[1], perr)
 		}
 		pos, err = i.ProtoPositions(byte(proto))
 	}
 	if err != nil {
-		log.Fatalf("error getting positions (%q): %v", arg, err)
+		return nil, fmt.Errorf("error getting positions (%q): %v", arg, err)
 	}
-	return pos
+	return pos, nil
 }
 
-func (i *Index) lookupUnionArguments(arg string) Int64Slice {
+func (i *Index) lookupUnionArguments(arg string) (Int64Slice, error) {
 	args := strings.Split(arg, "|")
 	var positions Int64Slice
-	c := make(chan Int64Slice)
+	c := make(chan Int64Slice, len(args))
+	errs := make(chan error, len(args))
 	for _, a := range args {
 		a := a
-		go func() { c <- i.lookupSingleArgument(a) }()
+		go func() {
+			pos, err := i.lookupSingleArgument(a)
+			c <- pos
+			if err != nil {
+				errs <- err
+			}
+		}()
 	}
 
 	first := true
@@ -317,15 +336,23 @@ func (i *Index) lookupUnionArguments(arg string) Int64Slice {
 		}
 		V(3, "%q %p U(%v) -> %v", i.name, &first, len(pos), len(positions))
 	}
-	return positions
+	close(errs)
+	return positions, <-errs
 }
 
-func (i *Index) Lookup(in string) Int64Slice {
+func (i *Index) Lookup(in string) (Int64Slice, error) {
 	actualArgs := strings.Fields(in)
-	c := make(chan Int64Slice)
+	c := make(chan Int64Slice, len(actualArgs))
+	errs := make(chan error, len(actualArgs))
 	for _, arg := range actualArgs {
 		arg := arg
-		go func() { c <- i.lookupUnionArguments(arg) }()
+		go func() {
+			pos, err := i.lookupUnionArguments(arg)
+			c <- pos
+			if err != nil {
+				errs <- err
+			}
+		}()
 	}
 	var positions Int64Slice
 	first := true
@@ -339,7 +366,8 @@ func (i *Index) Lookup(in string) Int64Slice {
 		}
 		V(3, "%q %p U(%v) -> %v", i.name, &first, len(pos), len(positions))
 	}
-	return positions
+	close(errs)
+	return positions, <-errs
 }
 
 type Packet struct {
@@ -347,32 +375,39 @@ type Packet struct {
 	gopacket.CaptureInfo
 }
 
-func (b *BlockFile) Lookup(in string) <-chan Packet {
-	c := make(chan Packet, 10000)
+func (b *BlockFile) Lookup(in string) Packets {
+	c := newPackets()
 	go func() {
 		var ci gopacket.CaptureInfo
-		positions := b.i.Lookup(in)
+		positions, err := b.i.Lookup(in)
+		if err != nil {
+			c.finish(fmt.Errorf("index lookup failure: %v", err))
+			return
+		}
 		V(2, "blockfile %q reading %v packets", b.name, len(positions))
 		for _, pos := range positions {
 			buffer, err := b.ReadPacket(pos, &ci)
 			if err != nil {
-				log.Fatalf("error reading packet from %q @ %v: %v", b.name, pos, err)
+				c.finish(fmt.Errorf("error reading packets from %q @ %v: %v", b.name, pos, err))
+				return
 			}
-			c <- Packet{
+			c.c <- &Packet{
 				Data:        buffer,
 				CaptureInfo: ci,
 			}
 		}
-		close(c)
+		c.finish(nil)
 	}()
 	return c
 }
 
-func PacketsToFile(in <-chan Packet, out io.Writer) error {
+func PacketsToFile(in Packets, out io.Writer) error {
 	w := pcapgo.NewWriter(out)
 	w.WriteFileHeader(SnapLen, layers.LinkTypeEthernet)
 	count := 0
-	for p := range in {
+	defer in.Close()
+	for in.Next() {
+		p := in.Packet()
 		if err := w.WritePacket(p.CaptureInfo, p.Data); err != nil {
 			// This can happen if our pipe is broken, and we don't want to blow stack
 			// traces all over our users when that happens, so Error/Exit instead of
@@ -381,11 +416,11 @@ func PacketsToFile(in <-chan Packet, out io.Writer) error {
 		}
 		count++
 	}
-	return nil
+	return in.Err()
 }
 
 type indexedPacket struct {
-	Packet
+	*Packet
 	i int
 }
 type packetHeap []indexedPacket
@@ -400,25 +435,209 @@ func (p *packetHeap) Pop() (x interface{}) {
 	return
 }
 
-func MergePackets(in []<-chan Packet) <-chan Packet {
-	out := make(chan Packet)
+type Packets struct {
+	mu  sync.Mutex
+	p   *Packet
+	c   chan *Packet
+	err error
+}
+
+func (p *Packets) Packet() *Packet {
+	return p.p
+}
+func (p *Packets) Next() bool {
+	p.p = <-p.c
+	return p.p != nil
+}
+func newPackets() Packets {
+	return Packets{
+		c: make(chan *Packet, 100),
+	}
+}
+func (p *Packets) Close() {
+	go func() {
+		for _ = range p.c {
+		}
+	}()
+}
+func (p *Packets) finish(err error) {
+	p.mu.Lock()
+	p.err = err
+	p.mu.Unlock()
+	close(p.c)
+}
+func (p *Packets) Err() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.err
+}
+
+func MergePackets(in []Packets) Packets {
+	out := newPackets()
 	go func() {
 		var h packetHeap
+		for i := range in {
+			defer in[i].Close()
+		}
 		for i, c := range in {
-			for p := range c {
-				heap.Push(&h, indexedPacket{Packet: p, i: i})
+			if c.Next() {
+				heap.Push(&h, indexedPacket{Packet: c.Packet(), i: i})
+			}
+			if err := c.Err(); err != nil {
+				out.finish(err)
+				return
 			}
 		}
-		V(1, "merged packet stream has %v packets", len(h))
 		for h.Len() > 0 {
 			p := heap.Pop(&h).(indexedPacket)
-			out <- p.Packet
-			newP, ok := <-in[p.i]
-			if ok {
-				heap.Push(&h, indexedPacket{Packet: newP, i: p.i})
+			if in[p.i].Next() {
+				heap.Push(&h, indexedPacket{Packet: in[p.i].Packet(), i: p.i})
+			}
+			out.c <- p.Packet
+			if err := in[p.i].Err(); err != nil {
+				out.finish(err)
+				return
 			}
 		}
-		close(out)
+		out.finish(nil)
 	}()
 	return out
+}
+
+type ThreadConfig struct {
+	PacketsDirectory string
+	IndexDirectory   string
+}
+type Config struct {
+	StenotypePath string
+	Threads       []ThreadConfig
+	Interface     string
+	Flags         []string
+}
+
+func (c Config) args() []string {
+	return append(c.Flags,
+		fmt.Sprintf("--threads=%d", len(c.Threads)),
+		fmt.Sprintf("--iface=%s", c.Interface))
+}
+func (c Config) Directory() (_ *Directory, returnedErr error) {
+	dirname, err := ioutil.TempDir("", "stenographer")
+	if err != nil {
+		return nil, fmt.Errorf("couldn't create temp directory: %v", err)
+	}
+	defer func() {
+		// If this fails, remove the temp dir.
+		if returnedErr != nil {
+			os.RemoveAll(dirname)
+		}
+	}()
+	for i, thread := range c.Threads {
+		if thread.PacketsDirectory == "" {
+			return nil, fmt.Errorf("no packet directory for thread %d", i)
+		} else if err := os.Symlink(thread.PacketsDirectory, filepath.Join(dirname, strconv.Itoa(i))); err != nil {
+			return nil, fmt.Errorf("couldn't create symlink for thread %d to directory %q: %v", i, thread.PacketsDirectory, err)
+		}
+		if thread.IndexDirectory != "" {
+			if err := os.Symlink(thread.IndexDirectory, filepath.Join(dirname, strconv.Itoa(i), "INDEX")); err != nil {
+				return nil, fmt.Errorf("couldn't create symlink for thread %d index to directory %q: %v", i, thread.IndexDirectory, err)
+			}
+		}
+	}
+	return newDirectory(dirname, len(c.Threads)), nil
+}
+
+func (d *Directory) Close() error {
+	return os.RemoveAll(d.name)
+}
+
+func (c Config) Stenotype(d *Directory) *exec.Cmd {
+	log.Printf("Starting stenotype")
+	args := append(c.args(), fmt.Sprintf("--dir=%s", d.Path()))
+	V(1, "Starting as %q with args %q", c.StenotypePath, args)
+	return exec.Command(c.StenotypePath, args...)
+}
+
+type fileKey struct {
+	basedir string
+	thread  int
+	name    string
+}
+
+type Directory struct {
+	mu      sync.RWMutex
+	name    string
+	threads int
+	files   map[fileKey]*BlockFile
+	done    chan bool
+}
+
+func newDirectory(dirname string, threads int) *Directory {
+	d := &Directory{
+		name:    dirname,
+		threads: threads,
+		done:    make(chan bool),
+		files:   map[fileKey]*BlockFile{},
+	}
+	go d.newFiles()
+	go d.oldFiles()
+	return d
+}
+
+func (d *Directory) newFiles() {
+	ticker := time.NewTicker(time.Second * 15)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-d.done:
+			return
+		case <-ticker.C:
+			d.checkForNewFiles()
+		}
+	}
+}
+
+func (d *Directory) checkForNewFiles() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for i := 0; i < d.threads; i++ {
+		dirpath := filepath.Join(d.name, strconv.Itoa(i))
+		files, err := ioutil.ReadDir(dirpath)
+		if err != nil {
+			log.Printf("could not read dir %q: %v", dirpath, err)
+		}
+		for _, file := range files {
+			if file.IsDir() || file.Name()[0] == '.' {
+				continue
+			}
+			key := fileKey{d.name, i, file.Name()}
+			if d.files[key] != nil {
+				continue
+			}
+			filepath := filepath.Join(dirpath, file.Name())
+			bf, err := NewBlockFile(filepath)
+			if err != nil {
+				log.Printf("could not open blockfile %q: %v", filepath, err)
+				continue
+			}
+			log.Printf("new blockfile %q", filepath)
+			d.files[key] = bf
+		}
+	}
+}
+
+func (d *Directory) oldFiles() {
+}
+
+func (d *Directory) Path() string {
+	return d.name
+}
+
+func (d *Directory) Lookup(query string) Packets {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var inputs []Packets
+	for _, file := range d.files {
+		inputs = append(inputs, file.Lookup(query))
+	}
+	return MergePackets(inputs)
 }

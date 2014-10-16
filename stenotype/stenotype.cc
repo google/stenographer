@@ -245,9 +245,7 @@ void RunThread(int thread,
 
   // All dirnames are guaranteed to end with '/'.
   string file_dirname = flag_dir;
-  if (flag_threads > 1) {
-    file_dirname += to_string(thread) + "/";
-  }
+  file_dirname += to_string(thread) + "/";
   string index_dirname = file_dirname + "INDEX/";
   CHECK_SUCCESS(MkDirRecursive(index_dirname));
 
@@ -277,9 +275,7 @@ void RunThread(int thread,
     // Index all packets if necessary.
     if (flag_index) {
       for (; remaining != 0 && b.Next(&p); remaining--) {
-        if (flag_threads) {
-          index->Process(p, block_offset << 20);
-        }
+        index->Process(p, block_offset << 20);
       }
     }
 

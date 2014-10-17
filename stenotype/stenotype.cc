@@ -63,6 +63,7 @@
 #include <pwd.h>  // getpwnam()
 #include <grp.h>  // getgrnam()
 #include <unistd.h>  // setuid(), setgid()
+#include <sys/prctl.h>  // prctl(), PR_SET_PDEATHSIG
 
 #include <string>
 #include <sstream>
@@ -204,9 +205,9 @@ void WriteIndexes(st::ProducerConsumerQueue* write_index) {
 }
 
 bool run_threads = true;
-void HandleSIGINT(int sig) {
+void HandleStopRequest(int sig) {
   if (run_threads) {
-    LOG(INFO) << "Caught SIGINT, stopping threads (could take ~15 seconds)";
+    LOG(INFO) << "Caught signal " << sig << ", stopping threads (could take ~15 seconds)";
     run_threads = false;
   }
 }
@@ -333,6 +334,7 @@ void RunThread(int thread,
 }
 
 int Main(int argc, char** argv) {
+  LOG_IF_ERROR(Errno(0 == prctl(PR_SET_PDEATHSIG, SIGTERM)), "prctl PDEATHSIG");
   ParseOptions(argc, argv);
   sockets_created = new Barrier(flag_threads + 1);
 
@@ -349,7 +351,8 @@ int Main(int argc, char** argv) {
   }
 
   // Handle sigint by stopping all threads.
-  signal(SIGINT, &HandleSIGINT);
+  signal(SIGINT, &HandleStopRequest);
+  signal(SIGTERM, &HandleStopRequest);
   signal(SIGSEGV, &HandleSIGSEGV);
 
   // To avoid blocking on index writes, each writer thread has a secondary

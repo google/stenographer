@@ -65,6 +65,8 @@ func main() {
 
 	// Start running stenotype.
 	cmd := config.Stenotype(dir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("cannot start stenotype: %v", err)
 	}

@@ -107,7 +107,14 @@ void SingleFile::Write(io_context_t ctx, Block* b) {
   offset_ += data.size();
   cb->data = reinterpret_cast<void*>(write);
   outstanding_.insert(write);
-  CHECK_SUCCESS(AIOErrno(io_submit(ctx, 1, &cb)));
+  int ret = 1;
+  int64_t deadline = GetCurrentTimeMicros() + kNumMicrosPerSecond;
+  while (GetCurrentTimeMicros() < deadline || ret > 0) {
+    ret = io_submit(ctx, 1, &cb);
+    if (ret != 0 && ret != -EAGAIN) break;
+    SleepForSeconds(0.001);
+  }
+  CHECK_SUCCESS(AIOErrno(ret));
 }
 
 Error SingleFile::Close() {
@@ -138,7 +145,7 @@ Output::~Output() {
 Error Output::SetUp() {
   int ret;
   for (int i = 0; i < 10; i++) {
-    ret = io_setup(1, &ctx_);
+    ret = io_setup(max_ops_, &ctx_);
     if (ret != -EAGAIN) { break; }
     SleepForSeconds(1);
     LOG(V1) << "io_setup retrying";

@@ -21,6 +21,7 @@
 # rely very heavily on many Linux-specific features (particularly AF_PACKET), we
 # have no plans to make this portable to non-Linux or even older Linux distros.
 
+cd $(dirname $0)
 set -e
 
 function InstallPackage {

@@ -45,8 +45,8 @@ namespace st {
 
 string Stats::String() const {
   std::stringstream out;
-  out << "AFPACKET:" <<
-      " packets=" << packets <<
+  out <<
+      "packets=" << packets <<
       " blocks=" << blocks <<
       " polls=" << polls <<
       " drops=" << drops <<

@@ -261,6 +261,7 @@ void RunThread(int thread,
   }
 
   int64_t start = GetCurrentTimeMicros();
+  int64_t lastlog = 0;
   int64_t blocks = 0;
   int64_t block_offset = 0;
   int64_t errors = 0;  // allows us to ignore spurious errors.
@@ -296,13 +297,14 @@ void RunThread(int thread,
       errors--;
     }
 
+    int64_t current_micros = GetCurrentTimeMicros();
     // Rotate file if necessary.
     int64_t current_file_age_secs =
-      (GetCurrentTimeMicros() - micros) / kNumMicrosPerSecond;
+      (current_micros - micros) / kNumMicrosPerSecond;
     if (block_offset == flag_filesize_mb
         || current_file_age_secs > flag_fileage_sec) {
       // File size got too big, rotate file.
-      micros = GetCurrentTimeMicros();
+      micros = current_micros;
       block_offset = 0;
       CHECK_SUCCESS(output.Rotate(file_dirname, micros));
       if (flag_index) {
@@ -311,15 +313,20 @@ void RunThread(int thread,
       }
     }
 
-    // Log stats every 100MB.
-    if (blocks % 100 == 0) {
-      double duration = (GetCurrentTimeMicros() - start)
+    // Log stats every 100MB or at least 1/minute.
+    if (blocks % 100 == 0 ||
+        lastlog < current_micros - 60 * kNumMicrosPerSecond) {
+      lastlog = current_micros;
+      double duration = (current_micros - start)
           * 1.0 / kNumMicrosPerSecond;
       Stats stats;
       Error stats_err = v3->GetStats(&stats);
       if (SUCCEEDED(stats_err)) {
-        LOG(INFO) << "Thread " << thread << ": " << (blocks / duration)
-          << "MBps " << stats.String();
+        LOG(INFO) << "Thread " << thread
+          << " stats: MB=" << blocks
+          << " secs=" << duration
+          << " MBps=" << (blocks / duration)
+          << " " << stats.String();
       } else {
         LOG(ERROR) << "Unable to get stats: " << *stats_err;
       }
@@ -395,6 +402,7 @@ int Main(int argc, char** argv) {
       delete thread;
     }
   }
+  LOG(INFO) << "Process exiting successfully";
   return 0;
 }
 

@@ -89,5 +89,5 @@ func main() {
 			io.Copy(w, &buf)
 		}
 	})
-	http.ListenAndServe("localhost:1234", nil)
+	http.ListenAndServe(fmt.Sprintf("localhost:%d", config.Port), nil)
 }

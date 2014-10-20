@@ -513,6 +513,7 @@ type Config struct {
 	Threads       []ThreadConfig
 	Interface     string
 	Flags         []string
+	Port          int
 }
 
 func (c Config) args() []string {
@@ -599,6 +600,7 @@ func (d *Directory) newFiles() {
 func (d *Directory) checkForNewFiles() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	gotNew := false
 	for i := 0; i < d.threads; i++ {
 		dirpath := filepath.Join(d.name, strconv.Itoa(i))
 		files, err := ioutil.ReadDir(dirpath)
@@ -619,9 +621,13 @@ func (d *Directory) checkForNewFiles() {
 				log.Printf("could not open blockfile %q: %v", filepath, err)
 				continue
 			}
-			log.Printf("new blockfile %q", filepath)
+			V(1, "new blockfile %q", filepath)
 			d.files[key] = bf
+			gotNew = true
 		}
+	}
+	if gotNew {
+		log.Printf("New blockfiles, now tracking %v", len(d.files))
 	}
 }
 

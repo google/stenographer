@@ -1,0 +1,9 @@
+{
+  "Threads": [
+    { "PacketsDirectory": "/tmp2/steno" }
+  ]
+  , "StenotypePath": "stenotype/stenotype"
+  , "Interface": "em1"
+  , "Port": 1234
+  , "Flags": []
+}

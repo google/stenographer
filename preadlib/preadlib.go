@@ -58,26 +58,39 @@ func V(level int, fmt string, args ...interface{}) {
 
 const SnapLen = 65536
 
-type BlockFile struct {
+type blockFile struct {
 	name string
-	f    io.ReaderAt
-	i    *Index
+	f    *os.File
+	i    *index
 }
 
-func NewBlockFile(filename string) (*BlockFile, error) {
+func newBlockFile(filename string) (*blockFile, error) {
 	V(1, "opening blockfile %q", filename)
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("could not open %q: %v", filename, err)
 	}
-	i, err := NewIndex(filename)
+	i, err := newIndex(filename)
 	if err != nil {
 		return nil, fmt.Errorf("could not open index for %q: %v", filename, err)
 	}
-	return &BlockFile{f: f, i: i, name: filename}, nil
+	return &blockFile{
+		f:    f,
+		i:    i,
+		name: filename,
+	}, nil
 }
 
-func (b *BlockFile) ReadPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, error) {
+// stillAtOriginalPath returns true if the file is still able to be accessed at
+// its original file path.  If not, steno assumes that this file has been
+// removed, and it can clean up the blockfile so it doesn't stay around on the
+// filesystem as an unlinked file.
+func (b *blockFile) stillAtOriginalPath() bool {
+	_, err := os.Stat(b.name)
+	return err == nil
+}
+
+func (b *blockFile) ReadPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, error) {
 	var dataBuf [28]byte
 	// 28 bytes actually isn't the entire packet header, but it's all the fields
 	// that we care about.
@@ -97,20 +110,25 @@ func (b *BlockFile) ReadPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, err
 	return out, err
 }
 
-type Int64Slice []int64
+func (b *blockFile) Close() error {
+	b.i.Close()
+	return b.f.Close()
+}
 
-func (a Int64Slice) Less(i, j int) bool {
+type int64Slice []int64
+
+func (a int64Slice) Less(i, j int) bool {
 	return a[i] < a[j]
 }
-func (a Int64Slice) Swap(i, j int) {
+func (a int64Slice) Swap(i, j int) {
 	a[i], a[j] = a[j], a[i]
 }
-func (a Int64Slice) Len() int {
+func (a int64Slice) Len() int {
 	return len(a)
 }
 
-func (a Int64Slice) Union(b Int64Slice) (out Int64Slice) {
-	out = make(Int64Slice, 0, len(a)+len(b)/2)
+func (a int64Slice) Union(b int64Slice) (out int64Slice) {
+	out = make(int64Slice, 0, len(a)+len(b)/2)
 	ib := 0
 	for _, pos := range a {
 		for ib < len(b) && b[ib] < pos {
@@ -126,8 +144,8 @@ func (a Int64Slice) Union(b Int64Slice) (out Int64Slice) {
 	return out
 }
 
-func (a Int64Slice) Intersect(b Int64Slice) (out Int64Slice) {
-	out = make(Int64Slice, 0, len(a)/2)
+func (a int64Slice) Intersect(b int64Slice) (out int64Slice) {
+	out = make(int64Slice, 0, len(a)/2)
 	ib := 0
 	for _, pos := range a {
 		for ib < len(b) && b[ib] < pos {
@@ -141,12 +159,12 @@ func (a Int64Slice) Intersect(b Int64Slice) (out Int64Slice) {
 	return out
 }
 
-type Index struct {
+type index struct {
 	name string
 	f    *table.Reader
 }
 
-func NewIndex(filename string) (*Index, error) {
+func newIndex(filename string) (*index, error) {
 	filename = filepath.Join(
 		filepath.Dir(filename),
 		"INDEX",
@@ -172,7 +190,7 @@ func NewIndex(filename string) (*Index, error) {
 		nil,
 		util.NewBufferPool(opts.GetBlockSize()*5),
 		opts)
-	index := &Index{f: reader, name: filename}
+	index := &index{f: reader, name: filename}
 	if _, err := index.positionsSingleKey([]byte{}); err != nil {
 		return nil, fmt.Errorf("unable to read from table %q: %v", filename, err)
 	}
@@ -180,7 +198,7 @@ func NewIndex(filename string) (*Index, error) {
 	return index, nil
 }
 
-func (i *Index) IPPositions(from, to net.IP) (Int64Slice, error) {
+func (i *index) IPPositions(from, to net.IP) (int64Slice, error) {
 	var version byte
 	switch {
 	case len(from) != len(to):
@@ -197,11 +215,11 @@ func (i *Index) IPPositions(from, to net.IP) (Int64Slice, error) {
 		append([]byte{version}, []byte(to)...))
 }
 
-func (i *Index) ProtoPositions(proto byte) (Int64Slice, error) {
+func (i *index) ProtoPositions(proto byte) (int64Slice, error) {
 	return i.positionsSingleKey([]byte{1, proto})
 }
 
-func (i *Index) PortPositions(port uint16) (Int64Slice, error) {
+func (i *index) PortPositions(port uint16) (int64Slice, error) {
 	var buf [3]byte
 	binary.BigEndian.PutUint16(buf[1:], port)
 	buf[0] = 2
@@ -210,8 +228,8 @@ func (i *Index) PortPositions(port uint16) (Int64Slice, error) {
 
 var readOpts = &opt.ReadOptions{Strict: opt.StrictAll}
 
-func (i *Index) positionsSingleKey(key []byte) (Int64Slice, error) {
-	var sortedPos Int64Slice
+func (i *index) positionsSingleKey(key []byte) (int64Slice, error) {
+	var sortedPos int64Slice
 	iter := i.f.NewIterator(&util.Range{Start: key, Limit: append(key, 0)}, readOpts)
 	count := int64(0)
 	for iter.Next() {
@@ -225,7 +243,7 @@ func (i *Index) positionsSingleKey(key []byte) (Int64Slice, error) {
 	return sortedPos, nil
 }
 
-func (i *Index) positions(from, to []byte) (Int64Slice, error) {
+func (i *index) positions(from, to []byte) (int64Slice, error) {
 	if bytes.Equal(from, to) {
 		return i.positionsSingleKey(from)
 	}
@@ -240,7 +258,7 @@ func (i *Index) positions(from, to []byte) (Int64Slice, error) {
 	if err := iter.Error(); err != nil {
 		return nil, err
 	}
-	sortedPos := make(Int64Slice, 0, len(positions))
+	sortedPos := make(int64Slice, 0, len(positions))
 	for pos := range positions {
 		sortedPos = append(sortedPos, int64(pos))
 	}
@@ -259,12 +277,12 @@ func parseIP(in string) net.IP {
 	return ip
 }
 
-func (i *Index) lookupSingleArgument(arg string) (Int64Slice, error) {
+func (i *index) lookupSingleArgument(arg string) (int64Slice, error) {
 	parts := strings.Split(arg, "=")
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid arg: %q", arg)
 	}
-	var pos Int64Slice
+	var pos int64Slice
 	var err error
 	switch parts[0] {
 	case "ip":
@@ -309,10 +327,10 @@ func (i *Index) lookupSingleArgument(arg string) (Int64Slice, error) {
 	return pos, nil
 }
 
-func (i *Index) lookupUnionArguments(arg string) (Int64Slice, error) {
+func (i *index) lookupUnionArguments(arg string) (int64Slice, error) {
 	args := strings.Split(arg, "|")
-	var positions Int64Slice
-	c := make(chan Int64Slice, len(args))
+	var positions int64Slice
+	c := make(chan int64Slice, len(args))
 	errs := make(chan error, len(args))
 	for _, a := range args {
 		a := a
@@ -340,9 +358,9 @@ func (i *Index) lookupUnionArguments(arg string) (Int64Slice, error) {
 	return positions, <-errs
 }
 
-func (i *Index) Lookup(in string) (Int64Slice, error) {
+func (i *index) Lookup(in string) (int64Slice, error) {
 	actualArgs := strings.Fields(in)
-	c := make(chan Int64Slice, len(actualArgs))
+	c := make(chan int64Slice, len(actualArgs))
 	errs := make(chan error, len(actualArgs))
 	for _, arg := range actualArgs {
 		arg := arg
@@ -354,7 +372,7 @@ func (i *Index) Lookup(in string) (Int64Slice, error) {
 			}
 		}()
 	}
-	var positions Int64Slice
+	var positions int64Slice
 	first := true
 	for _ = range actualArgs {
 		pos := <-c
@@ -370,12 +388,16 @@ func (i *Index) Lookup(in string) (Int64Slice, error) {
 	return positions, <-errs
 }
 
+func (i *index) Close() {
+	i.f.Release()
+}
+
 type Packet struct {
 	Data []byte
 	gopacket.CaptureInfo
 }
 
-func (b *BlockFile) Lookup(in string) Packets {
+func (b *blockFile) Lookup(in string) Packets {
 	c := newPackets()
 	go func() {
 		var ci gopacket.CaptureInfo
@@ -568,7 +590,7 @@ type Directory struct {
 	mu      sync.RWMutex
 	name    string
 	threads int
-	files   map[fileKey]*BlockFile
+	files   map[fileKey]*blockFile
 	done    chan bool
 }
 
@@ -577,7 +599,7 @@ func newDirectory(dirname string, threads int) *Directory {
 		name:    dirname,
 		threads: threads,
 		done:    make(chan bool),
-		files:   map[fileKey]*BlockFile{},
+		files:   map[fileKey]*blockFile{},
 	}
 	go d.newFiles()
 	go d.oldFiles()
@@ -593,6 +615,7 @@ func (d *Directory) newFiles() {
 			return
 		case <-ticker.C:
 			d.checkForNewFiles()
+			d.checkForRemovedFiles()
 		}
 	}
 }
@@ -616,7 +639,7 @@ func (d *Directory) checkForNewFiles() {
 				continue
 			}
 			filepath := filepath.Join(dirpath, file.Name())
-			bf, err := NewBlockFile(filepath)
+			bf, err := newBlockFile(filepath)
 			if err != nil {
 				log.Printf("could not open blockfile %q: %v", filepath, err)
 				continue
@@ -628,6 +651,23 @@ func (d *Directory) checkForNewFiles() {
 	}
 	if gotNew {
 		log.Printf("New blockfiles, now tracking %v", len(d.files))
+	}
+}
+
+func (d *Directory) checkForRemovedFiles() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	count := 0
+	for key, b := range d.files {
+		if !b.stillAtOriginalPath() {
+			V(1, "old blockfile %q", b.name)
+			b.Close()
+			delete(d.files, key)
+			count++
+		}
+	}
+	if count > 0 {
+		log.Println("Detected %d blockfiles removed", count)
 	}
 }
 

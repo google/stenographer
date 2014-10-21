@@ -21,22 +21,22 @@ import (
 
 func TestUnion(t *testing.T) {
 	for _, test := range []struct {
-		a, b, want Int64Slice
+		a, b, want int64Slice
 	}{
 		{
-			Int64Slice{1, 2, 3},
-			Int64Slice{2, 3, 4},
-			Int64Slice{1, 2, 3, 4},
+			int64Slice{1, 2, 3},
+			int64Slice{2, 3, 4},
+			int64Slice{1, 2, 3, 4},
 		},
 		{
-			Int64Slice{1, 2},
-			Int64Slice{3, 4},
-			Int64Slice{1, 2, 3, 4},
+			int64Slice{1, 2},
+			int64Slice{3, 4},
+			int64Slice{1, 2, 3, 4},
 		},
 		{
-			Int64Slice{3, 4},
-			Int64Slice{1, 2},
-			Int64Slice{1, 2, 3, 4},
+			int64Slice{3, 4},
+			int64Slice{1, 2},
+			int64Slice{1, 2, 3, 4},
 		},
 	} {
 		got := test.a.Union(test.b)
@@ -45,29 +45,29 @@ func TestUnion(t *testing.T) {
 		}
 	}
 }
-func TestIntersect(t *testing.T) {
+func Testintersect(t *testing.T) {
 	for _, test := range []struct {
-		a, b, want Int64Slice
+		a, b, want int64Slice
 	}{
 		{
-			Int64Slice{1, 2, 3, 4},
-			Int64Slice{0, 2, 4, 5},
-			Int64Slice{2, 4},
+			int64Slice{1, 2, 3, 4},
+			int64Slice{0, 2, 4, 5},
+			int64Slice{2, 4},
 		},
 		{
-			Int64Slice{1, 2, 3},
-			Int64Slice{2, 3, 4},
-			Int64Slice{2, 3},
+			int64Slice{1, 2, 3},
+			int64Slice{2, 3, 4},
+			int64Slice{2, 3},
 		},
 		{
-			Int64Slice{1, 2},
-			Int64Slice{3, 4},
-			Int64Slice{},
+			int64Slice{1, 2},
+			int64Slice{3, 4},
+			int64Slice{},
 		},
 		{
-			Int64Slice{3, 4},
-			Int64Slice{1, 2},
-			Int64Slice{},
+			int64Slice{3, 4},
+			int64Slice{1, 2},
+			int64Slice{},
 		},
 	} {
 		got := test.a.Intersect(test.b)

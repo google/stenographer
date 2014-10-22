@@ -20,6 +20,66 @@
 // change in backwards-incompatible ways at any moment.
 package sstable
 
+/* SSTable format:
+
+LevelDB uses a structured data format, built at the base level with:
+  1) 4-byte little-endian int32s
+  2) unsigned varints (see Go's encoding/binary)
+  3) byte slices
+When reading below, assume each 4-byte int is little-endian.
+
+LevelDB tables have a disk format consisting of a series of blocks of
+arbitrary size, followed by a simple 48-byte footer.
+Each block can be referenced by a 'block handle', which consists of two
+int64 values (varints when serialized to disk) detailing the offset and
+length of the block on disk.
+
+Each block is actually 5 bytes longer than the length specified in its block
+handle, and takes the on-disk form:
+  [handle.length bytes of data][1-byte format][4-byte crc32c]
+The single format byte currently differentiates between a snappy-compressed
+block and an uncompressed block.  The crc32c is masked, and covers the data
+and format bytes.
+
+When uncompressed, each block contians a series of key/value pairs, of the
+form:
+
+  [sharedKeyLen][unsharedKeyLen][valueLen][unsharedKeyBytes][valueBytes]
+
+All lengths are varints.  Decoding a key based on these is done with:
+
+  key = previousKey[:sharedKeyLen] + unsharedKeyBytes
+
+In other words, sharedKeyLen encodes the length of the shared prefix between
+the current and previous keys.  Some entries throughout the block have
+sharedKeyLen set to 0 (thus unsharedKeyBytes contains the entire key).  These
+are called "restarts".  The entire block's format is:
+
+  [entries][restarts][length of restarts]
+
+Here, 'restarts' is a list of int32s pointing to the block offsets of
+each such restart, and the final length is the number of restarts
+in the block, also an int32.
+
+The footer contains two block handles, pointing respectively to the index
+and metaindex, followed by a magic 64-bit number (little-endian, 8 bytes),
+used to detect that this is indeed a leveldb table file.
+We do not currently use the metaindex.  The index is a special
+block whose keys are the first key in each block, and whose values are the
+block handles to that block.
+
+To seek for a key in a block, one does a binary search of the restart
+offsets, reading the full key from the restart position
+and comparing it to the target key.  After finding the appropriate restart
+key, one can then do a linear scan onward.
+
+To seek for a key in a file, one first does a seek for the highest key less
+than the target within the index block, then seeks within that block for the
+highest key less than the target.  At this point, the iterator is ready to
+begin, and the first call to Next() will read the first key greater than or
+equal to the target, then progress from there.
+*/
+
 import (
 	"bytes"
 	"encoding/binary"
@@ -35,19 +95,26 @@ import (
 )
 
 const (
-	maxBlockHandleLength = 20
-	footerLength         = maxBlockHandleLength*2 + 8
-	magicNumber          = 0xdb4775248b80fb57
-	blockTrailerSize     = 5
-	maskDelta            = 0xa282ead8
-	noCompression        = 0
-	snappyCompression    = 1
+	maxBlockHandleLength = binary.MaxVarintLen64 * 2
+	// footer is always 48 bytes, even though block handles are varints and
+	// may take up less than maxBlockHandleLength bytes, the rest of the footer
+	// between handles and magic number is zeros.
+	footerLength     = maxBlockHandleLength*2 + 8
+	magicNumber      = 0xdb4775248b80fb57
+	blockTrailerSize = 5          // 1-byte format + 4-byte crc32c
+	maskDelta        = 0xa282ead8 // used for masking crc32c
+	// Format bytes are one of the following:
+	noCompression     = 0
+	snappyCompression = 1
 )
 
 type blockHandle struct {
 	offset, length uint64
 }
 
+// blockHandleFrom returns the block handle encoded in the data, the piece
+// of the data slice that's left over when the block handles have been removed,
+// and any error encountered.
 func blockHandleFrom(data []byte) (blockHandle, []byte, error) {
 	remaining := data
 	var read int
@@ -69,6 +136,8 @@ type footer struct {
 	metaindex, index blockHandle
 }
 
+// footerFrom decodes the footer from the provided slice, or an error if it
+// cannot.
 func footerFrom(data []byte) (*footer, error) {
 	if len(data) != footerLength {
 		return nil, fmt.Errorf("invalid footer length %v", len(data))
@@ -90,11 +159,15 @@ func footerFrom(data []byte) (*footer, error) {
 	return &f, nil
 }
 
+// black magic.
 func unmaskCRC(crc uint32) uint32 {
 	crc -= maskDelta
 	return ((crc >> 17) | (crc << 15))
 }
 
+// readBlock returns the set of bytes which comprise the block pointed to
+// by the given handle.  Note that these may not correspond directly to bytes
+// on disk if the block is compressed.
 func readBlock(f io.ReaderAt, b blockHandle) ([]byte, error) {
 	actualLength := int64(b.length) + blockTrailerSize
 	out := make([]byte, actualLength)
@@ -170,11 +243,16 @@ func (t *Table) Close() error {
 }
 
 type block struct {
-	data                  []byte
+	data []byte
+	// restarts is the offset to the first restart, numRestarts is the total
+	// number of restarts in the block.  See format discussion above.
 	restarts, numRestarts int
 }
 
+// newBlock returns the block referenced by the given handle, or an error if
+// unable to read it.
 func (t *Table) newBlock(b blockHandle) (*block, error) {
+	// TODO:  some simple block caching here would probably be great.
 	data, err := readBlock(t.f, b)
 	if err != nil {
 		return nil, err
@@ -192,15 +270,19 @@ func (t *Table) newBlock(b blockHandle) (*block, error) {
 	return &blk, nil
 }
 
+// iter creates an iterator for this block.
 func (b *block) iter() *blockIterator {
 	return &blockIterator{block: b}
 }
 
+// blockIterator contains all mutable information necessary to iterate over
+// a single block.
 type blockIterator struct {
-	*block
-	key, value []byte
-	current    int
-	err        error
+	*block            // the block we're iterating over.
+	key, value []byte // the current decoded key/value.
+	offset     int    // offset of the next key/value to read.
+	err        error  // any error we've encountered.
+	justSeeked bool   // if true, first Next() call should do nothing.
 }
 
 func (b *blockIterator) Err() error {
@@ -208,27 +290,38 @@ func (b *blockIterator) Err() error {
 }
 
 func (b *blockIterator) Key() []byte {
+	if b.key == nil || b.justSeeked {
+		panic("call Next() before Key()")
+	}
 	return b.key
 }
 func (b *blockIterator) Value() []byte {
+	if b.key == nil || b.justSeeked {
+		panic("call Next() before Value()")
+	}
 	return b.value
 }
 
-func (b *block) restartPoint(index int) int {
-	if index > b.numRestarts {
-		panic("invalid restart")
-	}
-	return int(binary.LittleEndian.Uint32(b.data[b.restarts+index*4:]))
-}
-
+// seekToRestart points the location of the iterator at the offset specified
+// by the index element in the restart list.
 func (b *blockIterator) seekToRestart(index int) {
-	offset := b.restartPoint(index)
-	b.current = offset
-	b.value = b.data[b.current:b.current]
+	if index > b.numRestarts {
+		b.err = fmt.Errorf("cannot seek to restart %d", index)
+		return
+	}
+	offset := int(binary.LittleEndian.Uint32(b.data[b.restarts+index*4:]))
+	b.offset = offset
+	b.value = b.data[b.offset:b.offset]
 }
 
+// decodeNext decodes the bytes currently pointed to by b.offset, returning:
+//  sharedKey:    number of prefix bytes common between new and current key
+//  unsharedKey:  number of bytes to append to shared prefix bytes for new key
+//  val:          number of bytes in new value
+//  offset:       offset in block of the first byte in unsharedKey
+//  err:          any error encountered decoding
 func (b *blockIterator) decodeNext() (sharedKey, unsharedKey, val, offset int, err error) {
-	offset = b.current
+	offset = b.offset
 	num, n := binary.Uvarint(b.data[offset:])
 	if n == 0 {
 		err = errors.New("could not get sharedKey")
@@ -252,99 +345,87 @@ func (b *blockIterator) decodeNext() (sharedKey, unsharedKey, val, offset int, e
 	val = int(num)
 	if sharedKey > len(b.key) {
 		err = fmt.Errorf("sharedKey %v > key length %v", sharedKey, len(b.key))
-	} else if unsharedKey+val+b.current > b.restarts {
+	} else if unsharedKey+val+b.offset > b.restarts {
 		err = errors.New("total size greater than block space allows")
 	}
 	return
 }
 
-// Iter provides a simple iteration interface over a table.  Each iterator is
-// not safe for concurrent access, but any number of iterators may be used
-// concurrently.
-//
-// Usage:
-//   iter := tbl.Iter(startKey)
-//   for iter.Next() {
-//     fmt.Println(iter.Key(), iter.Value())
-//   }
-//   if err := iter.Err(); err != nil {
-//     fmt.Println("ERR:", err)
-//   }
-type Iter interface {
-	// Next advances the iterator.
-	Next() bool
-	// Key provides the current key of the iterator.  This slice is invalidated by
-	// each Next call.
-	Key() []byte
-	// Value provides the current value of the iterator.  This slice is invalidated by
-	// each Next call.
-	Value() []byte
-	// Err returns any error the iterator has encountered.  If Err would return a
-	// non-nil error, then Next() will also return false.
-	Err() error
-}
-
+// Next recomputes the key/value of the iterator by reading the block starting
+// at b.offset.  It returns false when an error has occurred, or when it has
+// reached the end of the block.
 func (b *blockIterator) Next() bool {
-	if b.current >= b.restarts {
+	if b.offset >= b.restarts || b.err != nil {
 		return false
+	}
+	if b.justSeeked {
+		// We're already pointing at the first key/value we need to.
+		b.justSeeked = false
+		return true
 	}
 	sharedKey, unsharedKey, val, offset, err := b.decodeNext()
 	if err != nil {
 		b.err = err
-		return b.nope()
+		return false
 	}
-	b.current = offset
+	b.offset = offset
 	if sharedKey > len(b.key) {
 		b.err = fmt.Errorf("shared key too long")
 		return false
 	}
-	b.key = append(b.key[:sharedKey], b.data[b.current:b.current+unsharedKey]...)
-	b.current += unsharedKey
-	b.value = b.data[b.current : b.current+val]
-	b.current += val
+	b.key = append(b.key[:sharedKey], b.data[b.offset:b.offset+unsharedKey]...)
+	b.offset += unsharedKey
+	b.value = b.data[b.offset : b.offset+val]
+	b.offset += val
 	return true
-}
-
-func (b *blockIterator) nope() bool {
-	b.current = b.restarts
-	return false
 }
 
 // Seek to the first key >= target.
 func (b *blockIterator) Seek(target []byte) {
+	// First, we do a binary search to find the first key >= target.
 	n := sort.Search(b.numRestarts, func(index int) bool {
+		if b.err != nil {
+			return true // return something consistent to get out of the search
+		}
 		b.seekToRestart(index)
 		sharedKey, unsharedKey, _, offset, err := b.decodeNext()
 		if err != nil {
 			b.err = err
-		}
-		if b.err != nil || sharedKey != 0 {
+			return true
+		} else if sharedKey != 0 {
+			b.err = errors.New("shared key != 0 at restart index")
 			return true
 		}
 		key := b.data[offset : offset+unsharedKey]
 		return bytes.Compare(key, target) >= 0
 	})
 	if b.err != nil {
-		b.nope()
 		return
 	}
+	// If we get here, n is the index of the first restart with key >= target.
+	// We want the last restart with key < target, so decrement.
 	if n > 0 {
 		n--
 	}
 	b.seekToRestart(n)
+
+	// Seek past the restart until we get to the first key >= target.
 	for b.err == nil {
-		last := *b
-		last.key = append([]byte(nil), last.key...)
 		if !b.Next() {
 			return
 		}
 		if bytes.Compare(b.Key(), target) >= 0 {
-			*b = last
+			// we mark justSeeked, so that the first call to next doesn't advance but
+			// instead returns the value we've just found, IE: the first key >=
+			// target.
+			b.justSeeked = true
 			return
 		}
 	}
 }
 
+// twoLevelIterator handles seeking in the index block, then using that to find
+// the first data block and iterate from there.
 type twoLevelIterator struct {
 	tbl   *Table
 	index *blockIterator
@@ -356,6 +437,8 @@ func (t *twoLevelIterator) Err() error {
 	return t.err
 }
 
+// nextDataBlock reads the block handle for the next block from our index
+// iterator, then sets up our data iterator to point at it.
 func (t *twoLevelIterator) nextDataBlock() bool {
 	if !t.index.Next() {
 		t.index = nil
@@ -377,8 +460,9 @@ func (t *twoLevelIterator) nextDataBlock() bool {
 
 func (t *twoLevelIterator) Seek(target []byte) {
 	t.index.Seek(target)
-	t.nextDataBlock()
-	t.data.Seek(target)
+	if t.nextDataBlock() {
+		t.data.Seek(target)
+	}
 }
 
 func (t *twoLevelIterator) Next() bool {
@@ -407,7 +491,34 @@ func (t *twoLevelIterator) Value() []byte {
 	return t.data.Value()
 }
 
+// Iter provides a simple iteration interface over a table.  Each iterator is
+// not safe for concurrent access, but any number of iterators on the same
+// file may be used concurrently.
+//
+// Usage:
+//   iter := tbl.Iter(startKey)
+//   for iter.Next() {
+//     fmt.Println(iter.Key(), iter.Value())
+//   }
+//   if err := iter.Err(); err != nil {
+//     fmt.Println("ERR:", err)
+//   }
+type Iter interface {
+	// Next advances the iterator.
+	Next() bool
+	// Key provides the current key of the iterator.  This slice is invalidated by
+	// each Next call.
+	Key() []byte
+	// Value provides the current value of the iterator.  This slice is invalidated by
+	// each Next call.
+	Value() []byte
+	// Err returns any error the iterator has encountered.  If Err would return a
+	// non-nil error, then Next() will also return false.
+	Err() error
+}
+
 // Iter creates a new iterator over the table, starting at the given key.
+// Iter is safe to call concurrently.
 func (t *Table) Iter(start []byte) Iter {
 	iter := &twoLevelIterator{
 		tbl:   t,

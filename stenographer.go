@@ -78,6 +78,12 @@ func main() {
 		log.Printf("stenotype stopped")
 	}()
 
+	http.HandleFunc("/dump/", func(w http.ResponseWriter, r *http.Request) {
+		fpath := r.URL.Path[5:]
+		log.Printf("dumping %q", fpath)
+		w.Header().Set("Content-Type", "text/plain")
+		dir.DumpIndex(fpath, w)
+	})
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		var buf bytes.Buffer
 		log.Printf("requesting %q", r.URL.Path)
@@ -89,5 +95,6 @@ func main() {
 			io.Copy(w, &buf)
 		}
 	})
-	http.ListenAndServe(fmt.Sprintf("localhost:%d", config.Port), nil)
+	log.Println("serving on port %v", config.Port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", config.Port), nil))
 }

@@ -39,9 +39,7 @@ import (
 	"code.google.com/p/gopacket"
 	"code.google.com/p/gopacket/layers"
 	"code.google.com/p/gopacket/pcapgo"
-	"github.com/syndtr/goleveldb/leveldb/opt"
-	"github.com/syndtr/goleveldb/leveldb/table"
-	"github.com/syndtr/goleveldb/leveldb/util"
+	"github.com/google/stenographer/sstable"
 )
 
 // #include <linux/if_packet.h>
@@ -161,7 +159,7 @@ func (a int64Slice) Intersect(b int64Slice) (out int64Slice) {
 
 type index struct {
 	name string
-	f    *table.Reader
+	ss   *sstable.Table
 }
 
 func newIndex(filename string) (*index, error) {
@@ -170,31 +168,11 @@ func newIndex(filename string) (*index, error) {
 		"INDEX",
 		filepath.Base(filename))
 	V(1, "opening index %q", filename)
-	f, err := os.Open(filename)
+	ss, err := sstable.NewTable(filename)
 	if err != nil {
 		return nil, fmt.Errorf("error opening index %q: %v", filename, err)
 	}
-	defer func() {
-		if f != nil {
-			f.Close()
-		}
-	}()
-	stat, err := f.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("error stat-ing file %q: %v", filename, err)
-	}
-	opts := &opt.Options{}
-	reader := table.NewReader(
-		f,
-		stat.Size(),
-		nil,
-		util.NewBufferPool(opts.GetBlockSize()*5),
-		opts)
-	index := &index{f: reader, name: filename}
-	if _, err := index.positionsSingleKey([]byte{}); err != nil {
-		return nil, fmt.Errorf("unable to read from table %q: %v", filename, err)
-	}
-	f = nil // File shouldn't be closed.
+	index := &index{ss: ss, name: filename}
 	return index, nil
 }
 
@@ -226,18 +204,34 @@ func (i *index) PortPositions(port uint16) (int64Slice, error) {
 	return i.positionsSingleKey(buf[:])
 }
 
-var readOpts = &opt.ReadOptions{Strict: opt.StrictAll}
+func (i *index) Dump(out io.Writer) {
+	iter := i.ss.Iter([]byte{})
+	for iter.Next() {
+		fmt.Fprintf(out, "%v %v\n", iter.Key(), iter.Value())
+	}
+	if err := iter.Err(); err != nil {
+		fmt.Fprintf(out, "ERR: %v", err)
+	}
+}
 
 func (i *index) positionsSingleKey(key []byte) (int64Slice, error) {
 	var sortedPos int64Slice
-	iter := i.f.NewIterator(&util.Range{Start: key, Limit: append(key, 0)}, readOpts)
+	V(4, "%q single key iterator %+v start", i.name, key)
+	iter := i.ss.Iter(key)
 	count := int64(0)
 	for iter.Next() {
+		if !bytes.Equal(key, iter.Key()) {
+			V(4, "%q single key iterator high key %v", i.name, iter.Key())
+			break
+		}
+		V(4, "%q single key iterator %v=%v", i.name, iter.Key(), iter.Value())
 		pos := binary.BigEndian.Uint32(iter.Value())
 		sortedPos = append(sortedPos, int64(pos))
 		count++
 	}
-	if err := iter.Error(); err != nil {
+	V(4, "%q single key iterator done", i.name)
+	if err := iter.Err(); err != nil {
+		V(4, "%q single key iterator err=%v", i.name, err)
 		return nil, err
 	}
 	return sortedPos, nil
@@ -247,15 +241,23 @@ func (i *index) positions(from, to []byte) (int64Slice, error) {
 	if bytes.Equal(from, to) {
 		return i.positionsSingleKey(from)
 	}
-	iter := i.f.NewIterator(&util.Range{Start: from, Limit: append(to, 0)}, readOpts)
+	V(4, "%q multi key iterator %v:%v start", i.name, from, to)
+	iter := i.ss.Iter(from)
 	positions := map[uint32]bool{}
 	count := int64(0)
 	for iter.Next() {
+		if bytes.Compare(iter.Key(), from) > 0 {
+			V(4, "%q multi key iterator high key %v", i.name, iter.Key())
+			break
+		}
+		V(4, "%q multi key iterator %v=%v", i.name, iter.Key(), iter.Value())
 		pos := binary.BigEndian.Uint32(iter.Value())
 		positions[pos] = true
 		count++
 	}
-	if err := iter.Error(); err != nil {
+	V(4, "%q multi key iterator done", i.name)
+	if err := iter.Err(); err != nil {
+		V(4, "%q multi key iterator err=%v", i.name, err)
 		return nil, err
 	}
 	sortedPos := make(int64Slice, 0, len(positions))
@@ -324,6 +326,7 @@ func (i *index) lookupSingleArgument(arg string) (int64Slice, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting positions (%q): %v", arg, err)
 	}
+	V(3, "%q arg %q found %d", i.name, arg, len(pos))
 	return pos, nil
 }
 
@@ -388,8 +391,8 @@ func (i *index) Lookup(in string) (int64Slice, error) {
 	return positions, <-errs
 }
 
-func (i *index) Close() {
-	i.f.Release()
+func (i *index) Close() error {
+	return i.ss.Close()
 }
 
 type Packet struct {
@@ -421,6 +424,10 @@ func (b *blockFile) Lookup(in string) Packets {
 		c.finish(nil)
 	}()
 	return c
+}
+
+func (b *blockFile) DumpIndex(out io.Writer) {
+	b.i.Dump(out)
 }
 
 func PacketsToFile(in Packets, out io.Writer) error {
@@ -478,7 +485,12 @@ func newPackets() Packets {
 }
 func (p *Packets) Close() {
 	go func() {
+		discarded := 0
 		for _ = range p.c {
+			discarded++
+		}
+		if discarded > 0 {
+			V(2, "discarded %v", discarded)
 		}
 	}()
 }
@@ -497,6 +509,10 @@ func (p *Packets) Err() error {
 func MergePackets(in []Packets) Packets {
 	out := newPackets()
 	go func() {
+		count := 0
+		defer func() {
+			V(1, "merged %d streams for %d total packets", len(in), count)
+		}()
 		var h packetHeap
 		for i := range in {
 			defer in[i].Close()
@@ -512,6 +528,7 @@ func MergePackets(in []Packets) Packets {
 		}
 		for h.Len() > 0 {
 			p := heap.Pop(&h).(indexedPacket)
+			count++
 			if in[p.i].Next() {
 				heap.Push(&h, indexedPacket{Packet: in[p.i].Packet(), i: p.i})
 			}
@@ -667,7 +684,7 @@ func (d *Directory) checkForRemovedFiles() {
 		}
 	}
 	if count > 0 {
-		log.Println("Detected %d blockfiles removed", count)
+		log.Printf("Detected %d blockfiles removed", count)
 	}
 }
 
@@ -686,4 +703,16 @@ func (d *Directory) Lookup(query string) Packets {
 		inputs = append(inputs, file.Lookup(query))
 	}
 	return MergePackets(inputs)
+}
+
+func (d *Directory) DumpIndex(name string, out io.Writer) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	for _, file := range d.files {
+		log.Printf("%q %q", file.name, name)
+		if file.name == name {
+			file.DumpIndex(out)
+			return
+		}
+	}
 }

@@ -236,7 +236,9 @@ void RunThread(int thread,
   if (flag_fanout_id > 0) {
     fanout_id = flag_fanout_id;
   }
-  CHECK_SUCCESS(v3->SetFanout(flag_fanout_type, fanout_id));
+  if (flag_fanout_id > 0 || flag_threads > 1) {
+    CHECK_SUCCESS(v3->SetFanout(flag_fanout_type, fanout_id));
+  }
   sockets_created->Block();
   privileges_dropped.WaitForNotification();
   LOG(INFO) << "Thread " << thread << " starting to process packets";

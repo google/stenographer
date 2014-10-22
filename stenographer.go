@@ -95,6 +95,6 @@ func main() {
 			io.Copy(w, &buf)
 		}
 	})
-	log.Println("serving on port %v", config.Port)
+	log.Printf("Serving on port %v", config.Port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", config.Port), nil))
 }

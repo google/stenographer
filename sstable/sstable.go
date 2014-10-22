@@ -14,6 +14,10 @@
 
 // Package sstable provides read-only functionality for iterating over leveldb
 // tables (sorted-string or 'ss' tables).
+//
+// This package is meant solely as an internal implementation for the
+// stenographer projet, so it should NOT be used by any other libraries.  It may
+// change in backwards-incompatible ways at any moment.
 package sstable
 
 import (

@@ -1,3 +1,19 @@
+// Copyright 2014 Google Inc. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package sstable provides read-only functionality for iterating over leveldb
+// tables (sorted-string or 'ss' tables).
 package sstable
 
 import (
@@ -102,6 +118,7 @@ func readBlock(f io.ReaderAt, b blockHandle) ([]byte, error) {
 	}
 }
 
+// Table exposes a single on-disk table for querying.
 type Table struct {
 	name   string
 	f      *os.File
@@ -109,6 +126,7 @@ type Table struct {
 	index  *block
 }
 
+// NewTable opens the named file as an on-disk sstable.
 func NewTable(filename string) (*Table, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -137,16 +155,12 @@ func NewTable(filename string) (*Table, error) {
 		return nil, fmt.Errorf("could not read index block: %v", err)
 	}
 	t.index = indexBlock
-	/*
-	  metaBlock, err := readBlock(f, t.footer.metaindex)
-	  if err != nil {
-	    return nil, fmt.Errorf("could not read metaindex block: %v", err)
-	  }
-	*/
+	// TODO:  we do nothing with the meta-index... should we?
 	f = nil
 	return t, nil
 }
 
+// Close closes the underlying table.
 func (t *Table) Close() error {
 	return t.f.Close()
 }
@@ -240,10 +254,29 @@ func (b *blockIterator) decodeNext() (sharedKey, unsharedKey, val, offset int, e
 	return
 }
 
+// Iter provides a simple iteration interface over a table.  Each iterator is
+// not safe for concurrent access, but any number of iterators may be used
+// concurrently.
+//
+// Usage:
+//   iter := tbl.Iter(startKey)
+//   for iter.Next() {
+//     fmt.Println(iter.Key(), iter.Value())
+//   }
+//   if err := iter.Err(); err != nil {
+//     fmt.Println("ERR:", err)
+//   }
 type Iter interface {
+	// Next advances the iterator.
 	Next() bool
+	// Key provides the current key of the iterator.  This slice is invalidated by
+	// each Next call.
 	Key() []byte
+	// Value provides the current value of the iterator.  This slice is invalidated by
+	// each Next call.
 	Value() []byte
+	// Err returns any error the iterator has encountered.  If Err would return a
+	// non-nil error, then Next() will also return false.
 	Err() error
 }
 
@@ -370,6 +403,7 @@ func (t *twoLevelIterator) Value() []byte {
 	return t.data.Value()
 }
 
+// Iter creates a new iterator over the table, starting at the given key.
 func (t *Table) Iter(start []byte) Iter {
 	iter := &twoLevelIterator{
 		tbl:   t,

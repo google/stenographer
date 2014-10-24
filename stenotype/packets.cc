@@ -239,7 +239,7 @@ Error PacketsV3::MMapRing() {
       mmap(NULL,
            block_size_ * num_blocks_,
            PROT_READ|PROT_WRITE, MAP_SHARED|MAP_LOCKED|MAP_NORESERVE, fd_, 0));
-  return Errno(reinterpret_cast<intptr_t>(ring_) > 0);
+  return Errno(errno == 0);
 }
 
 // socktype is SOCK_RAW or SOCK_DGRAM.

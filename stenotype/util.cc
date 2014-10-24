@@ -14,7 +14,7 @@
 
 #include "util.h"
 
-#include <libgen.h>  // basename(), dirname()
+#include <libgen.h>    // basename(), dirname()
 #include <sys/stat.h>  // mkdir()
 
 namespace st {
@@ -43,21 +43,20 @@ string Dirname(const string& filename) {
 
 Error MkDirRecursive(const string& dirname) {
   LOG(INFO) << "Making sure directory " << dirname << " exists";
-  while (true) {
-    int ret = mkdir(dirname.c_str(), 0700);
-    if (ret == 0) {
-      return SUCCESS;
-    }
-    switch errno {
+  if (mkdir(dirname.c_str(), 0700) == 0) {
+    return SUCCESS;
+  }
+  switch
+    errno {
       case ENOENT:
         RETURN_IF_ERROR(MkDirRecursive(Dirname(dirname)), dirname);
-        continue;
+        break;
       case EEXIST:
         return SUCCESS;
       default:
         return Errno();
     }
-  }
+  return Errno(mkdir(dirname.c_str(), 0700) == 0);
 }
 
 }  // namespace st

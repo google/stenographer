@@ -572,8 +572,8 @@ func (c Config) Directory() (_ *Directory, returnedErr error) {
 		}
 	}()
 	for i, thread := range c.Threads {
-		if thread.PacketsDirectory == "" {
-			return nil, fmt.Errorf("no packet directory for thread %d", i)
+		if _, err := os.Stat(thread.PacketsDirectory); err != nil {
+			return nil, fmt.Errorf("invalid packets directory %q in configuration: %v", thread.PacketsDirectory, err)
 		} else if err := os.Symlink(thread.PacketsDirectory, filepath.Join(dirname, strconv.Itoa(i))); err != nil {
 			return nil, fmt.Errorf("couldn't create symlink for thread %d to directory %q: %v", i, thread.PacketsDirectory, err)
 		}

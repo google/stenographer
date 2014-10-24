@@ -28,19 +28,18 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/google/stenographer/preadlib"
+	"code.google.com/p/gopacket/layers"
+	"code.google.com/p/gopacket/pcapgo"
+	"github.com/google/stenographer/base"
+	"github.com/google/stenographer/config"
 )
 
-var (
-	configFilename = flag.String("config", "", "File location to read configuration from")
-	V              = preadlib.V
-)
+var configFilename = flag.String("config", "", "File location to read configuration from")
 
-type Directory struct {
-	threads int
-}
+var v = base.V
 
-func ReadConfig() (out preadlib.Config) {
+func ReadConfig() *config.Config {
+	var out config.Config
 	log.Printf("Reading config %q", *configFilename)
 	data, err := ioutil.ReadFile(*configFilename)
 	if err != nil {
@@ -50,21 +49,44 @@ func ReadConfig() (out preadlib.Config) {
 	if err := dec.Decode(&out); err != nil {
 		log.Fatalf("could not decode config file %q: %v", *configFilename, err)
 	}
-	return
+	return &out
+}
+
+// snapLen is the max packet size we'll return in pcap files to users.
+const snapLen = 65536
+
+func PacketsToFile(in base.PacketChan, out io.Writer) error {
+	w := pcapgo.NewWriter(out)
+	w.WriteFileHeader(snapLen, layers.LinkTypeEthernet)
+	count := 0
+	defer in.Discard()
+	for p := range in.Receive() {
+		if len(p.Data) > snapLen {
+			p.Data = p.Data[:snapLen]
+		}
+		if err := w.WritePacket(p.CaptureInfo, p.Data); err != nil {
+			// This can happen if our pipe is broken, and we don't want to blow stack
+			// traces all over our users when that happens, so Error/Exit instead of
+			// Fatal.
+			return fmt.Errorf("error writing packet: %v", err)
+		}
+		count++
+	}
+	return in.Err()
 }
 
 func main() {
 	flag.Parse()
-	config := ReadConfig()
-	V(1, "Using config:\n%v", config)
-	dir, err := config.Directory()
+	conf := ReadConfig()
+	v(1, "Using config:\n%v", conf)
+	dir, err := conf.Directory()
 	if err != nil {
 		log.Fatalf("unable to set up stenographer directory: %v", err)
 	}
 	defer dir.Close()
 
 	// Start running stenotype.
-	cmd := config.Stenotype(dir)
+	cmd := conf.Stenotype(dir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -85,16 +107,17 @@ func main() {
 		dir.DumpIndex(fpath, w)
 	})
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		var buf bytes.Buffer
-		log.Printf("requesting %q", r.URL.Path)
-		packets := dir.Lookup(r.URL.Path[1:])
-		if err := preadlib.PacketsToFile(packets, &buf); err != nil {
-			http.Error(w, fmt.Sprintf("error: %v", err), 500)
-		} else {
-			w.Header().Set("Content-Type", "appliation/octet-stream")
-			io.Copy(w, &buf)
+		query, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "could not read request body", http.StatusBadRequest)
+			return
 		}
+		queryStr := string(query)
+		log.Printf("requesting %q", queryStr)
+		packets := dir.Lookup(queryStr)
+		w.Header().Set("Content-Type", "appliation/octet-stream")
+		PacketsToFile(packets, w)
 	})
-	log.Printf("Serving on port %v", config.Port)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", config.Port), nil))
+	log.Printf("Serving on port %v", conf.Port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", conf.Port), nil))
 }

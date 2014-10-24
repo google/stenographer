@@ -47,4 +47,4 @@ g++ --std=c++0x \
 
 echo "Setting capabilities"
 chmod go-rwx stenotype
-sudo setcap 'CAP_NET_RAW+ep CAP_NET_ADMIN+ep' stenotype
+sudo setcap 'CAP_NET_RAW+ep CAP_NET_ADMIN+ep CAP_IPC_LOCK+ep' stenotype

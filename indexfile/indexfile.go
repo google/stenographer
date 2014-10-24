@@ -24,8 +24,6 @@ import (
 	"net"
 	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/sstable"
@@ -58,7 +56,7 @@ func NewIndexFile(filename string) (*IndexFile, error) {
 // IPPositions returns the positions in the block file of all packets with IPs
 // between the given ranges.  Both IPs must be 4 or 16 bytes long, both must be
 // the same length, and from must be <= to.
-func (i *IndexFile) IPPositions(from, to net.IP) (base.Int64Slice, error) {
+func (i *IndexFile) IPPositions(from, to net.IP) (base.Positions, error) {
 	var version byte
 	switch {
 	case len(from) != len(to):
@@ -79,13 +77,13 @@ func (i *IndexFile) IPPositions(from, to net.IP) (base.Int64Slice, error) {
 
 // ProtoPositions returns the positions in the block file of all packets with
 // the give IP protocol number.
-func (i *IndexFile) ProtoPositions(proto byte) (base.Int64Slice, error) {
+func (i *IndexFile) ProtoPositions(proto byte) (base.Positions, error) {
 	return i.positionsSingleKey([]byte{1, proto})
 }
 
 // ProtoPositions returns the positions in the block file of all packets with
 // the give port number (TCP or UDP).
-func (i *IndexFile) PortPositions(port uint16) (base.Int64Slice, error) {
+func (i *IndexFile) PortPositions(port uint16) (base.Positions, error) {
 	var buf [3]byte
 	binary.BigEndian.PutUint16(buf[1:], port)
 	buf[0] = 2
@@ -103,8 +101,8 @@ func (i *IndexFile) Dump(out io.Writer) {
 	}
 }
 
-func (i *IndexFile) positionsSingleKey(key []byte) (base.Int64Slice, error) {
-	var sortedPos base.Int64Slice
+func (i *IndexFile) positionsSingleKey(key []byte) (base.Positions, error) {
+	var sortedPos base.Positions
 	v(4, "%q single key iterator %+v start", i.name, key)
 	iter := i.ss.Iter(key)
 	count := int64(0)
@@ -126,7 +124,7 @@ func (i *IndexFile) positionsSingleKey(key []byte) (base.Int64Slice, error) {
 	return sortedPos, nil
 }
 
-func (i *IndexFile) positions(from, to []byte) (base.Int64Slice, error) {
+func (i *IndexFile) positions(from, to []byte) (base.Positions, error) {
 	if bytes.Equal(from, to) {
 		return i.positionsSingleKey(from)
 	}
@@ -149,7 +147,7 @@ func (i *IndexFile) positions(from, to []byte) (base.Int64Slice, error) {
 		v(4, "%q multi key iterator err=%v", i.name, err)
 		return nil, err
 	}
-	sortedPos := make(base.Int64Slice, 0, len(positions))
+	sortedPos := make(base.Positions, 0, len(positions))
 	for pos := range positions {
 		sortedPos = append(sortedPos, int64(pos))
 	}
@@ -166,118 +164,6 @@ func parseIP(in string) net.IP {
 		ip = ip4
 	}
 	return ip
-}
-
-func (i *IndexFile) lookupSingleArgument(arg string) (base.Int64Slice, error) {
-	parts := strings.Split(arg, "=")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid arg: %q", arg)
-	}
-	var pos base.Int64Slice
-	var err error
-	switch parts[0] {
-	case "ip":
-		ips := strings.Split(parts[1], "-")
-		var from, to net.IP
-		switch len(ips) {
-		case 1:
-			from = parseIP(ips[0])
-			if from == nil {
-				return nil, fmt.Errorf("invalid IP %v", ips[0])
-			}
-			to = from
-		case 2:
-			from = parseIP(ips[0])
-			if from == nil {
-				return nil, fmt.Errorf("invalid IP %v", ips[0])
-			}
-			to = parseIP(ips[1])
-			if to == nil {
-				return nil, fmt.Errorf("invalid IP %v", ips[1])
-			}
-		default:
-			return nil, fmt.Errorf("invalid #IPs: %q", arg)
-		}
-		pos, err = i.IPPositions(from, to)
-	case "port":
-		port, perr := strconv.Atoi(parts[1])
-		if err != nil {
-			return nil, fmt.Errorf("invalid port %q: %v", parts[1], perr)
-		}
-		pos, err = i.PortPositions(uint16(port))
-	case "protocol":
-		proto, perr := strconv.Atoi(parts[1])
-		if err != nil {
-			return nil, fmt.Errorf("invalid proto %q: %v", parts[1], perr)
-		}
-		pos, err = i.ProtoPositions(byte(proto))
-	}
-	if err != nil {
-		return nil, fmt.Errorf("error getting positions (%q): %v", arg, err)
-	}
-	v(3, "%q arg %q found %d", i.name, arg, len(pos))
-	return pos, nil
-}
-
-func (i *IndexFile) lookupUnionArguments(arg string) (base.Int64Slice, error) {
-	args := strings.Split(arg, "|")
-	var positions base.Int64Slice
-	c := make(chan base.Int64Slice, len(args))
-	errs := make(chan error, len(args))
-	for _, a := range args {
-		a := a
-		go func() {
-			pos, err := i.lookupSingleArgument(a)
-			c <- pos
-			if err != nil {
-				errs <- err
-			}
-		}()
-	}
-
-	first := true
-	for _ = range args {
-		pos := <-c
-		if first {
-			positions = pos
-			first = false
-		} else {
-			positions = positions.Union(pos)
-		}
-		v(3, "%q %p U(%v) -> %v", i.name, &first, len(pos), len(positions))
-	}
-	close(errs)
-	return positions, <-errs
-}
-
-func (i *IndexFile) Lookup(in string) (base.Int64Slice, error) {
-	actualArgs := strings.Fields(in)
-	c := make(chan base.Int64Slice, len(actualArgs))
-	errs := make(chan error, len(actualArgs))
-	for _, arg := range actualArgs {
-		arg := arg
-		go func() {
-			pos, err := i.lookupUnionArguments(arg)
-			c <- pos
-			if err != nil {
-				errs <- err
-			}
-		}()
-	}
-	var positions base.Int64Slice
-	first := true
-	for _ = range actualArgs {
-		pos := <-c
-		if first {
-			positions = pos
-			first = false
-		} else {
-			positions = positions.Intersect(pos)
-		}
-		v(3, "%q %p U(%v) -> %v", i.name, &first, len(pos), len(positions))
-	}
-	close(errs)
-	return positions, <-errs
 }
 
 func (i *IndexFile) Close() error {

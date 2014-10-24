@@ -26,6 +26,7 @@ import (
 	"code.google.com/p/gopacket"
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/indexfile"
+	"github.com/google/stenographer/query"
 )
 
 // #include <linux/if_packet.h>
@@ -108,11 +109,11 @@ func (b *BlockFile) Close() (err error) {
 	return
 }
 
-func (b *BlockFile) Lookup(in string) base.PacketChan {
+func (b *BlockFile) Lookup(q query.Query) base.PacketChan {
 	c := base.NewPacketChan(100)
 	go func() {
 		var ci gopacket.CaptureInfo
-		positions, err := b.i.Lookup(in)
+		positions, err := q.LookupIn(b.i)
 		if err != nil {
 			c.Close(fmt.Errorf("index lookup failure: %v", err))
 			return

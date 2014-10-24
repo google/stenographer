@@ -153,27 +153,26 @@ func MergePacketChans(in []PacketChan) PacketChan {
 	return out
 }
 
-// Int64Slice is a simple method for sorting a slice of int64s, then doing
-// simple set operations on those slices.
-type Int64Slice []int64
+// Positions detail the offsets of packets within a blockfile.
+type Positions []int64
 
-func (a Int64Slice) Less(i, j int) bool {
+func (a Positions) Less(i, j int) bool {
 	return a[i] < a[j]
 }
-func (a Int64Slice) Swap(i, j int) {
+func (a Positions) Swap(i, j int) {
 	a[i], a[j] = a[j], a[i]
 }
-func (a Int64Slice) Len() int {
+func (a Positions) Len() int {
 	return len(a)
 }
-func (a Int64Slice) Sort() {
+func (a Positions) Sort() {
 	sort.Sort(a)
 }
 
 // Union returns the union of a and b.  a and b must be sorted in advance.
 // Returned slice will be sorted.
-func (a Int64Slice) Union(b Int64Slice) (out Int64Slice) {
-	out = make(Int64Slice, 0, len(a)+len(b)/2)
+func (a Positions) Union(b Positions) (out Positions) {
+	out = make(Positions, 0, len(a)+len(b)/2)
 	ib := 0
 	for _, pos := range a {
 		for ib < len(b) && b[ib] < pos {
@@ -191,8 +190,8 @@ func (a Int64Slice) Union(b Int64Slice) (out Int64Slice) {
 
 // Intersect returns the intersection of a and b.  a and b must be sorted in
 // advance.  Returned slice will be sorted.
-func (a Int64Slice) Intersect(b Int64Slice) (out Int64Slice) {
-	out = make(Int64Slice, 0, len(a)/2)
+func (a Positions) Intersect(b Positions) (out Positions) {
+	out = make(Positions, 0, len(a)/2)
 	ib := 0
 	for _, pos := range a {
 		for ib < len(b) && b[ib] < pos {

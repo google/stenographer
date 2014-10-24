@@ -30,6 +30,7 @@ import (
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/blockfile"
+	"github.com/google/stenographer/query"
 )
 
 var v = base.V // verbose logging
@@ -188,12 +189,12 @@ func (d *Directory) Path() string {
 	return d.name
 }
 
-func (d *Directory) Lookup(query string) base.PacketChan {
+func (d *Directory) Lookup(q query.Query) base.PacketChan {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	var inputs []base.PacketChan
 	for _, file := range d.files {
-		inputs = append(inputs, file.Lookup(query))
+		inputs = append(inputs, file.Lookup(q))
 	}
 	return base.MergePacketChans(inputs)
 }

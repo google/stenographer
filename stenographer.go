@@ -32,6 +32,7 @@ import (
 	"code.google.com/p/gopacket/pcapgo"
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
+	"github.com/google/stenographer/query"
 )
 
 var configFilename = flag.String("config", "", "File location to read configuration from")
@@ -107,14 +108,19 @@ func main() {
 		dir.DumpIndex(fpath, w)
 	})
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		query, err := ioutil.ReadAll(r.Body)
+		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "could not read request body", http.StatusBadRequest)
 			return
 		}
-		queryStr := string(query)
+		queryStr := string(queryBytes)
+		q, err := query.NewQuery(queryStr)
+		if err != nil {
+			http.Error(w, "could not parse query", http.StatusBadRequest)
+			return
+		}
 		log.Printf("requesting %q", queryStr)
-		packets := dir.Lookup(queryStr)
+		packets := dir.Lookup(q)
 		w.Header().Set("Content-Type", "appliation/octet-stream")
 		PacketsToFile(packets, w)
 	})

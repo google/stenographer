@@ -62,7 +62,6 @@ class Output {
   Error CheckForCompletedOps(bool block);
 
  private:
-
   Error SetUp();
   int Outstanding();
 

@@ -202,10 +202,10 @@ Error PacketsV3::SetFilter(const string& filter) {
   if (filter.empty()) return SUCCESS;
 
   int filter_size = filter.size();
-  int sock_filter_size = sizeof(sock_filter);
-  int num_structs = filter_size / sock_filter_size / 2;
+  int filter_element_size = 4 + 2 + 2 + 8;
   RETURN_IF_ERROR(
-      Errno(filter_size == num_structs * sock_filter_size * 2), "invalid filter length");
+      Errno(0 == filter_size % filter_element_size), "invalid filter length");
+  int num_structs = filter_size / filter_element_size;
   RETURN_IF_ERROR(
       Errno(USHRT_MAX >= num_structs), "invalid filter: too long");
   struct sock_filter bpf_filter[num_structs];
@@ -215,7 +215,7 @@ Error PacketsV3::SetFilter(const string& filter) {
         Errno(4 == sscanf(data, "%4hx%2hhx%2hhx%8x", &bpf_filter[i].code,
             &bpf_filter[i].jt, &bpf_filter[i].jf, &bpf_filter[i].k)),
         "invalid filter"); 
-    data += sock_filter_size * 2;
+    data += filter_element_size;
   }
   RETURN_IF_ERROR(Errno(0 == errno), "failure while parsing filter");
 
@@ -224,7 +224,8 @@ Error PacketsV3::SetFilter(const string& filter) {
         fd_, SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf))), "so_attach_filter");
   int v = 1;
   // SO_LOCK_FILTER is available only on kernels >= 3.9, so ignore the ENOPROTOOPT
-  // error here.
+  // error here. We use it to make sure that no one can mess with our socket's
+  // filter, so not having it is not really a big concern.
   RETURN_IF_ERROR(Errno(0 == setsockopt(
         fd_, SOL_SOCKET, SO_LOCK_FILTER, &v, sizeof(v)) || errno == ENOPROTOOPT),
         "so_lock_filter");

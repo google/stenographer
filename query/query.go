@@ -18,12 +18,16 @@ package query
 import (
 	"fmt"
 	"net"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/indexfile"
 )
+
+var v = base.V // verbose logging.
 
 func parseIP(in string) net.IP {
 	ip := net.ParseIP(in)
@@ -66,16 +70,16 @@ func (q ipQuery) LookupIn(index *indexfile.IndexFile) (base.Positions, error) {
 type unionQuery []Query
 
 func (a unionQuery) LookupIn(index *indexfile.IndexFile) (base.Positions, error) {
-	first := true
 	var positions base.Positions
 	for _, query := range a {
 		pos, err := query.LookupIn(index)
 		if err != nil {
 			return nil, err
 		}
-		if first {
+		if pos.IsAllPositions() {
+			return pos, nil
+		} else if len(positions) == 0 {
 			positions = pos
-			first = false
 		} else {
 			positions = positions.Union(pos)
 		}
@@ -86,21 +90,38 @@ func (a unionQuery) LookupIn(index *indexfile.IndexFile) (base.Positions, error)
 type intersectQuery []Query
 
 func (a intersectQuery) LookupIn(index *indexfile.IndexFile) (base.Positions, error) {
-	first := true
-	var positions base.Positions
+	positions := base.AllPositions
 	for _, query := range a {
 		pos, err := query.LookupIn(index)
 		if err != nil {
 			return nil, err
 		}
-		if first {
+		if positions.IsAllPositions() {
 			positions = pos
-			first = false
+		} else if len(pos) == 0 {
+			return base.NoPositions, nil
 		} else {
 			positions = positions.Intersect(pos)
 		}
 	}
 	return positions, nil
+}
+
+type sinceQuery time.Time
+
+func (a sinceQuery) LookupIn(index *indexfile.IndexFile) (base.Positions, error) {
+	last := filepath.Base(index.Name())
+	intval, err := strconv.ParseInt(last, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse basename %q: %v", last, err)
+	}
+	t := time.Unix(0, intval*1000) // converts micros -> nanos
+	if t.After(time.Time(a)) {
+		v(2, "time query using %q", index.Name())
+		return base.AllPositions, nil
+	}
+	v(2, "time query skipping %q", index.Name())
+	return base.NoPositions, nil
 }
 
 func singleArgument(arg string) (Query, error) {
@@ -145,6 +166,14 @@ func singleArgument(arg string) (Query, error) {
 			return nil, fmt.Errorf("invalid proto %q: %v", parts[1], perr)
 		}
 		return protocolQuery(proto), nil
+	case "last":
+		dur, err := time.ParseDuration(parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("invalid duration %q: %v", parts[1], err)
+		} else if dur%time.Minute != 0 {
+			return nil, fmt.Errorf("duration %q has high granularity, we support only 1m granularity", parts[1])
+		}
+		return sinceQuery(time.Now().Add(-dur)), nil
 	default:
 		return nil, fmt.Errorf("invalid query argument %q", arg)
 	}

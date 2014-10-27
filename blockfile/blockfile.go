@@ -79,9 +79,9 @@ func (b *BlockFile) Name() string {
 // readPacket reads a single packet from the file at the given position.
 // It updates the passed in CaptureInfo with information on the packet.
 func (b *BlockFile) readPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, error) {
-	var dataBuf [28]byte
 	// 28 bytes actually isn't the entire packet header, but it's all the fields
 	// that we care about.
+	var dataBuf [28]byte
 	_, err := b.f.ReadAt(dataBuf[:], pos)
 	if err != nil {
 		return nil, err
@@ -109,6 +109,81 @@ func (b *BlockFile) Close() (err error) {
 	return
 }
 
+type allPacketsIter struct {
+	*BlockFile
+	blockData        [1 << 20]byte
+	block            *C.struct_tpacket_hdr_v1
+	pkt              *C.struct_tpacket3_hdr
+	blockPacketsRead int
+	blockOffset      int64
+	packetOffset     int // offset of packet in block
+	err              error
+	done             bool
+}
+
+func (a *allPacketsIter) Next() bool {
+	if a.err != nil || a.done {
+		return false
+	}
+	for a.block == nil || a.blockPacketsRead == int(a.block.num_pkts) {
+		_, err := a.f.ReadAt(a.blockData[:], a.blockOffset)
+		if err == io.EOF {
+			a.done = true
+			return false
+		} else if err != nil {
+			a.err = fmt.Errorf("could not read block at %v: %v", a.blockOffset, err)
+			return false
+		}
+		baseHdr := (*C.struct_tpacket_block_desc)(unsafe.Pointer(&a.blockData[0]))
+		a.block = (*C.struct_tpacket_hdr_v1)(unsafe.Pointer(&baseHdr.hdr[0]))
+		a.blockOffset += 1 << 20
+		a.blockPacketsRead = 0
+		a.pkt = nil
+	}
+	a.blockPacketsRead++
+	if a.pkt == nil {
+		a.packetOffset = int(a.block.offset_to_first_pkt)
+	} else if a.pkt.tp_next_offset != 0 {
+		a.packetOffset += int(a.pkt.tp_next_offset)
+	} else {
+		a.err = fmt.Errorf("block format currently not supported")
+		return false
+	}
+	a.pkt = (*C.struct_tpacket3_hdr)(unsafe.Pointer(&a.blockData[a.packetOffset]))
+	return true
+}
+
+// Iter provides a simple interface for iterating over all packets in a
+// blockfile.  It follows the normal Go convention:
+//   iter := myBlockfile.AllPackets()
+//   for iter.Next() {
+//     ... handle iter.Packet()
+//   }
+//   if err := iter.Err(); err != nil { ... handle error ... }
+type Iter interface {
+	Packet() *base.Packet
+	Err() error
+	Next() bool
+}
+
+func (a *allPacketsIter) Packet() *base.Packet {
+	start := a.packetOffset + int(a.pkt.tp_mac)
+	buf := a.blockData[start : start+int(a.pkt.tp_snaplen)]
+	p := &base.Packet{Data: buf}
+	p.CaptureInfo.Timestamp = time.Unix(int64(a.pkt.tp_sec), int64(a.pkt.tp_nsec))
+	p.CaptureInfo.Length = int(a.pkt.tp_len)
+	p.CaptureInfo.CaptureLength = int(a.pkt.tp_snaplen)
+	return p
+}
+
+func (a *allPacketsIter) Err() error {
+	return a.err
+}
+
+func (b *BlockFile) AllPackets() Iter {
+	return &allPacketsIter{BlockFile: b}
+}
+
 func (b *BlockFile) Lookup(q query.Query) base.PacketChan {
 	c := base.NewPacketChan(100)
 	go func() {
@@ -118,17 +193,29 @@ func (b *BlockFile) Lookup(q query.Query) base.PacketChan {
 			c.Close(fmt.Errorf("index lookup failure: %v", err))
 			return
 		}
-		v(2, "blockfile %q reading %v packets", b.name, len(positions))
-		for _, pos := range positions {
-			buffer, err := b.readPacket(pos, &ci)
-			if err != nil {
-				c.Close(fmt.Errorf("error reading packets from %q @ %v: %v", b.name, pos, err))
+		if positions.IsAllPositions() {
+			v(2, "blockfile %q reading all packets", b.name)
+			iter := &allPacketsIter{BlockFile: b}
+			for iter.Next() {
+				c.Send(iter.Packet())
+			}
+			if iter.Err() != nil {
+				c.Close(fmt.Errorf("error reading all packets from %q: %v", b.name, iter.Err()))
 				return
 			}
-			c.Send(&base.Packet{
-				Data:        buffer,
-				CaptureInfo: ci,
-			})
+		} else {
+			v(2, "blockfile %q reading %v packets", b.name, len(positions))
+			for _, pos := range positions {
+				buffer, err := b.readPacket(pos, &ci)
+				if err != nil {
+					c.Close(fmt.Errorf("error reading packets from %q @ %v: %v", b.name, pos, err))
+					return
+				}
+				c.Send(&base.Packet{
+					Data:        buffer,
+					CaptureInfo: ci,
+				})
+			}
 		}
 		c.Close(nil)
 	}()

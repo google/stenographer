@@ -72,26 +72,28 @@ on the stenographer server.  The server will then download a PCAP file with the
 requested packets to the client.  When posting a query, we support the following
 operations:
 
-    ip=1.1.1.1  # Single IP address (IPv4 OR IPv6)
+    ip=1.1.1.1            # Single IP address (IPv4 OR IPv6)
     ip=1.1.1.0-1.1.2.200  # Arbitrary IP range
-    port=80  # Single port number
-    protocol=6  # Single IP protocol number
-    
-Also, you can do simple combinations of queries.  When combining queries, | does
+    port=80               # Single port number
+    protocol=6            # Single IP protocol number
+    last=4h               # Only packets from the last 4 hours.  Must end in
+                          # 'h' for hours or 'm' for minutes.
+
+You can do simple combinations of queries.  When combining queries, | does
 a union and has highest precedence.  Whitespace does an intersection and has
 lower precedence.  For example, to get all packets between IPs 1.1.1.1 and
-2.2.2.2, you could say
+2.2.2.2 in the last 45 minutes, you could use:
 
-    ip=1.1.1.1 ip=2.2.2.2
+    ip=1.1.1.1 ip=2.2.2.2 last=45m
 
-To get packets between 1.1.1.1 and either 2.2.2.2 or 3.3.3.3, say:
+To get packets between 1.1.1.1 and either 2.2.2.2 or 3.3.3.3, use:
 
     ip=1.1.1.1 ip=2.2.2.2|ip=3.3.3.3
 
-To get all packets on ports 80, 8080, or 443 sent or received by 1.1.1.1, you can say:
+To get all packets on ports 80, 8080, or 443 sent or received by 1.1.1.1, you can use:
 
     ip=1.1.1.1 port=80|port=8080|port=443
 
-To get a specific tuple, you can say:
+To get a specific tuple, you can use:
 
     ip=1.1.1.1 ip=2.2.2.2 port=80 port=65555 proto=6

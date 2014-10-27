@@ -156,6 +156,15 @@ func MergePacketChans(in []PacketChan) PacketChan {
 // Positions detail the offsets of packets within a blockfile.
 type Positions []int64
 
+var (
+	AllPositions = Positions{-1}
+	NoPositions  = Positions{}
+)
+
+func (p Positions) IsAllPositions() bool {
+	return len(p) == 1 && p[0] == -1
+}
+
 func (a Positions) Less(i, j int) bool {
 	return a[i] < a[j]
 }

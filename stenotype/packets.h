@@ -108,7 +108,7 @@ class PacketsV3 {
   // SOCK_RAW), and bind it to the given interface.
   static Error V3(
       struct tpacket_req3 options, int socktype,
-      const string& iface, PacketsV3** out);
+      const string& iface, const string& filter, PacketsV3** out);
   // Tear down this AF_PACKET socket.
   virtual ~PacketsV3();
 
@@ -147,6 +147,8 @@ class PacketsV3 {
   Mutex* block_mus_;
 
   Error Bind(const string& iface);
+  // Compile a BPF filter and set it up on the socket.
+  Error SetFilter(const string& filter);
   Error SetVersion();
   Error SetRingOptions(void* options, socklen_t size);
   Error MMapRing();

@@ -14,9 +14,11 @@
 
 #include "packets.h"
 
-#include <errno.h>  // errno
+#include <climits> // USHRT_MAX
+#include <errno.h>  // errno, ENOPROTOOPT
 #include <linux/if_ether.h>  // ETH_P_ALL
 #include <linux/if_packet.h>  // AF_PACKET, sockaddr_ll
+#include <linux/filter.h> // SO_ATTACH_FILTER, SO_LOCK_FILTER
 #include <net/if.h>  // if_nametoindex()
 #include <netinet/in.h>  // htons()
 #include <poll.h>  // poll()
@@ -196,6 +198,41 @@ Error PacketsV3::Bind(const string& iface) {
         fd_, reinterpret_cast<struct sockaddr*>(&ll), sizeof(ll)));
 }
 
+Error PacketsV3::SetFilter(const string& filter) {
+  if (filter.empty()) return SUCCESS;
+
+  int filter_size = filter.size();
+  int filter_element_size = 4 + 2 + 2 + 8;
+  RETURN_IF_ERROR(
+      Errno(0 == filter_size % filter_element_size), "invalid filter length");
+  int num_structs = filter_size / filter_element_size;
+  RETURN_IF_ERROR(
+      Errno(USHRT_MAX >= num_structs), "invalid filter: too long");
+  struct sock_filter bpf_filter[num_structs];
+  const char* data = filter.c_str();
+  for (int i = 0; i < num_structs; i++) {
+    RETURN_IF_ERROR(
+        Errno(4 == sscanf(data, "%4hx%2hhx%2hhx%8x", &bpf_filter[i].code,
+            &bpf_filter[i].jt, &bpf_filter[i].jf, &bpf_filter[i].k)),
+        "invalid filter"); 
+    data += filter_element_size;
+  }
+  RETURN_IF_ERROR(Errno(0 == errno), "failure while parsing filter");
+
+  struct sock_fprog bpf = {(unsigned short int)num_structs, bpf_filter};
+  RETURN_IF_ERROR(Errno(0 == setsockopt(
+        fd_, SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf))), "so_attach_filter");
+  int v = 1;
+  // SO_LOCK_FILTER is available only on kernels >= 3.9, so ignore the ENOPROTOOPT
+  // error here. We use it to make sure that no one can mess with our socket's
+  // filter, so not having it is not really a big concern.
+  RETURN_IF_ERROR(Errno(0 == setsockopt(
+        fd_, SOL_SOCKET, SO_LOCK_FILTER, &v, sizeof(v)) || errno == ENOPROTOOPT),
+        "so_lock_filter");
+  errno = 0;
+  return SUCCESS;
+}
+
 Error PacketsV3::SetVersion() {
   int version = TPACKET_V3;
   return Errno(0 <= setsockopt(
@@ -278,7 +315,7 @@ PacketsV3::~PacketsV3() {
 
 Error PacketsV3::V3(
     struct tpacket_req3 tp, int socktype, const string& iface,
-    PacketsV3** out) {
+    const string& filter, PacketsV3** out) {
   if (tp.tp_block_size % getpagesize() != 0) {
     return ERROR("block size not divisible by page size");
   }
@@ -298,6 +335,7 @@ Error PacketsV3::V3(
   unique_ptr<PacketsV3> v3(
       new PacketsV3(tp.tp_block_nr, tp.tp_block_size));
   RETURN_IF_ERROR(v3->CreateSocket(socktype), "creating socket");
+  RETURN_IF_ERROR(v3->SetFilter(filter), "setting filter");
   RETURN_IF_ERROR(v3->SetVersion(), "setting version");
   RETURN_IF_ERROR(v3->SetRingOptions(&tp, sizeof(tp)), "setting options");
   RETURN_IF_ERROR(v3->MMapRing(), "mmapping ring");

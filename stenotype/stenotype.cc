@@ -81,6 +81,7 @@
 namespace {
 
 string flag_iface = "eth0";
+string flag_filter = "";
 string flag_dir = "";
 int64_t flag_count = -1;
 int32_t flag_blocks = 2048;
@@ -113,6 +114,7 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
     case 311: flag_gid = arg; break;
     case 312: flag_index = false; break;
     case 313: flag_index_nicelevel = atoi(arg); break;
+    case 314: flag_filter = arg; break;
   }
   return 0;
 }
@@ -137,6 +139,10 @@ void ParseOptions(int argc, char** argv) {
     {"gid", 311, n, 0, "Drop privileges to this group"},
     {"noindex", 312, 0, 0, "Do not compute or write indexes"},
     {"index_nicelevel", 313, n, 0, "Nice level of indexing threads"},
+    {"filter", 314, s, 0, "BPF compiled filter used to filter which packets "
+      "will be captured. This has to be a compiled BPF in hexadecimal, which "
+      "can be obtained from a human readable filter expression using the "
+      "provided compile_bpf.sh script."},
     {0},
   };
   struct argp argp = {options, &ParseOptions};
@@ -231,7 +237,7 @@ void RunThread(int thread,
 
   // Set up AF_PACKET packet reading.
   PacketsV3* v3;
-  CHECK_SUCCESS(PacketsV3::V3(options, socktype, flag_iface, &v3));
+  CHECK_SUCCESS(PacketsV3::V3(options, socktype, flag_iface, flag_filter, &v3));
   int fanout_id = getpid();
   if (flag_fanout_id > 0) {
     fanout_id = flag_fanout_id;

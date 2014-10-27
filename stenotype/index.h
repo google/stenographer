@@ -41,7 +41,9 @@ class SliceSet {
     }
 
     void Reset() {
-      if (last) { delete last; }
+      if (last) {
+        delete last;
+      }
       last = NULL;
       remaining = total;
       current = buffer;
@@ -50,10 +52,10 @@ class SliceSet {
 
     ~Buffer() {
       Reset();
-      delete [] buffer;
+      delete[] buffer;
     }
 
-    void Add(leveldb::Slice *s) {
+    void Add(leveldb::Slice* s) {
       CHECK(remaining >= s->size());
       remaining -= s->size();
       memcpy(current, s->data(), s->size());
@@ -72,9 +74,7 @@ class SliceSet {
   SliceSet(size_t initial) : last_size_(initial) {
     current_ = new Buffer(NULL, initial);
   }
-  virtual ~SliceSet() {
-    delete current_;
-  }
+  virtual ~SliceSet() { delete current_; }
   leveldb::Slice Store(leveldb::Slice s) {
     if (current_->remaining < s.size()) {
       last_size_ *= 2;
@@ -86,9 +86,7 @@ class SliceSet {
     current_->Add(&s);
     return s;
   }
-  virtual void Reset() {
-    current_->Reset();
-  }
+  virtual void Reset() { current_->Reset(); }
 
  private:
   Buffer* current_;

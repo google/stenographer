@@ -52,18 +52,18 @@
  */
 
 #include <linux/if_packet.h>  // AF_PACKET, sockaddr_ll
-#include <string.h>  // strerror()
-#include <errno.h>  // errno
-#include <sys/socket.h>  // socket()
-#include <sys/stat.h>  // mkdir()
-#include <sys/syscall.h>  // syscall(), SYS_gettid
-#include <sys/resource.h>  // setpriority(), PRIO_PROCESS
-#include <sched.h>  // sched_setaffinity()
-#include <signal.h>  // signal()
-#include <pwd.h>  // getpwnam()
-#include <grp.h>  // getgrnam()
-#include <unistd.h>  // setuid(), setgid()
-#include <sys/prctl.h>  // prctl(), PR_SET_PDEATHSIG
+#include <string.h>           // strerror()
+#include <errno.h>            // errno
+#include <sys/socket.h>       // socket()
+#include <sys/stat.h>         // mkdir()
+#include <sys/syscall.h>      // syscall(), SYS_gettid
+#include <sys/resource.h>     // setpriority(), PRIO_PROCESS
+#include <sched.h>            // sched_setaffinity()
+#include <signal.h>           // signal()
+#include <pwd.h>              // getpwnam()
+#include <grp.h>              // getgrnam()
+#include <unistd.h>           // setuid(), setgid()
+#include <sys/prctl.h>        // prctl(), PR_SET_PDEATHSIG
 
 #include <string>
 #include <sstream>
@@ -81,6 +81,7 @@
 namespace {
 
 string flag_iface = "eth0";
+string flag_filter = "";
 string flag_dir = "";
 int64_t flag_count = -1;
 int32_t flag_blocks = 2048;
@@ -97,22 +98,57 @@ int flag_index_nicelevel = 0;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
   switch (key) {
-    case 'v': st::logging_verbose_level++; break;
-    case 'q': st::logging_verbose_level--; break;
-    case 300: flag_iface = arg; break;
-    case 301: flag_dir = arg; break;
-    case 302: flag_count = atoi(arg); break;
-    case 303: flag_blocks = atoi(arg); break;
-    case 304: flag_aiops = atoi(arg); break;
-    case 305: flag_filesize_mb = atoi(arg); break;
-    case 306: flag_threads = atoi(arg); break;
-    case 307: flag_fileage_sec = atoi(arg); break;
-    case 308: flag_fanout_type = atoi(arg); break;
-    case 309: flag_fanout_id = atoi(arg); break;
-    case 310: flag_uid = arg; break;
-    case 311: flag_gid = arg; break;
-    case 312: flag_index = false; break;
-    case 313: flag_index_nicelevel = atoi(arg); break;
+    case 'v':
+      st::logging_verbose_level++;
+      break;
+    case 'q':
+      st::logging_verbose_level--;
+      break;
+    case 300:
+      flag_iface = arg;
+      break;
+    case 301:
+      flag_dir = arg;
+      break;
+    case 302:
+      flag_count = atoi(arg);
+      break;
+    case 303:
+      flag_blocks = atoi(arg);
+      break;
+    case 304:
+      flag_aiops = atoi(arg);
+      break;
+    case 305:
+      flag_filesize_mb = atoi(arg);
+      break;
+    case 306:
+      flag_threads = atoi(arg);
+      break;
+    case 307:
+      flag_fileage_sec = atoi(arg);
+      break;
+    case 308:
+      flag_fanout_type = atoi(arg);
+      break;
+    case 309:
+      flag_fanout_id = atoi(arg);
+      break;
+    case 310:
+      flag_uid = arg;
+      break;
+    case 311:
+      flag_gid = arg;
+      break;
+    case 312:
+      flag_index = false;
+      break;
+    case 313:
+      flag_index_nicelevel = atoi(arg);
+      break;
+    case 314:
+      flag_filter = arg;
+      break;
   }
   return 0;
 }
@@ -121,23 +157,29 @@ void ParseOptions(int argc, char** argv) {
   const char* s = "STRING";
   const char* n = "NUM";
   struct argp_option options[] = {
-    {0, 'v', 0, 0, "Verbose logging, may be given multiple times"},
-    {0, 'q', 0, 0, "Quiet logging.  Each -q counteracts one -v"},
-    {"iface", 300, s, 0, "Interface to read packets from"},
-    {"dir", 301, s, 0, "Directory to store packet files in"},
-    {"count", 302, n, 0, "Total number of packets to read, -1 to read forever"},
-    {"blocks", 303, n, 0, "Total number of blocks to use, each is 1MB"},
-    {"aiops", 304, n, 0, "Max number of async IO operations"},
-    {"filesize_mb", 305, n, 0, "Max file size in MB before file is rotated"},
-    {"threads", 306, n, 0, "Number of parallel threads to read packets with"},
-    {"fileage_sec", 307, n, 0, "Files older than this many secs are rotated"},
-    {"fanout_type", 308, n, 0, "TPACKET_V3 fanout type to fanout packets"},
-    {"fanout_id", 309, n, 0, "If fanning out across processes, set this"},
-    {"uid", 310, n, 0, "Drop privileges to this user"},
-    {"gid", 311, n, 0, "Drop privileges to this group"},
-    {"noindex", 312, 0, 0, "Do not compute or write indexes"},
-    {"index_nicelevel", 313, n, 0, "Nice level of indexing threads"},
-    {0},
+      {0, 'v', 0, 0, "Verbose logging, may be given multiple times"},
+      {0, 'q', 0, 0, "Quiet logging.  Each -q counteracts one -v"},
+      {"iface", 300, s, 0, "Interface to read packets from"},
+      {"dir", 301, s, 0, "Directory to store packet files in"},
+      {"count", 302, n, 0,
+       "Total number of packets to read, -1 to read forever"},
+      {"blocks", 303, n, 0, "Total number of blocks to use, each is 1MB"},
+      {"aiops", 304, n, 0, "Max number of async IO operations"},
+      {"filesize_mb", 305, n, 0, "Max file size in MB before file is rotated"},
+      {"threads", 306, n, 0, "Number of parallel threads to read packets with"},
+      {"fileage_sec", 307, n, 0, "Files older than this many secs are rotated"},
+      {"fanout_type", 308, n, 0, "TPACKET_V3 fanout type to fanout packets"},
+      {"fanout_id", 309, n, 0, "If fanning out across processes, set this"},
+      {"uid", 310, n, 0, "Drop privileges to this user"},
+      {"gid", 311, n, 0, "Drop privileges to this group"},
+      {"noindex", 312, 0, 0, "Do not compute or write indexes"},
+      {"index_nicelevel", 313, n, 0, "Nice level of indexing threads"},
+      {"filter", 314, s, 0,
+       "BPF compiled filter used to filter which packets "
+       "will be captured. This has to be a compiled BPF in hexadecimal, which "
+       "can be obtained from a human readable filter expression using the "
+       "provided compile_bpf.sh script."},
+      {0},
   };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
@@ -190,10 +232,12 @@ Error SetAffinity(int cpu) {
 
 void WriteIndexes(st::ProducerConsumerQueue* write_index) {
   pid_t tid = syscall(SYS_gettid);
-  LOG_IF_ERROR(Errno(
-        -1 != setpriority(PRIO_PROCESS, tid, flag_index_nicelevel)
-        // setpriority can return -1 on success, so we also have to check errno.
-        && errno == 0), "setpriority");
+  LOG_IF_ERROR(Errno(-1 != setpriority(PRIO_PROCESS, tid, flag_index_nicelevel)
+                         // setpriority can return -1 on success, so we also
+                         // have to check errno.
+                     &&
+                     errno == 0),
+               "setpriority");
   while (true) {
     Index* i = reinterpret_cast<Index*>(write_index->Get());
     if (i == NULL) {
@@ -207,16 +251,14 @@ void WriteIndexes(st::ProducerConsumerQueue* write_index) {
 bool run_threads = true;
 void HandleStopRequest(int sig) {
   if (run_threads) {
-    LOG(INFO) << "Caught signal " << sig << ", stopping threads (could take ~15 seconds)";
+    LOG(INFO) << "Caught signal " << sig
+              << ", stopping threads (could take ~15 seconds)";
     run_threads = false;
   }
 }
-void HandleSIGSEGV(int sig) {
-  LOG(FATAL) << "SIGSEGV";
-}
+void HandleSIGSEGV(int sig) { LOG(FATAL) << "SIGSEGV"; }
 
-void RunThread(int thread,
-               st::ProducerConsumerQueue* write_index) {
+void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   if (flag_threads > 1) {
     LOG_IF_ERROR(SetAffinity(thread), "set affinity");
   }
@@ -226,12 +268,12 @@ void RunThread(int thread,
   options.tp_block_size = 1 << 20;  // it's very important this be 1MB
   options.tp_block_nr = flag_blocks;
   options.tp_frame_size = 16 << 10;  // does not matter at all
-  options.tp_frame_nr = 0;  // computed for us.
+  options.tp_frame_nr = 0;           // computed for us.
   options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
 
   // Set up AF_PACKET packet reading.
   PacketsV3* v3;
-  CHECK_SUCCESS(PacketsV3::V3(options, socktype, flag_iface, &v3));
+  CHECK_SUCCESS(PacketsV3::V3(options, socktype, flag_iface, flag_filter, &v3));
   int fanout_id = getpid();
   if (flag_fanout_id > 0) {
     fanout_id = flag_fanout_id;
@@ -302,9 +344,9 @@ void RunThread(int thread,
     int64_t current_micros = GetCurrentTimeMicros();
     // Rotate file if necessary.
     int64_t current_file_age_secs =
-      (current_micros - micros) / kNumMicrosPerSecond;
-    if (block_offset == flag_filesize_mb
-        || current_file_age_secs > flag_fileage_sec) {
+        (current_micros - micros) / kNumMicrosPerSecond;
+    if (block_offset == flag_filesize_mb ||
+        current_file_age_secs > flag_fileage_sec) {
       // File size got too big, rotate file.
       micros = current_micros;
       block_offset = 0;
@@ -319,16 +361,13 @@ void RunThread(int thread,
     if (blocks % 100 == 0 ||
         lastlog < current_micros - 60 * kNumMicrosPerSecond) {
       lastlog = current_micros;
-      double duration = (current_micros - start)
-          * 1.0 / kNumMicrosPerSecond;
+      double duration = (current_micros - start) * 1.0 / kNumMicrosPerSecond;
       Stats stats;
       Error stats_err = v3->GetStats(&stats);
       if (SUCCEEDED(stats_err)) {
-        LOG(INFO) << "Thread " << thread
-          << " stats: MB=" << blocks
-          << " secs=" << duration
-          << " MBps=" << (blocks / duration)
-          << " " << stats.String();
+        LOG(INFO) << "Thread " << thread << " stats: MB=" << blocks
+                  << " secs=" << duration << " MBps=" << (blocks / duration)
+                  << " " << stats.String();
       } else {
         LOG(ERROR) << "Unable to get stats: " << *stats_err;
       }
@@ -410,6 +449,4 @@ int Main(int argc, char** argv) {
 
 }  // namespace st
 
-int main(int argc, char** argv) {
-  return st::Main(argc, argv);
-}
+int main(int argc, char** argv) { return st::Main(argc, argv); }

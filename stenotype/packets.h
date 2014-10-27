@@ -33,7 +33,7 @@ class Mutex;
 // Information on a single packet in an AF_PACKET block.
 struct Packet {
   leveldb::Slice data;  // Packet data as stored in the block.
-  int64_t length;  // Actual length of full packet (could be > data.size())
+  int64_t length;       // Actual length of full packet (could be > data.size())
   int64_t timestamp_nsecs;  // Timestamp packet was captured
 
   // Start of packet data relative to start of block.  Note this is the location
@@ -60,9 +60,9 @@ struct Stats {
 // reuse the space in its ring buffer.
 class Block {
  public:
-  Block();  // Create an empty block, not referencing anything.
+  Block();           // Create an empty block, not referencing anything.
   virtual ~Block();  // Dereference block's memory, releasing it back to kernel.
-  void Swap(Block *b);  // Swap references with another block.
+  void Swap(Block* b);  // Swap references with another block.
 
   // Get the next packet in this block.  Returns OK on success, CANCELLED if
   // we've reached the end of all packets.
@@ -106,9 +106,8 @@ class PacketsV3 {
  public:
   // Create a new PacketsV3 using the given options, socktype (SOCK_DGRAM or
   // SOCK_RAW), and bind it to the given interface.
-  static Error V3(
-      struct tpacket_req3 options, int socktype,
-      const string& iface, PacketsV3** out);
+  static Error V3(struct tpacket_req3 options, int socktype,
+                  const string& iface, const string& filter, PacketsV3** out);
   // Tear down this AF_PACKET socket.
   virtual ~PacketsV3();
 
@@ -134,19 +133,21 @@ class PacketsV3 {
  private:
   PacketsV3(size_t num_blocks, size_t block_size);
 
-  int fd_;  // file descriptor for AF_PACKET socket.
-  char* ring_;  // pointer to start of mmap'd region.
-  int offset_;  // next block number to be processed.
+  int fd_;             // file descriptor for AF_PACKET socket.
+  char* ring_;         // pointer to start of mmap'd region.
+  int offset_;         // next block number to be processed.
   size_t block_size_;  // size of each block.
   size_t num_blocks_;  // total number of blocks.
-  Block pos_;  // block currently being processed.
-  Stats stats_;  // statistics on block processing so far.
+  Block pos_;          // block currently being processed.
+  Stats stats_;        // statistics on block processing so far.
   // Locks, one per block.  Block objects hold a lock to their memory region
   // during their lifetime, and release it on destruction.  This allows us to
   // correctly use the circular queue without overrunning if it gets full.
   Mutex* block_mus_;
 
   Error Bind(const string& iface);
+  // Compile a BPF filter and set it up on the socket.
+  Error SetFilter(const string& filter);
   Error SetVersion();
   Error SetRingOptions(void* options, socklen_t size);
   Error MMapRing();

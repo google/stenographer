@@ -14,9 +14,11 @@
 
 #include "packets.h"
 
-#include <errno.h>  // errno
+#include <climits> // USHRT_MAX
+#include <errno.h>  // errno, ENOPROTOOPT
 #include <linux/if_ether.h>  // ETH_P_ALL
 #include <linux/if_packet.h>  // AF_PACKET, sockaddr_ll
+#include <linux/filter.h> // SO_ATTACH_FILTER, SO_LOCK_FILTER
 #include <net/if.h>  // if_nametoindex()
 #include <netinet/in.h>  // htons()
 #include <poll.h>  // poll()
@@ -28,6 +30,7 @@
 #include <memory>
 #include <string>
 #include <sstream>
+#include <vector>
 
 #include "util.h"
 
@@ -196,6 +199,41 @@ Error PacketsV3::Bind(const string& iface) {
         fd_, reinterpret_cast<struct sockaddr*>(&ll), sizeof(ll)));
 }
 
+Error PacketsV3::SetFilter(const string& filter) {
+  if (filter.empty()) return SUCCESS;
+
+  std::vector<sock_filter> bpf_filter;
+  std::istringstream stream(filter);
+  for (; stream.good();) {
+    struct sock_filter f;
+    stream >> std::hex >> f.code;
+    // jt and jf are unsigned chars and the stream extraction will just copy
+    // them as such. To enforce the conversion to a number, we use an
+    // intermediate int.
+    int i;
+    stream >> std::hex >> i;
+    f.jt = (unsigned char)i;
+    stream >> std::hex >> i;
+    f.jf = (unsigned char)i;
+    CHECK(!stream.eof()) << "invalid filter size";
+    stream >> std::hex >> f.k;
+    bpf_filter.push_back(f);
+  }
+  CHECK(!stream.fail()) << "invalid filter";
+  CHECK(bpf_filter.size() <= USHRT_MAX) << "invalid filter: too long";
+  struct sock_fprog bpf = {(unsigned short int)bpf_filter.size(), bpf_filter.data()};
+  RETURN_IF_ERROR(Errno(0 == setsockopt(
+        fd_, SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf))), "so_attach_filter");
+  int v = 1;
+  // SO_LOCK_FILTER is available only on kernels >= 3.9, so ignore the ENOPROTOOPT
+  // error here.
+  RETURN_IF_ERROR(Errno(0 == setsockopt(
+        fd_, SOL_SOCKET, SO_LOCK_FILTER, &v, sizeof(v)) || errno == ENOPROTOOPT),
+        "so_lock_filter");
+  errno = 0;
+  return SUCCESS;
+}
+
 Error PacketsV3::SetVersion() {
   int version = TPACKET_V3;
   return Errno(0 <= setsockopt(
@@ -278,7 +316,7 @@ PacketsV3::~PacketsV3() {
 
 Error PacketsV3::V3(
     struct tpacket_req3 tp, int socktype, const string& iface,
-    PacketsV3** out) {
+    const string& filter, PacketsV3** out) {
   if (tp.tp_block_size % getpagesize() != 0) {
     return ERROR("block size not divisible by page size");
   }
@@ -298,6 +336,7 @@ Error PacketsV3::V3(
   unique_ptr<PacketsV3> v3(
       new PacketsV3(tp.tp_block_nr, tp.tp_block_size));
   RETURN_IF_ERROR(v3->CreateSocket(socktype), "creating socket");
+  RETURN_IF_ERROR(v3->SetFilter(filter), "setting filter");
   RETURN_IF_ERROR(v3->SetVersion(), "setting version");
   RETURN_IF_ERROR(v3->SetRingOptions(&tp, sizeof(tp)), "setting options");
   RETURN_IF_ERROR(v3->MMapRing(), "mmapping ring");

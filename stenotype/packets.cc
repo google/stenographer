@@ -30,7 +30,6 @@
 #include <memory>
 #include <string>
 #include <sstream>
-#include <vector>
 
 #include "util.h"
 
@@ -202,26 +201,25 @@ Error PacketsV3::Bind(const string& iface) {
 Error PacketsV3::SetFilter(const string& filter) {
   if (filter.empty()) return SUCCESS;
 
-  std::vector<sock_filter> bpf_filter;
-  std::istringstream stream(filter);
-  for (; stream.good();) {
-    struct sock_filter f;
-    stream >> std::hex >> f.code;
-    // jt and jf are unsigned chars and the stream extraction will just copy
-    // them as such. To enforce the conversion to a number, we use an
-    // intermediate int.
-    int i;
-    stream >> std::hex >> i;
-    f.jt = (unsigned char)i;
-    stream >> std::hex >> i;
-    f.jf = (unsigned char)i;
-    CHECK(!stream.eof()) << "invalid filter size";
-    stream >> std::hex >> f.k;
-    bpf_filter.push_back(f);
+  int filter_size = filter.size();
+  int sock_filter_size = sizeof(sock_filter);
+  int num_structs = filter_size / sock_filter_size / 2;
+  RETURN_IF_ERROR(
+      Errno(filter_size == num_structs * sock_filter_size * 2), "invalid filter length");
+  RETURN_IF_ERROR(
+      Errno(USHRT_MAX >= num_structs), "invalid filter: too long");
+  struct sock_filter bpf_filter[num_structs];
+  const char* data = filter.c_str();
+  for (int i = 0; i < num_structs; i++) {
+    RETURN_IF_ERROR(
+        Errno(4 == sscanf(data, "%4hx%2hhx%2hhx%8x", &bpf_filter[i].code,
+            &bpf_filter[i].jt, &bpf_filter[i].jf, &bpf_filter[i].k)),
+        "invalid filter"); 
+    data += sock_filter_size * 2;
   }
-  CHECK(!stream.fail()) << "invalid filter";
-  CHECK(bpf_filter.size() <= USHRT_MAX) << "invalid filter: too long";
-  struct sock_fprog bpf = {(unsigned short int)bpf_filter.size(), bpf_filter.data()};
+  RETURN_IF_ERROR(Errno(0 == errno), "failure while parsing filter");
+
+  struct sock_fprog bpf = {(unsigned short int)num_structs, bpf_filter};
   RETURN_IF_ERROR(Errno(0 == setsockopt(
         fd_, SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf))), "so_attach_filter");
   int v = 1;

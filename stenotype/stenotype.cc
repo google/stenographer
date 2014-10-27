@@ -139,7 +139,10 @@ void ParseOptions(int argc, char** argv) {
     {"gid", 311, n, 0, "Drop privileges to this group"},
     {"noindex", 312, 0, 0, "Do not compute or write indexes"},
     {"index_nicelevel", 313, n, 0, "Nice level of indexing threads"},
-    {"filter", 314, s, 0, "BPF compiled filter in space separated hexadecimal."},
+    {"filter", 314, s, 0, "BPF compiled filter used to filter which packets "
+      "will be captured. This has to be a compiled BPF in hexadecimal, which "
+      "can be obtained from a human readable filter expression using the "
+      "provided compile_bpf.sh script."},
     {0},
   };
   struct argp argp = {options, &ParseOptions};

@@ -29,8 +29,9 @@ fi
 
 interface="$1"
 shift
-result=""
-for elt in $(sudo tcpdump -i $interface -ddd $@ | tail -n+2); do
-  printf -v result "$result%x " "$elt"
+sudo tcpdump -i $interface -ddd $@ | tail -n+2 |
+while read line; do
+  cols=( $line )
+  printf "%04x%02x%02x%08x" ${cols[0]} ${cols[1]} ${cols[2]} ${cols[3]}
 done
-echo ${result%?}
+echo ""

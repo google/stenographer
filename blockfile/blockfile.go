@@ -17,6 +17,7 @@
 package blockfile
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -109,6 +110,26 @@ func (b *BlockFile) Close() (err error) {
 	return
 }
 
+// Iter provides a simple interface for iterating over all packets in a
+// blockfile.  It follows the normal Go convention:
+//   iter := myBlockfile.AllPackets()
+//   for iter.Next() {
+//     ... handle iter.Packet()
+//   }
+//   if err := iter.Err(); err != nil { ... handle error ... }
+type Iter interface {
+	// Packet returns the current packet pointed to by the iterator.  This call
+	// must be preceded by a Next() call that returns true.
+	Packet() *base.Packet
+	// Err returns any error that occurred during iteration.  It should be called
+	// after the first Next() call to return false.
+	Err() error
+	// Next advances the iterator to the first or next packet, returning false
+	// when there are no more packets to process.
+	Next() bool
+}
+
+// allPacketsIter implements Iter.
 type allPacketsIter struct {
 	*BlockFile
 	blockData        [1 << 20]byte
@@ -146,24 +167,11 @@ func (a *allPacketsIter) Next() bool {
 	} else if a.pkt.tp_next_offset != 0 {
 		a.packetOffset += int(a.pkt.tp_next_offset)
 	} else {
-		a.err = fmt.Errorf("block format currently not supported")
+		a.err = errors.New("block format currently not supported")
 		return false
 	}
 	a.pkt = (*C.struct_tpacket3_hdr)(unsafe.Pointer(&a.blockData[a.packetOffset]))
 	return true
-}
-
-// Iter provides a simple interface for iterating over all packets in a
-// blockfile.  It follows the normal Go convention:
-//   iter := myBlockfile.AllPackets()
-//   for iter.Next() {
-//     ... handle iter.Packet()
-//   }
-//   if err := iter.Err(); err != nil { ... handle error ... }
-type Iter interface {
-	Packet() *base.Packet
-	Err() error
-	Next() bool
 }
 
 func (a *allPacketsIter) Packet() *base.Packet {

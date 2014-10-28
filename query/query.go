@@ -76,13 +76,7 @@ func (a unionQuery) LookupIn(index *indexfile.IndexFile) (base.Positions, error)
 		if err != nil {
 			return nil, err
 		}
-		if pos.IsAllPositions() {
-			return pos, nil
-		} else if len(positions) == 0 {
-			positions = pos
-		} else {
-			positions = positions.Union(pos)
-		}
+		positions = positions.Union(pos)
 	}
 	return positions, nil
 }
@@ -96,13 +90,7 @@ func (a intersectQuery) LookupIn(index *indexfile.IndexFile) (base.Positions, er
 		if err != nil {
 			return nil, err
 		}
-		if positions.IsAllPositions() {
-			positions = pos
-		} else if len(pos) == 0 {
-			return base.NoPositions, nil
-		} else {
-			positions = positions.Intersect(pos)
-		}
+		positions = positions.Intersect(pos)
 	}
 	return positions, nil
 }

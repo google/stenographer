@@ -103,11 +103,18 @@ class Block {
 // PacketsV3 wraps MMAP'd AF_PACKET TPACKET_V3 in a nice, easy(er) to use
 // object.  Not safe for concurrent operation.
 class PacketsV3 {
+ private:
+  struct State {
+    State() : fd(-1), ring(NULL), block_size(0), num_blocks(0) {}
+    ~State();
+    void Swap(State* s);
+    int fd;             // file descriptor for AF_PACKET socket.
+    char* ring;         // pointer to start of mmap'd region.
+    size_t block_size;  // size of each block.
+    size_t num_blocks;  // total number of blocks.
+  };
+
  public:
-  // Create a new PacketsV3 using the given options, socktype (SOCK_DGRAM or
-  // SOCK_RAW), and bind it to the given interface.
-  static Error V3(struct tpacket_req3 options, int socktype,
-                  const string& iface, const string& filter, PacketsV3** out);
   // Tear down this AF_PACKET socket.
   virtual ~PacketsV3();
 
@@ -126,34 +133,42 @@ class PacketsV3 {
   // Get all currently available statistics about operation so far.
   Error GetStats(Stats* stats);
 
-  // Tell this TPACKET_V3 instance to start fanning out packets among other
-  // threads with the same type/id.
-  Error SetFanout(uint16_t fanout_type, uint16_t fanout_id);
+  class Builder {
+   public:
+    Builder(int socktype, struct tpacket_req3 tp);
+
+    // Tell this TPACKET_V3 instance to start fanning out packets among other
+    // threads with the same type/id.
+    Builder* SetFanout(uint16_t fanout_type, uint16_t fanout_id);
+    Builder* SetFilter(const string& filter);
+
+    PacketsV3* Bind(const string& iface);
+
+    bool ok() const { return err_.get() == NULL; }
+    Error error() { return std::move(err_); }
+
+   private:
+    Error SetVersion();
+    Error SetRingOptions(void* options, socklen_t size);
+    Error MMapRing();
+    Error CreateSocket(int socktype);
+
+    State state_;
+    Error err_;
+  };
 
  private:
-  PacketsV3(size_t num_blocks, size_t block_size);
+  PacketsV3(State* state);
+  Error PollForPacket();
 
-  int fd_;             // file descriptor for AF_PACKET socket.
-  char* ring_;         // pointer to start of mmap'd region.
-  int offset_;         // next block number to be processed.
-  size_t block_size_;  // size of each block.
-  size_t num_blocks_;  // total number of blocks.
-  Block pos_;          // block currently being processed.
-  Stats stats_;        // statistics on block processing so far.
+  State state_;
+  int offset_;   // next block number to be processed.
+  Block pos_;    // block currently being processed.
+  Stats stats_;  // statistics on block processing so far.
   // Locks, one per block.  Block objects hold a lock to their memory region
   // during their lifetime, and release it on destruction.  This allows us to
   // correctly use the circular queue without overrunning if it gets full.
   Mutex* block_mus_;
-
-  Error Bind(const string& iface);
-  // Compile a BPF filter and set it up on the socket.
-  Error SetFilter(const string& filter);
-  Error SetVersion();
-  Error SetRingOptions(void* options, socklen_t size);
-  Error MMapRing();
-  Error DrainSocket();
-  Error CreateSocket(int socktype);
-  Error PollForPacket();
 
   DISALLOW_COPY_AND_ASSIGN(PacketsV3);
 };

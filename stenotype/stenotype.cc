@@ -88,7 +88,7 @@ int32_t flag_blocks = 2048;
 int32_t flag_aiops = 128;
 int64_t flag_filesize_mb = 4 << 10;
 int32_t flag_threads = 1;
-int64_t flag_fileage_sec = 120;
+int64_t flag_fileage_sec = 60;
 uint16_t flag_fanout_type = PACKET_FANOUT_CPU;
 uint16_t flag_fanout_id = 0;
 string flag_uid;

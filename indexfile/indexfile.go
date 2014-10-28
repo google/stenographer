@@ -53,6 +53,11 @@ func NewIndexFile(filename string) (*IndexFile, error) {
 	return index, nil
 }
 
+// Name returns the name of the file underlying this index.
+func (i *IndexFile) Name() string {
+	return i.name
+}
+
 // IPPositions returns the positions in the block file of all packets with IPs
 // between the given ranges.  Both IPs must be 4 or 16 bytes long, both must be
 // the same length, and from must be <= to.

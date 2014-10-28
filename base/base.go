@@ -156,6 +156,15 @@ func MergePacketChans(in []PacketChan) PacketChan {
 // Positions detail the offsets of packets within a blockfile.
 type Positions []int64
 
+var (
+	AllPositions = Positions{-1}
+	NoPositions  = Positions{}
+)
+
+func (p Positions) IsAllPositions() bool {
+	return len(p) == 1 && p[0] == -1
+}
+
 func (a Positions) Less(i, j int) bool {
 	return a[i] < a[j]
 }
@@ -172,6 +181,16 @@ func (a Positions) Sort() {
 // Union returns the union of a and b.  a and b must be sorted in advance.
 // Returned slice will be sorted.
 func (a Positions) Union(b Positions) (out Positions) {
+	switch {
+	case a.IsAllPositions():
+		return a
+	case b.IsAllPositions():
+		return b
+	case len(a) == 0:
+		return b
+	case len(b) == 0:
+		return a
+	}
 	out = make(Positions, 0, len(a)+len(b)/2)
 	ib := 0
 	for _, pos := range a {
@@ -191,6 +210,16 @@ func (a Positions) Union(b Positions) (out Positions) {
 // Intersect returns the intersection of a and b.  a and b must be sorted in
 // advance.  Returned slice will be sorted.
 func (a Positions) Intersect(b Positions) (out Positions) {
+	switch {
+	case a.IsAllPositions():
+		return b
+	case b.IsAllPositions():
+		return a
+	case len(a) == 0:
+		return a
+	case len(b) == 0:
+		return b
+	}
 	out = make(Positions, 0, len(a)/2)
 	ib := 0
 	for _, pos := range a {

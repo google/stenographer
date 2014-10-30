@@ -173,72 +173,71 @@ Error PacketsV3::GetStats(Stats* stats) {
   return SUCCESS;
 }
 
-#define APPEND_IF_ERROR(var, ret, x, msg) \
-  do {                                    \
-    var = (x);                            \
-    if (!SUCCEEDED(var)) {                \
-      var->append(" <- ");                \
-      var->append(msg);                   \
-      return ret;                         \
-    }                                     \
-  } while (false)
+Error PacketsV3::Builder::Bind(const string& iface, PacketsV3** out) {
+  RETURN_IF_ERROR(BadState(), "Builder");
 
-PacketsV3* PacketsV3::Builder::Bind(const string& iface) {
   unsigned int ifindex = if_nametoindex(iface.c_str());
-  APPEND_IF_ERROR(err_, NULL, Errno(ifindex != 0), "if_nametoindex");
+  RETURN_IF_ERROR(Errno(ifindex != 0), "if_nametoindex");
   struct sockaddr_ll ll;
   memset(&ll, 0, sizeof(ll));
   ll.sll_family = AF_PACKET;
   ll.sll_protocol = htons(ETH_P_ALL);
   ll.sll_ifindex = ifindex;
-  APPEND_IF_ERROR(
-      err_, NULL,
+  RETURN_IF_ERROR(
       Errno(0 <= ::bind(state_.fd, reinterpret_cast<struct sockaddr*>(&ll),
                         sizeof(ll))),
       "bind");
-  return new PacketsV3(&state_);
+  *out = new PacketsV3(&state_);
+  return SUCCESS;
 }
 
-PacketsV3::Builder* PacketsV3::Builder::SetFilter(const string& filter) {
-  if (filter.empty() || !SUCCEEDED(err_)) return this;
+Error PacketsV3::Builder::SetFilter(const string& filter) {
+  RETURN_IF_ERROR(BadState(), "Builder");
+
+  if (filter.empty()) return SUCCESS;
 
   int filter_size = filter.size();
   int filter_element_size = 4 + 2 + 2 + 8;
-  APPEND_IF_ERROR(err_, this, Errno(0 == filter_size % filter_element_size),
+  RETURN_IF_ERROR(Errno(0 == filter_size % filter_element_size),
                   "invalid filter length");
   int num_structs = filter_size / filter_element_size;
-  APPEND_IF_ERROR(err_, this, Errno(USHRT_MAX >= num_structs),
-                  "invalid filter: too long");
+  RETURN_IF_ERROR(Errno(USHRT_MAX >= num_structs), "invalid filter: too long");
   struct sock_filter bpf_filter[num_structs];
   const char* data = filter.c_str();
   for (int i = 0; i < num_structs; i++) {
-    APPEND_IF_ERROR(err_, this,
-                    Errno(4 == sscanf(data, "%4hx%2hhx%2hhx%8x",
+    RETURN_IF_ERROR(Errno(4 == sscanf(data, "%4hx%2hhx%2hhx%8x",
                                       &bpf_filter[i].code, &bpf_filter[i].jt,
                                       &bpf_filter[i].jf, &bpf_filter[i].k)),
                     "invalid filter");
     data += filter_element_size;
   }
-  APPEND_IF_ERROR(err_, this, Errno(0 == errno),
-                  "failure while parsing filter");
+  RETURN_IF_ERROR(Errno(0 == errno), "failure while parsing filter");
 
   struct sock_fprog bpf = {(unsigned short int)num_structs, bpf_filter};
-  APPEND_IF_ERROR(err_, this,
-                  Errno(0 == setsockopt(state_.fd, SOL_SOCKET, SO_ATTACH_FILTER,
+  RETURN_IF_ERROR(Errno(0 == setsockopt(state_.fd, SOL_SOCKET, SO_ATTACH_FILTER,
                                         &bpf, sizeof(bpf))),
                   "so_attach_filter");
+#ifdef SO_LOCK_FILTER
   int v = 1;
   // SO_LOCK_FILTER is available only on kernels >= 3.9, so ignore the
   // ENOPROTOOPT
   // error here. We use it to make sure that no one can mess with our socket's
   // filter, so not having it is not really a big concern.
-  APPEND_IF_ERROR(err_, this,
-                  Errno(0 == setsockopt(state_.fd, SOL_SOCKET, SO_LOCK_FILTER,
+  RETURN_IF_ERROR(Errno(0 == setsockopt(state_.fd, SOL_SOCKET, SO_LOCK_FILTER,
                                         &v, sizeof(v)) ||
                         errno == ENOPROTOOPT),
                   "so_lock_filter");
   errno = 0;
-  return this;
+#endif
+  return SUCCESS;
+}
+
+Error PacketsV3::Builder::BadState() {
+  if (state_.fd < 0) {
+    return ERROR(
+        "builder in bad state... SetUp not called or Bind already called");
+  }
+  return SUCCESS;
 }
 
 Error PacketsV3::Builder::SetVersion() {
@@ -247,16 +246,16 @@ Error PacketsV3::Builder::SetVersion() {
                                sizeof(version)));
 }
 
-PacketsV3::Builder* PacketsV3::Builder::SetFanout(uint16_t fanout_type, uint16_t fanout_id) {
+Error PacketsV3::Builder::SetFanout(uint16_t fanout_type, uint16_t fanout_id) {
+  RETURN_IF_ERROR(BadState(), "Builder");
   LOG(V1) << "Setting fanout to type " << fanout_type << " ID " << fanout_id;
   uint32_t fanout = fanout_type;
   fanout <<= 16;
   fanout |= fanout_id;
-  APPEND_IF_ERROR(err_, this, Errno(0 <= setsockopt(
-          state_.fd, SOL_PACKET, PACKET_FANOUT,
+  RETURN_IF_ERROR(Errno(0 <= setsockopt(state_.fd, SOL_PACKET, PACKET_FANOUT,
                                         &fanout, sizeof(fanout))),
                   "setting fanout options");
-  return this;
+  return SUCCESS;
 }
 
 Error PacketsV3::Builder::SetRingOptions(void* options, socklen_t size) {
@@ -318,37 +317,32 @@ PacketsV3::~PacketsV3() {
   delete[] block_mus_;
 }
 
-PacketsV3::Builder::Builder(int socktype, struct tpacket_req3 tp) {
+PacketsV3::Builder::Builder() {}
+
+Error PacketsV3::Builder::SetUp(int socktype, struct tpacket_req3 tp) {
   if (tp.tp_block_size % getpagesize() != 0) {
-    err_ = ERROR("block size not divisible by page size");
-    return;
+    return ERROR("block size not divisible by page size");
   }
   if (tp.tp_block_size % tp.tp_frame_size != 0) {
-    err_ = ERROR("block size not divisible by frame size");
-    return;
+    return ERROR("block size not divisible by frame size");
   }
   if (tp.tp_block_nr < 1) {
-    err_ = ERROR("block number must be > 1");
-    return;
+    return ERROR("block number must be > 1");
   }
   unsigned int frames_per_block = tp.tp_block_size / tp.tp_frame_size;
   unsigned int total_frames = frames_per_block * tp.tp_block_nr;
   if (tp.tp_frame_nr == 0) {
     tp.tp_frame_nr = total_frames;
   } else if (tp.tp_frame_nr != total_frames) {
-    err_ = ERROR("num frames does not match");
-    return;
+    return ERROR("num frames does not match");
   }
   state_.block_size = tp.tp_block_size;
   state_.num_blocks = tp.tp_block_nr;
-  err_ = CreateSocket(socktype);
-  if (!SUCCEEDED(err_)) return;
-  err_ = SetVersion();
-  if (!SUCCEEDED(err_)) return;
-  err_ = SetRingOptions(&tp, sizeof(tp));
-  if (!SUCCEEDED(err_)) return;
-  err_ = MMapRing();
-  if (!SUCCEEDED(err_)) return;
+  RETURN_IF_ERROR(CreateSocket(socktype), "CreateSocket");
+  RETURN_IF_ERROR(SetVersion(), "SetVersion");
+  RETURN_IF_ERROR(SetRingOptions(&tp, sizeof(tp)), "SetRingOptions");
+  RETURN_IF_ERROR(MMapRing(), "MMapRing");
+  return SUCCESS;
 }
 
 Error PacketsV3::NextBlock(Block* b, bool poll_once) {

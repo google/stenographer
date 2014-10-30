@@ -104,6 +104,7 @@ class Block {
 // object.  Not safe for concurrent operation.
 class PacketsV3 {
  private:
+  // State provides state common to PacketsV3 and PacketsV3::Builder.
   struct State {
     State() : fd(-1), ring(NULL), block_size(0), num_blocks(0) {}
     ~State();
@@ -135,26 +136,25 @@ class PacketsV3 {
 
   class Builder {
    public:
-    Builder(int socktype, struct tpacket_req3 tp);
+    Builder();
+
+    Error SetUp(int socktype, struct tpacket_req3 tp);
 
     // Tell this TPACKET_V3 instance to start fanning out packets among other
     // threads with the same type/id.
-    Builder* SetFanout(uint16_t fanout_type, uint16_t fanout_id);
-    Builder* SetFilter(const string& filter);
+    Error SetFanout(uint16_t fanout_type, uint16_t fanout_id);
+    Error SetFilter(const string& filter);
 
-    PacketsV3* Bind(const string& iface);
-
-    bool ok() const { return err_.get() == NULL; }
-    Error error() { return std::move(err_); }
+    Error Bind(const string& iface, PacketsV3** out);
 
    private:
+    Error BadState();
     Error SetVersion();
     Error SetRingOptions(void* options, socklen_t size);
     Error MMapRing();
     Error CreateSocket(int socktype);
 
     State state_;
-    Error err_;
   };
 
  private:

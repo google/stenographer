@@ -181,6 +181,16 @@ func (a Positions) Sort() {
 // Union returns the union of a and b.  a and b must be sorted in advance.
 // Returned slice will be sorted.
 func (a Positions) Union(b Positions) (out Positions) {
+	switch {
+	case a.IsAllPositions():
+		return a
+	case b.IsAllPositions():
+		return b
+	case len(a) == 0:
+		return b
+	case len(b) == 0:
+		return a
+	}
 	out = make(Positions, 0, len(a)+len(b)/2)
 	ib := 0
 	for _, pos := range a {
@@ -200,6 +210,16 @@ func (a Positions) Union(b Positions) (out Positions) {
 // Intersect returns the intersection of a and b.  a and b must be sorted in
 // advance.  Returned slice will be sorted.
 func (a Positions) Intersect(b Positions) (out Positions) {
+	switch {
+	case a.IsAllPositions():
+		return b
+	case b.IsAllPositions():
+		return a
+	case len(a) == 0:
+		return a
+	case len(b) == 0:
+		return b
+	}
 	out = make(Positions, 0, len(a)/2)
 	ib := 0
 	for _, pos := range a {

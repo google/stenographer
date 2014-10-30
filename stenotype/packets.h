@@ -134,17 +134,37 @@ class PacketsV3 {
   // Get all currently available statistics about operation so far.
   Error GetStats(Stats* stats);
 
+  // Builder allows users to build a PacketsV3 object.
+  //
+  // Building a PacketsV3 involves:
+  //   PacketsV3::Builder builder;
+  //   builder.SetUp(...);  // initial setup
+  //   builder.X(...);  // optionally set filters, fanout, etc.
+  //   PacketsV3* v3;
+  //   builder.Bind("eth0", &v3);  // create the PacketsV3 and bind it.
+  // Once this has been completed, 'v3' will be sniffing packets and good to go.
+  // A single Builder instance may be used to create more than one PacketsV3...
+  // its state is cleared after the Bind call, though, so a new set of
+  // SetUp/.../Bind must be run.  Builder has no memory of the last thing it
+  // built.
   class Builder {
    public:
     Builder();
 
+    // SetUp must be called before any of the following methods.  It sets up the
+    // initial socket and mmap'd ring.  Note:  the socket is set up such that it
+    // ignores packets until Bind is called.
     Error SetUp(int socktype, struct tpacket_req3 tp);
 
     // Tell this TPACKET_V3 instance to start fanning out packets among other
     // threads with the same type/id.
     Error SetFanout(uint16_t fanout_type, uint16_t fanout_id);
+
+    // SetFilter sets a BPF filter on the socket.
     Error SetFilter(const string& filter);
 
+    // Bind must be the final method called by Builder.  It binds the created
+    // socket to the given interface and returns a PacketsV3 object to wrap it.
     Error Bind(const string& iface, PacketsV3** out);
 
    private:
@@ -154,6 +174,8 @@ class PacketsV3 {
     Error MMapRing();
     Error CreateSocket(int socktype);
 
+    // State contains the state the builder sets up.  This state will be passed
+    // to the PacketsV3 object created by Bind.
     State state_;
   };
 

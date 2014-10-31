@@ -65,6 +65,8 @@
 #include <unistd.h>           // setuid(), setgid()
 #include <sys/prctl.h>        // prctl(), PR_SET_*
 #include <seccomp.h>          // scmp_filter_ctx, seccomp_*(), SCMP_*
+#include <poll.h>             // POLLIN
+#include <fcntl.h>            // O_*
 
 #include <string>
 #include <sstream>
@@ -239,7 +241,6 @@ void CommonPrivileges(scmp_filter_ctx ctx) {
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(set_robust_list), 0);
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(futex), 0);
   // File operations.
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 0);
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fallocate), 0);
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(ftruncate), 0);
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0);
@@ -273,6 +274,8 @@ void DropIndexThreadPrivileges() {
   CHECK(ctx != NULL);
   CommonPrivileges(ctx);
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 1,
+                   SCMP_A1(SCMP_CMP_EQ, O_WRONLY | O_CREAT | O_TRUNC));
   CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
 }
 
@@ -284,9 +287,15 @@ void DropPacketThreadPrivileges() {
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_setup), 0);
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_submit), 0);
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_getevents), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(poll), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockopt),
-                   0);  // packet stats
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(poll), 1,
+                   SCMP_A1(SCMP_CMP_EQ, POLLIN));
+  seccomp_rule_add(
+      ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 2,
+      SCMP_A1(SCMP_CMP_EQ, O_WRONLY | O_CREAT | O_DSYNC | O_DIRECT),
+      SCMP_A2(SCMP_CMP_EQ, 0600));
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 2,
+                   SCMP_A1(SCMP_CMP_EQ, SOL_PACKET),
+                   SCMP_A2(SCMP_CMP_EQ, PACKET_STATISTICS));
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
   CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
 }

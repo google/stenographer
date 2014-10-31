@@ -136,7 +136,7 @@ func (d *Directory) checkForNewFiles() {
 	defer d.mu.Unlock()
 	gotNew := false
 	for i := 0; i < d.threads; i++ {
-		dirpath := filepath.Join(d.name, strconv.Itoa(i))
+		dirpath := filepath.Join(d.name, "PKT" + strconv.Itoa(i))
 		files, err := ioutil.ReadDir(dirpath)
 		if err != nil {
 			log.Printf("could not read dir %q: %v", dirpath, err)

@@ -1,6 +1,7 @@
 {
   "Threads": [
-    { "PacketsDirectory": "/tmp2/steno" }
+    { "PacketsDirectory": "/tmp2/steno",
+      "IndexDirectory": "/tmp2/stenoidx" }
   ]
   , "StenotypePath": "stenotype/stenotype"
   , "Interface": "em1"

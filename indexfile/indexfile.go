@@ -22,8 +22,8 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/sstable"

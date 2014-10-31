@@ -63,7 +63,8 @@
 #include <pwd.h>              // getpwnam()
 #include <grp.h>              // getgrnam()
 #include <unistd.h>           // setuid(), setgid()
-#include <sys/prctl.h>        // prctl(), PR_SET_PDEATHSIG
+#include <sys/prctl.h>        // prctl(), PR_SET_*
+#include <seccomp.h>          // scmp_filter_ctx, seccomp_*(), SCMP_*
 
 #include <string>
 #include <sstream>
@@ -179,8 +180,7 @@ void ParseOptions(int argc, char** argv) {
        "will be captured. This has to be a compiled BPF in hexadecimal, which "
        "can be obtained from a human readable filter expression using the "
        "provided compile_bpf.sh script."},
-      {0},
-  };
+      {0}, };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
 }
@@ -196,6 +196,7 @@ Notification privileges_dropped;
 Barrier* sockets_created;
 
 void DropPrivileges() {
+  LOG(INFO) << "Dropping privileges";
   if (getgid() == 0 || flag_gid != "") {
     if (flag_gid == "") {
       flag_gid = "nobody";
@@ -223,21 +224,78 @@ void DropPrivileges() {
   }
 }
 
+void CommonPrivileges(scmp_filter_ctx ctx) {
+  // Very common operations, including sleeping, logging, and getting time.
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(clock_nanosleep), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(clock_gettime), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 0);
+  // Mutex and other synchronization.
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(set_robust_list), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(futex), 0);
+  // File operations.
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fallocate), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(ftruncate), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mkdir), 0);
+  // Signal handling and propagation to threads.
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigprocmask), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigreturn), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(tgkill), 0);
+  // Malloc/ringbuffer.
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(munmap), 0);
+  // Malloc.
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mprotect), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(madvise), 0);
+}
+
+void DropMainThreadPrivileges() {
+  scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
+  CHECK(ctx != NULL);
+  CommonPrivileges(ctx);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit), 0);
+  CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
+}
+
+void DropIndexThreadPrivileges() {
+  scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
+  CHECK(ctx != NULL);
+  CommonPrivileges(ctx);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
+  CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
+}
+
+void DropPacketThreadPrivileges() {
+  scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
+  CHECK(ctx != NULL);
+  CommonPrivileges(ctx);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_setup), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_submit), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_getevents), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(poll), 0);
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockopt),
+                   0);  // packet stats
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
+  CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
+}
+
 Error SetAffinity(int cpu) {
   cpu_set_t cpus;
   CPU_ZERO(&cpus);
   CPU_SET(cpu, &cpus);
-  return Errno(0 <= sched_setaffinity(0, sizeof(cpus), &cpus));
+  return Errno(sched_setaffinity(0, sizeof(cpus), &cpus));
 }
 
 void WriteIndexes(st::ProducerConsumerQueue* write_index) {
   pid_t tid = syscall(SYS_gettid);
-  LOG_IF_ERROR(Errno(-1 != setpriority(PRIO_PROCESS, tid, flag_index_nicelevel)
-                         // setpriority can return -1 on success, so we also
-                         // have to check errno.
-                     &&
-                     errno == 0),
+  LOG_IF_ERROR(Errno(setpriority(PRIO_PROCESS, tid, flag_index_nicelevel)),
                "setpriority");
+  privileges_dropped.WaitForNotification();
+  DropIndexThreadPrivileges();
   while (true) {
     Index* i = reinterpret_cast<Index*>(write_index->Get());
     if (i == NULL) {
@@ -256,7 +314,6 @@ void HandleStopRequest(int sig) {
     run_threads = false;
   }
 }
-void HandleSIGSEGV(int sig) { LOG(FATAL) << "SIGSEGV"; }
 
 void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   if (flag_threads > 1) {
@@ -283,15 +340,16 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   }
   sockets_created->Block();
   privileges_dropped.WaitForNotification();
+  DropPacketThreadPrivileges();
   LOG(INFO) << "Thread " << thread << " starting to process packets";
 
   // Set up file writing, if requested.
   Output output(flag_aiops, flag_filesize_mb << 20);
 
   // All dirnames are guaranteed to end with '/'.
-  string file_dirname = flag_dir;
-  file_dirname += to_string(thread) + "/";
-  string index_dirname = file_dirname + "INDEX/";
+  string file_dirname = flag_dir + "PKT" + to_string(thread) + "/";
+  string index_dirname = flag_dir + "IDX" + to_string(thread) + "/";
+  CHECK_SUCCESS(MkDirRecursive(file_dirname));
   CHECK_SUCCESS(MkDirRecursive(index_dirname));
 
   Packet p;
@@ -382,8 +440,9 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
 }
 
 int Main(int argc, char** argv) {
-  LOG_IF_ERROR(Errno(0 == prctl(PR_SET_PDEATHSIG, SIGTERM)), "prctl PDEATHSIG");
+  LOG_IF_ERROR(Errno(prctl(PR_SET_PDEATHSIG, SIGTERM)), "prctl PDEATHSIG");
   ParseOptions(argc, argv);
+  LOG(INFO) << "Starting...";
   sockets_created = new Barrier(flag_threads + 1);
 
   // Sanity check flags and setup options.
@@ -401,12 +460,11 @@ int Main(int argc, char** argv) {
   // Handle sigint by stopping all threads.
   signal(SIGINT, &HandleStopRequest);
   signal(SIGTERM, &HandleStopRequest);
-  signal(SIGSEGV, &HandleSIGSEGV);
 
+  st::ProducerConsumerQueue write_index;
   // To avoid blocking on index writes, each writer thread has a secondary
   // thread just for creating and writing the indexes.  We pass to-write indexes
   // through to the writing thread via the write_index FIFO queue.
-  st::ProducerConsumerQueue write_index;
   vector<std::thread*> index_threads;
   if (flag_index) {
     LOG(V1) << "Starting indexing threads";
@@ -425,6 +483,7 @@ int Main(int argc, char** argv) {
   sockets_created->Block();
   DropPrivileges();
   privileges_dropped.Notify();
+  DropMainThreadPrivileges();
 
   LOG(V1) << "Waiting for threads";
   for (auto thread : threads) {

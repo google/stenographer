@@ -13,4 +13,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-find "`dirname $0`" -iname \*.cc -o -iname \*.h -execdir clang-format-3.5 -i --style Google {} \;
+cd $(dirname $0)
+clang-format-3.5 -style=Google -i stenotype/*.{cc,h}

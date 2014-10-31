@@ -46,17 +46,16 @@ Error MkDirRecursive(const string& dirname) {
   if (mkdir(dirname.c_str(), 0700) == 0) {
     return SUCCESS;
   }
-  switch
-    errno {
-      case ENOENT:
-        RETURN_IF_ERROR(MkDirRecursive(Dirname(dirname)), dirname);
-        break;
-      case EEXIST:
-        return SUCCESS;
-      default:
-        return Errno();
-    }
-  return Errno(mkdir(dirname.c_str(), 0700) == 0);
+  switch (errno) {
+    case ENOENT:
+      RETURN_IF_ERROR(MkDirRecursive(Dirname(dirname)), dirname);
+      break;
+    case EEXIST:
+      return SUCCESS;
+    default:
+      return Errno();
+  }
+  return Errno(mkdir(dirname.c_str(), 0700));
 }
 
 }  // namespace st

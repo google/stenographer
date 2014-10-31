@@ -82,7 +82,7 @@ Error PWrite::Done(io_event* event) {
   long bytes_written = static_cast<long>(event->res);
   Error result;
   if (bytes_written < 0) {
-    result = AIOErrno(bytes_written);
+    result = NegErrno(bytes_written);
   } else if (bytes_written < int64_t(block.Data().size())) {
     result = ERROR("write truncated");
   }
@@ -108,19 +108,18 @@ void SingleFile::Write(io_context_t ctx, Block* b) {
     if (ret != 0 && ret != -EAGAIN) break;
     SleepForSeconds(0.001);
   }
-  CHECK_SUCCESS(AIOErrno(ret));
+  CHECK_SUCCESS(NegErrno(ret));
 }
 
 Error SingleFile::Close() {
   CHECK(Closable());
   LOG(INFO) << "Closing " << hidden_name_ << " (" << fd_ << "), truncating to "
             << (truncate_ >> 20) << "MB and moving to " << unhidden_name_;
-  LOG_IF_ERROR(Errno(ftruncate(fd_, truncate_) >= 0), "ftruncate");
-  RETURN_IF_ERROR(Errno(close(fd_) >= 0), "close");
+  LOG_IF_ERROR(Errno(ftruncate(fd_, truncate_)), "ftruncate");
+  RETURN_IF_ERROR(Errno(close(fd_)), "close");
   fd_ = 0;
-  RETURN_IF_ERROR(
-      Errno(0 == rename(hidden_name_.c_str(), unhidden_name_.c_str())),
-      "rename");
+  RETURN_IF_ERROR(Errno(rename(hidden_name_.c_str(), unhidden_name_.c_str())),
+                  "rename");
   return SUCCESS;
 }
 
@@ -146,7 +145,7 @@ Error Output::SetUp() {
     SleepForSeconds(1);
     LOG(V1) << "io_setup retrying";
   }
-  return AIOErrno(ret);
+  return NegErrno(ret);
 }
 
 Error Output::CheckForCompletedOps(bool block) {
@@ -158,7 +157,7 @@ Error Output::CheckForCompletedOps(bool block) {
     // setting errno and returning -1.
     ret = io_getevents(ctx_, block ? 1 : 0, 4, events, NULL);
   } while (ret == -EINTR);
-  RETURN_IF_ERROR(AIOErrno(ret), "io_getevents");
+  RETURN_IF_ERROR(NegErrno(ret), "io_getevents");
   for (int i = 0; i < ret; i++) {
     auto aio = reinterpret_cast<io::PWrite*>(events[i].obj->data);
     auto file = aio->file;

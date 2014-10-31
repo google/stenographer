@@ -37,13 +37,14 @@ InstallPackage libleveldb-dev
 InstallPackage libsnappy-dev
 InstallPackage g++
 InstallPackage libcap2-bin
+InstallPackage libseccomp-dev
 
 echo "Building binary"
 g++ --std=c++0x \
   -o stenotype \
   -g -O3 -rdynamic -Wall \
   aio.cc util.cc packets.cc index.cc stenotype.cc \
-  -lleveldb -lrt -laio -lpthread -lsnappy
+  -lleveldb -lrt -laio -lpthread -lsnappy -lseccomp
 
 echo "Setting capabilities"
 chmod go-rwx stenotype

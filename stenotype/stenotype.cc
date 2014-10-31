@@ -95,6 +95,7 @@ uint16_t flag_fanout_id = 0;
 string flag_uid;
 string flag_gid;
 bool flag_index = true;
+bool flag_seccomp = true;
 int flag_index_nicelevel = 0;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
@@ -150,6 +151,9 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
     case 314:
       flag_filter = arg;
       break;
+    case 315:
+      flag_seccomp = false;
+      break;
   }
   return 0;
 }
@@ -173,13 +177,14 @@ void ParseOptions(int argc, char** argv) {
       {"fanout_id", 309, n, 0, "If fanning out across processes, set this"},
       {"uid", 310, n, 0, "Drop privileges to this user"},
       {"gid", 311, n, 0, "Drop privileges to this group"},
-      {"noindex", 312, 0, 0, "Do not compute or write indexes"},
+      {"no_index", 312, 0, 0, "Do not compute or write indexes"},
       {"index_nicelevel", 313, n, 0, "Nice level of indexing threads"},
       {"filter", 314, s, 0,
        "BPF compiled filter used to filter which packets "
        "will be captured. This has to be a compiled BPF in hexadecimal, which "
        "can be obtained from a human readable filter expression using the "
        "provided compile_bpf.sh script."},
+      {"no_seccomp", 315, 0, 0, "Skip seccomp sandboxing."},
       {0}, };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
@@ -254,6 +259,7 @@ void CommonPrivileges(scmp_filter_ctx ctx) {
 }
 
 void DropMainThreadPrivileges() {
+  if (!flag_seccomp) return;
   scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
   CHECK(ctx != NULL);
   CommonPrivileges(ctx);
@@ -262,6 +268,7 @@ void DropMainThreadPrivileges() {
 }
 
 void DropIndexThreadPrivileges() {
+  if (!flag_seccomp) return;
   scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
   CHECK(ctx != NULL);
   CommonPrivileges(ctx);
@@ -270,6 +277,7 @@ void DropIndexThreadPrivileges() {
 }
 
 void DropPacketThreadPrivileges() {
+  if (!flag_seccomp) return;
   scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
   CHECK(ctx != NULL);
   CommonPrivileges(ctx);

@@ -68,13 +68,13 @@ func (c Config) Directory() (_ *Directory, returnedErr error) {
 	for i, thread := range c.Threads {
 		if _, err := os.Stat(thread.PacketsDirectory); err != nil {
 			return nil, fmt.Errorf("invalid packets directory %q in configuration: %v", thread.PacketsDirectory, err)
-		} else if err := os.Symlink(thread.PacketsDirectory, filepath.Join(dirname, strconv.Itoa(i))); err != nil {
+		} else if err := os.Symlink(thread.PacketsDirectory, filepath.Join(dirname, "PKT"+strconv.Itoa(i))); err != nil {
 			return nil, fmt.Errorf("couldn't create symlink for thread %d to directory %q: %v", i, thread.PacketsDirectory, err)
 		}
-		if thread.IndexDirectory != "" {
-			if err := os.Symlink(thread.IndexDirectory, filepath.Join(dirname, strconv.Itoa(i), "INDEX")); err != nil {
-				return nil, fmt.Errorf("couldn't create symlink for thread %d index to directory %q: %v", i, thread.IndexDirectory, err)
-			}
+		if _, err := os.Stat(thread.IndexDirectory); err != nil {
+			return nil, fmt.Errorf("invalid index directory %q in configuration: %v", thread.IndexDirectory, err)
+		} else if err := os.Symlink(thread.IndexDirectory, filepath.Join(dirname, "IDX"+strconv.Itoa(i))); err != nil {
+			return nil, fmt.Errorf("couldn't create symlink for index %d to directory %q: %v", i, thread.IndexDirectory, err)
 		}
 	}
 	return newDirectory(dirname, len(c.Threads)), nil

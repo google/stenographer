@@ -39,7 +39,7 @@ type IndexFile struct {
 // IndexPathFromPath returns the path to an index file based on the path to a
 // block file.
 func IndexPathFromPath(p string) string {
-	return filepath.Join(filepath.Dir(p), "INDEX", filepath.Base(p))
+	return strings.Replace(p, "PKT", "IDX", 1)
 }
 
 // NewIndexFile returns a new handle to the named index file.

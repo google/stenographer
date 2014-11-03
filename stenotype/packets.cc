@@ -156,39 +156,44 @@ bool Block::Next(Packet* p) {
   return true;
 }
 
-PacketsV3::PacketsV3(size_t num_blocks, size_t block_size)
-    : fd_(-1),
-      ring_(NULL),
-      offset_(num_blocks - 1),
-      block_size_(block_size),
-      num_blocks_(num_blocks) {
-  block_mus_ = new Mutex[num_blocks];
+PacketsV3::PacketsV3(PacketsV3::State* state) {
+  state_.Swap(state);
+  offset_ = state_.num_blocks - 1;
+  block_mus_ = new Mutex[state_.num_blocks];
 }
 
 Error PacketsV3::GetStats(Stats* stats) {
   struct tpacket_stats_v3 tpstats;
   socklen_t len = sizeof(tpstats);
-  RETURN_IF_ERROR(Errno(0 <= getsockopt(fd_, SOL_PACKET, PACKET_STATISTICS,
-                                        &tpstats, &len)),
+  RETURN_IF_ERROR(Errno(0 <= getsockopt(state_.fd, SOL_PACKET,
+                                        PACKET_STATISTICS, &tpstats, &len)),
                   "getsockopt PACKET_STATISTICS");
   stats_.drops += tpstats.tp_drops;
   *stats = stats_;
   return SUCCESS;
 }
 
-Error PacketsV3::Bind(const string& iface) {
+Error PacketsV3::Builder::Bind(const string& iface, PacketsV3** out) {
+  RETURN_IF_ERROR(BadState(), "Builder");
+
   unsigned int ifindex = if_nametoindex(iface.c_str());
-  RETURN_IF_ERROR(Errno(ifindex != 0), "bind_iface");
+  RETURN_IF_ERROR(Errno(ifindex != 0), "if_nametoindex");
   struct sockaddr_ll ll;
   memset(&ll, 0, sizeof(ll));
   ll.sll_family = AF_PACKET;
   ll.sll_protocol = htons(ETH_P_ALL);
   ll.sll_ifindex = ifindex;
-  return Errno(
-      0 <= ::bind(fd_, reinterpret_cast<struct sockaddr*>(&ll), sizeof(ll)));
+  RETURN_IF_ERROR(
+      Errno(0 <= ::bind(state_.fd, reinterpret_cast<struct sockaddr*>(&ll),
+                        sizeof(ll))),
+      "bind");
+  *out = new PacketsV3(&state_);
+  return SUCCESS;
 }
 
-Error PacketsV3::SetFilter(const string& filter) {
+Error PacketsV3::Builder::SetFilter(const string& filter) {
+  RETURN_IF_ERROR(BadState(), "Builder");
+
   if (filter.empty()) return SUCCESS;
 
   int filter_size = filter.size();
@@ -209,72 +214,75 @@ Error PacketsV3::SetFilter(const string& filter) {
   RETURN_IF_ERROR(Errno(0 == errno), "failure while parsing filter");
 
   struct sock_fprog bpf = {(unsigned short int)num_structs, bpf_filter};
-  RETURN_IF_ERROR(Errno(0 == setsockopt(fd_, SOL_SOCKET, SO_ATTACH_FILTER, &bpf,
-                                        sizeof(bpf))),
+  RETURN_IF_ERROR(Errno(0 == setsockopt(state_.fd, SOL_SOCKET, SO_ATTACH_FILTER,
+                                        &bpf, sizeof(bpf))),
                   "so_attach_filter");
+#ifdef SO_LOCK_FILTER
   int v = 1;
   // SO_LOCK_FILTER is available only on kernels >= 3.9, so ignore the
   // ENOPROTOOPT
   // error here. We use it to make sure that no one can mess with our socket's
   // filter, so not having it is not really a big concern.
-  RETURN_IF_ERROR(
-      Errno(0 == setsockopt(fd_, SOL_SOCKET, SO_LOCK_FILTER, &v, sizeof(v)) ||
-            errno == ENOPROTOOPT),
-      "so_lock_filter");
+  RETURN_IF_ERROR(Errno(0 == setsockopt(state_.fd, SOL_SOCKET, SO_LOCK_FILTER,
+                                        &v, sizeof(v)) ||
+                        errno == ENOPROTOOPT),
+                  "so_lock_filter");
   errno = 0;
+#endif
   return SUCCESS;
 }
 
-Error PacketsV3::SetVersion() {
-  int version = TPACKET_V3;
-  return Errno(0 <= setsockopt(fd_, SOL_PACKET, PACKET_VERSION, &version,
-                               sizeof(version)));
-}
-
-Error PacketsV3::SetFanout(uint16_t fanout_type, uint16_t fanout_id) {
-  LOG(V1) << "Setting fanout to type " << fanout_type << " ID " << fanout_id;
-  uint32_t fanout = fanout_type;
-#ifdef PACKET_FANOUT_FLAG_ROLLOVER
-  // If the kernel supports it, roll over to another queue if the current queue
-  // is full.
-  fanout |= PACKET_FANOUT_FLAG_ROLLOVER;
-  LOG(V1) << "Using FANOUT_FLAG_ROLLOVER, since it's available";
-#endif
-  fanout <<= 16;
-  fanout |= fanout_id;
-  return Errno(
-      0 <= setsockopt(fd_, SOL_PACKET, PACKET_FANOUT, &fanout, sizeof(fanout)));
-}
-
-Error PacketsV3::SetRingOptions(void* options, socklen_t size) {
-  return Errno(0 <= setsockopt(fd_, SOL_PACKET, PACKET_RX_RING, options, size));
-}
-
-// https://lkml.org/lkml/2006/10/14/141
-Error PacketsV3::DrainSocket() {
-  char buf[4096];
-  while (recvfrom(fd_, &buf, 4096, MSG_DONTWAIT, NULL, 0) >= 0) {
-    LOG(INFO) << "Drained from socket";
+Error PacketsV3::Builder::BadState() {
+  if (state_.fd < 0) {
+    return ERROR(
+        "builder in bad state... SetUp not called or Bind already called");
   }
   return SUCCESS;
 }
 
-Error PacketsV3::MMapRing() {
-  ring_ = reinterpret_cast<char*>(
-      mmap(NULL, block_size_ * num_blocks_, PROT_READ | PROT_WRITE,
-           MAP_SHARED | MAP_LOCKED | MAP_NORESERVE, fd_, 0));
-  return Errno(errno == 0);
+Error PacketsV3::Builder::SetVersion() {
+  int version = TPACKET_V3;
+  return Errno(0 <= setsockopt(state_.fd, SOL_PACKET, PACKET_VERSION, &version,
+                               sizeof(version)));
+}
+
+Error PacketsV3::Builder::SetFanout(uint16_t fanout_type, uint16_t fanout_id) {
+  RETURN_IF_ERROR(BadState(), "Builder");
+  LOG(V1) << "Setting fanout to type " << fanout_type << " ID " << fanout_id;
+  uint32_t fanout = fanout_type;
+  fanout <<= 16;
+  fanout |= fanout_id;
+  RETURN_IF_ERROR(Errno(0 <= setsockopt(state_.fd, SOL_PACKET, PACKET_FANOUT,
+                                        &fanout, sizeof(fanout))),
+                  "setting fanout options");
+  return SUCCESS;
+}
+
+Error PacketsV3::Builder::SetRingOptions(void* options, socklen_t size) {
+  RETURN_IF_ERROR(Errno(0 <= setsockopt(state_.fd, SOL_PACKET, PACKET_RX_RING,
+                                        options, size)),
+                  "setting socket ring options");
+  return SUCCESS;
+}
+
+Error PacketsV3::Builder::MMapRing() {
+  state_.ring = reinterpret_cast<char*>(
+      mmap(NULL, state_.block_size * state_.num_blocks, PROT_READ | PROT_WRITE,
+           MAP_SHARED | MAP_LOCKED | MAP_NORESERVE, state_.fd, 0));
+  RETURN_IF_ERROR(Errno(errno == 0), "mmap-ing ring");
+  return SUCCESS;
 }
 
 // socktype is SOCK_RAW or SOCK_DGRAM.
-Error PacketsV3::CreateSocket(int socktype) {
-  fd_ = socket(AF_PACKET, socktype, 0);
-  return Errno(fd_ >= 0);
+Error PacketsV3::Builder::CreateSocket(int socktype) {
+  state_.fd = socket(AF_PACKET, socktype, 0);
+  RETURN_IF_ERROR(Errno(state_.fd >= 0), "creating socket");
+  return SUCCESS;
 }
 
 Error PacketsV3::PollForPacket() {
   struct pollfd pfd;
-  pfd.fd = fd_;
+  pfd.fd = state_.fd;
   pfd.events = POLLIN;
   pfd.revents = 0;
   int64_t duration_micros = -GetCurrentTimeMicros();
@@ -284,23 +292,34 @@ Error PacketsV3::PollForPacket() {
   return Errno(ret >= 0);
 }
 
+void PacketsV3::State::Swap(PacketsV3::State* s) {
+  std::swap(fd, s->fd);
+  std::swap(ring, s->ring);
+  std::swap(num_blocks, s->num_blocks);
+  std::swap(block_size, s->block_size);
+}
+
+PacketsV3::State::~State() {
+  if (ring) {
+    munmap(ring, block_size * num_blocks);
+  }
+  if (fd >= 0) {
+    close(fd);
+  }
+}
+
 PacketsV3::~PacketsV3() {
-  for (size_t i = 0; i < num_blocks_; i++) {
+  for (size_t i = 0; i < state_.num_blocks; i++) {
     // Wait for all blocks to be returned to kernel.
     block_mus_[i].Lock();
     block_mus_[i].Unlock();
   }
-  if (ring_) {
-    munmap(ring_, block_size_ * num_blocks_);
-  }
-  if (fd_ >= 0) {
-    close(fd_);
-  }
   delete[] block_mus_;
 }
 
-Error PacketsV3::V3(struct tpacket_req3 tp, int socktype, const string& iface,
-                    const string& filter, PacketsV3** out) {
+PacketsV3::Builder::Builder() {}
+
+Error PacketsV3::Builder::SetUp(int socktype, struct tpacket_req3 tp) {
   if (tp.tp_block_size % getpagesize() != 0) {
     return ERROR("block size not divisible by page size");
   }
@@ -317,24 +336,22 @@ Error PacketsV3::V3(struct tpacket_req3 tp, int socktype, const string& iface,
   } else if (tp.tp_frame_nr != total_frames) {
     return ERROR("num frames does not match");
   }
-  unique_ptr<PacketsV3> v3(new PacketsV3(tp.tp_block_nr, tp.tp_block_size));
-  RETURN_IF_ERROR(v3->CreateSocket(socktype), "creating socket");
-  RETURN_IF_ERROR(v3->SetFilter(filter), "setting filter");
-  RETURN_IF_ERROR(v3->SetVersion(), "setting version");
-  RETURN_IF_ERROR(v3->SetRingOptions(&tp, sizeof(tp)), "setting options");
-  RETURN_IF_ERROR(v3->MMapRing(), "mmapping ring");
-  RETURN_IF_ERROR(v3->Bind(iface), "binding interface");
-  *out = v3.release();
+  state_.block_size = tp.tp_block_size;
+  state_.num_blocks = tp.tp_block_nr;
+  RETURN_IF_ERROR(CreateSocket(socktype), "CreateSocket");
+  RETURN_IF_ERROR(SetVersion(), "SetVersion");
+  RETURN_IF_ERROR(SetRingOptions(&tp, sizeof(tp)), "SetRingOptions");
+  RETURN_IF_ERROR(MMapRing(), "MMapRing");
   return SUCCESS;
 }
 
 Error PacketsV3::NextBlock(Block* b, bool poll_once) {
   if (pos_.Empty()) {
     // If we're finished with the current block, move to the next block.
-    offset_ = (offset_ + 1) % num_blocks_;
+    offset_ = (offset_ + 1) % state_.num_blocks;
     // This constructor locks the passed-in mu on creation, so it'll
     // wait for that mu to be unlocked by the last user of this block.
-    pos_.ResetTo(ring_ + offset_ * block_size_, block_size_,
+    pos_.ResetTo(state_.ring + offset_ * state_.block_size, state_.block_size,
                  &block_mus_[offset_]);
   }
   while (!pos_.ReadyForUser()) {

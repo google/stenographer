@@ -194,8 +194,6 @@ Error PacketsV3::Builder::Bind(const string& iface, PacketsV3** out) {
 Error PacketsV3::Builder::SetFilter(const string& filter) {
   RETURN_IF_ERROR(BadState(), "Builder");
 
-  if (filter.empty()) return SUCCESS;
-
   int filter_size = filter.size();
   int filter_element_size = 4 + 2 + 2 + 8;
   RETURN_IF_ERROR(Errno(0 == filter_size % filter_element_size),

@@ -152,7 +152,7 @@ class PacketsV3 {
     Builder();
 
     // SetUp must be called before any of the following methods.  It sets up the
-    // initial socket and mmap'd ring.  Note:  the socket is set up such that it
+    // initial socket and mmap'd ring.  Note: the socket is set up such that it
     // ignores packets until Bind is called.
     Error SetUp(int socktype, struct tpacket_req3 tp);
 

@@ -346,15 +346,22 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
 
   // Set up AF_PACKET packet reading.
-  PacketsV3* v3;
-  CHECK_SUCCESS(PacketsV3::V3(options, socktype, flag_iface, flag_filter, &v3));
+  PacketsV3::Builder builder;
+  CHECK_SUCCESS(builder.SetUp(socktype, options));
   int fanout_id = getpid();
   if (flag_fanout_id > 0) {
     fanout_id = flag_fanout_id;
   }
   if (flag_fanout_id > 0 || flag_threads > 1) {
-    CHECK_SUCCESS(v3->SetFanout(flag_fanout_type, fanout_id));
+    CHECK_SUCCESS(builder.SetFanout(flag_fanout_type, fanout_id));
   }
+  if (!flag_filter.empty()) {
+    CHECK_SUCCESS(builder.SetFilter(flag_filter));
+  }
+  PacketsV3* v3;
+  CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
+  unique_ptr<PacketsV3> cleanup(v3);
+
   sockets_created->Block();
   privileges_dropped.WaitForNotification();
   DropPacketThreadPrivileges();

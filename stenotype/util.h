@@ -380,18 +380,18 @@ class ProducerConsumerQueue {
 // Errno returns a util::Status based on the current value of errno and the
 // success flag.  If success is true, returns OK.  Otherwise, returns a
 // FAILED_PRECONDITION error based on errno.
-inline Error Errno(bool success = false) {
-  if (success) {
+inline Error Errno(int ret = -1) {
+  if (ret >= 0 || errno == 0) {
     return SUCCESS;
   }
   return ERROR(strerror(errno));
 }
 
-// Linux libaio uses a different errno convention than normal syscalls.  Instead
-// of returning -1 and setting errno, they return -errno on errors.  This
-// function takes in that return value and returns OK if ret >= 0 or a
-// FAILED_PRECONDITION error based on -ret otherwise.
-inline Error AIOErrno(int ret) {
+// Linux libaio and libseccomp use a different errno convention than normal
+// syscalls.  Instead of returning -1 and setting errno, they return -errno
+// on errors.  This function takes in that return value and returns OK if
+// ret >= 0 or an Errno error based on the negative return value.
+inline Error NegErrno(int ret) {
   if (ret < 0) {
     return ERROR(strerror(-ret));
   }

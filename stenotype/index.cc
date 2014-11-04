@@ -183,8 +183,7 @@ Error Index::Flush() {
   string unhidden = UnhiddenFile(dirname_, micros_);
   LOG(INFO) << "Wrote all index files for " << filename << ", moving to "
             << unhidden;
-  RETURN_IF_ERROR(Errno(0 == rename(filename.c_str(), unhidden.c_str())),
-                  "rename");
+  RETURN_IF_ERROR(Errno(rename(filename.c_str(), unhidden.c_str())), "rename");
   LOG(V1) << "Stored " << packets_ << " with " << ip4_.size() << " IP4 "
           << ip6_.size() << " IP6 " << proto_.size() << " protos "
           << port_.size() << " ports";

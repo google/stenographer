@@ -19,7 +19,8 @@ function PercentFull {
 }
 
 function OldestFile {
-  for filename in $(ls -tr | grep -v INDEX); do
+  for filename in $(ls -tr PKT$THREAD/); do
+    filename="PKT$THREAD/$filename"
     if [ -f "$filename" ]; then
       echo "$filename"
       return
@@ -28,10 +29,11 @@ function OldestFile {
 }
 
 cd "$1"
+THREAD=$2
 
 while [ $(PercentFull) -gt 90 ]; do
   filename="$(OldestFile)"
   rm -fv "${filename}"
-  rm -fv "INDEX/${filename}"
+  rm -fv "${filename//PKT/IDX}"
   sleep 1
 done

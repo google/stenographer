@@ -41,6 +41,8 @@ inline size_t Align(size_t v) {
   return (v + TPACKET_ALIGNMENT - 1) & ((~TPACKET_ALIGNMENT) - 1);
 }
 
+const int kNoFanout = -1;
+
 }  // namespace
 
 namespace st {
@@ -189,6 +191,11 @@ Error PacketsV3::Builder::Bind(const string& iface, PacketsV3** out) {
       Errno(::bind(state_.fd, reinterpret_cast<struct sockaddr*>(&ll),
                    sizeof(ll))),
       "bind");
+  if (fanout_ != kNoFanout) {
+    RETURN_IF_ERROR(Errno(setsockopt(state_.fd, SOL_PACKET, PACKET_FANOUT,
+                                     &fanout_, sizeof(fanout_))),
+                    "setting fanout");
+  }
   *out = new PacketsV3(&state_);
   return SUCCESS;
 }
@@ -249,12 +256,12 @@ Error PacketsV3::Builder::SetVersion() {
 
 Error PacketsV3::Builder::SetFanout(uint16_t fanout_type, uint16_t fanout_id) {
   RETURN_IF_ERROR(BadState(), "Builder");
+  // We can't actually set fanout until we bind, so just save it instead.
   LOG(V1) << "Setting fanout to type " << fanout_type << " ID " << fanout_id;
-  uint32_t fanout = fanout_type;
-  fanout <<= 16;
-  fanout |= fanout_id;
-  return Errno(setsockopt(state_.fd, SOL_PACKET, PACKET_FANOUT, &fanout,
-                          sizeof(fanout)));
+  fanout_ = fanout_type;
+  fanout_ <<= 16;
+  fanout_ |= fanout_id;
+  return SUCCESS;
 }
 
 Error PacketsV3::Builder::SetRingOptions(void* options, socklen_t size) {
@@ -316,7 +323,7 @@ PacketsV3::~PacketsV3() {
   delete[] block_mus_;
 }
 
-PacketsV3::Builder::Builder() {}
+PacketsV3::Builder::Builder() : fanout_(kNoFanout) {}
 
 Error PacketsV3::Builder::SetUp(int socktype, struct tpacket_req3 tp) {
   if (tp.tp_block_size % getpagesize() != 0) {

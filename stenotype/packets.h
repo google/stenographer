@@ -177,6 +177,7 @@ class PacketsV3 {
     // State contains the state the builder sets up.  This state will be passed
     // to the PacketsV3 object created by Bind.
     State state_;
+    int fanout_;
   };
 
  private:

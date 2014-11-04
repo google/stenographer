@@ -88,7 +88,7 @@ void Block::Reset() { ResetTo(NULL, 0, NULL); }
 
 bool Block::ReadyForUser() { return Status() & TP_STATUS_USER; }
 
-void Block::ResetTo(char* data, size_t sz, Mutex* mu) {
+void Block::ResetTo(char* data, size_t sz, mutex* mu) {
   Done();
   LOG(V2) << "New block " << reinterpret_cast<uintptr_t>(data);
   start_ = data;
@@ -96,7 +96,7 @@ void Block::ResetTo(char* data, size_t sz, Mutex* mu) {
   mu_ = mu;
   pkts_in_use_ = 0;
   if (mu_) {
-    mu_->Lock();
+    mu_->lock();
   }
   if (!start_) {
     return;
@@ -112,7 +112,7 @@ void Block::Done() {
     start_ = NULL;
   }
   if (mu_ != NULL) {
-    mu_->Unlock();
+    mu_->unlock();
     mu_ = NULL;
   }
 }
@@ -161,7 +161,7 @@ bool Block::Next(Packet* p) {
 PacketsV3::PacketsV3(PacketsV3::State* state) {
   state_.Swap(state);
   offset_ = state_.num_blocks - 1;
-  block_mus_ = new Mutex[state_.num_blocks];
+  block_mus_ = new mutex[state_.num_blocks];
 }
 
 Error PacketsV3::GetStats(Stats* stats) {
@@ -317,8 +317,8 @@ PacketsV3::State::~State() {
 PacketsV3::~PacketsV3() {
   for (size_t i = 0; i < state_.num_blocks; i++) {
     // Wait for all blocks to be returned to kernel.
-    block_mus_[i].Lock();
-    block_mus_[i].Unlock();
+    block_mus_[i].lock();
+    block_mus_[i].unlock();
   }
   delete[] block_mus_;
 }

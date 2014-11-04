@@ -28,8 +28,6 @@
 
 namespace st {
 
-class Mutex;
-
 // Information on a single packet in an AF_PACKET block.
 struct Packet {
   leveldb::Slice data;  // Packet data as stored in the block.
@@ -80,7 +78,7 @@ class Block {
   friend class PacketsV3;
   void UpdateStats(Stats* stats);
   bool ReadyForUser();
-  void ResetTo(char* data, size_t sz, Mutex* mu);
+  void ResetTo(char* data, size_t sz, mutex* mu);
   void Done();
   void ReturnToKernel();
   void MoveToNext();
@@ -95,7 +93,7 @@ class Block {
   struct tpacket_block_desc* block_;
   struct tpacket3_hdr* packet_;
   uint32_t pkts_in_use_;
-  Mutex* mu_;
+  mutex* mu_;
 
   DISALLOW_COPY_AND_ASSIGN(Block);
 };
@@ -191,7 +189,7 @@ class PacketsV3 {
   // Locks, one per block.  Block objects hold a lock to their memory region
   // during their lifetime, and release it on destruction.  This allows us to
   // correctly use the circular queue without overrunning if it gets full.
-  Mutex* block_mus_;
+  mutex* block_mus_;
 
   DISALLOW_COPY_AND_ASSIGN(PacketsV3);
 };

@@ -32,6 +32,8 @@
 #include <iomanip>   // setw, setfill
 #include <deque>
 #include <memory>
+#include <mutex>
+#include <condition_variable>
 
 using namespace std;
 
@@ -232,57 +234,28 @@ typedef unique_ptr<string> Error;
 // The very simple Mutex class, and its RAII locker Mutex::Locker provide very
 // simple blocking locks/unlocks wrapping a pthreads mutex.
 
-#define CHECK_PTHREAD(expr, mu)                             \
-  do {                                                      \
-    LOG(V3) << "PTHREAD: " << #expr << " " << intptr_t(mu); \
-    int ret = (expr);                                       \
-    CHECK(ret == 0) << #expr << ": " << strerror(ret);      \
-  } while (false)
-
-// Mutex provides a simple, usable wrapper around a mutex.
-class Mutex {
- public:
-  Mutex() {
-    pthread_mutexattr_t attr;
-    CHECK_PTHREAD(pthread_mutexattr_init(&attr), &attr);
-    CHECK_PTHREAD(pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK),
-                  &attr);
-    CHECK_PTHREAD(pthread_mutex_init(&mu_, &attr), &mu_);
-  }
-  ~Mutex() { CHECK_PTHREAD(pthread_mutex_destroy(&mu_), &mu_); }
-  inline void Lock() { CHECK_PTHREAD(pthread_mutex_lock(&mu_), &mu_); }
-  inline void Unlock() { CHECK_PTHREAD(pthread_mutex_unlock(&mu_), &mu_); }
-
-  class Locker {
-   public:
-    Locker(Mutex* mu) : mu_(mu) { mu_->Lock(); }
-    ~Locker() { mu_->Unlock(); }
-
-   private:
-    Mutex* mu_;
-    DISALLOW_COPY_AND_ASSIGN(Locker);
-  };
-
- private:
-  pthread_mutex_t mu_;
-  DISALLOW_COPY_AND_ASSIGN(Mutex);
-};
-
 // Barrier provides a barrier for multiple threads.
 class Barrier {
  public:
-  explicit Barrier(int threads) {
-    CHECK_PTHREAD(pthread_barrier_init(&barrier_, NULL, threads), &barrier_);
-  }
-  ~Barrier() { CHECK_PTHREAD(pthread_barrier_destroy(&barrier_), &barrier_); }
+  explicit Barrier(int threads) : threads_(threads), count_(0) {}
+  ~Barrier() {}
   void Block() {
-    int ret = pthread_barrier_wait(&barrier_);
-    CHECK(ret == PTHREAD_BARRIER_SERIAL_THREAD || ret == 0)
-        << "pthread_barrier_wait failed: " << strerror(ret);
+    unique_lock<mutex> lock(mu_);
+    if (++count_ >= threads_) {
+      lock.unlock();
+      cond_.notify_all();
+    } else {
+      while (count_ < threads_) {
+        cond_.wait(lock);
+      }
+    }
   }
 
  private:
-  pthread_barrier_t barrier_;
+  int threads_;
+  int count_;
+  mutex mu_;
+  condition_variable cond_;
 
   DISALLOW_COPY_AND_ASSIGN(Barrier);
 };
@@ -291,31 +264,27 @@ class Barrier {
 class Notification {
  public:
   Notification() : waiting_(true) {
-    CHECK_PTHREAD(pthread_mutex_init(&mu_, NULL), &mu_);
-    CHECK_PTHREAD(pthread_cond_init(&cond_, NULL), &cond_);
   }
   ~Notification() {
-    CHECK_PTHREAD(pthread_cond_destroy(&cond_), &cond_);
-    CHECK_PTHREAD(pthread_mutex_destroy(&mu_), &mu_);
   }
   void WaitForNotification() {
-    CHECK_PTHREAD(pthread_mutex_lock(&mu_), &mu_);
+    unique_lock<mutex> lock(mu_);
     while (waiting_) {
-      CHECK_PTHREAD(pthread_cond_wait(&cond_, &mu_), &cond_);
+      cond_.wait(lock);
     }
-    CHECK_PTHREAD(pthread_mutex_unlock(&mu_), &mu_);
   }
   void Notify() {
-    CHECK_PTHREAD(pthread_mutex_lock(&mu_), &mu_);
+    mu_.lock();
+    CHECK(waiting_);
     waiting_ = false;
-    CHECK_PTHREAD(pthread_cond_broadcast(&cond_), &cond_);
-    CHECK_PTHREAD(pthread_mutex_unlock(&mu_), &mu_);
+    mu_.unlock();
+    cond_.notify_all();
   }
 
  private:
   bool waiting_;
-  pthread_mutex_t mu_;
-  pthread_cond_t cond_;
+  mutex mu_;
+  condition_variable cond_;
 
   DISALLOW_COPY_AND_ASSIGN(Notification);
 };
@@ -324,58 +293,41 @@ class Notification {
 class ProducerConsumerQueue {
  public:
   ProducerConsumerQueue() {
-    pthread_mutexattr_t attr;
-    // For some very strange reason, if we use "NORMAL" mutexes here, the
-    // pthread_mutex_destroy call in the destructor CHECK-fails.  The second
-    // I switched to using ERRORCHECK, no problems.  So, I'm sticking with
-    // ERRORCHECK ;)
-    CHECK_PTHREAD(pthread_mutexattr_init(&attr), &attr);
-    CHECK_PTHREAD(pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK),
-                  &attr);
-    CHECK_PTHREAD(pthread_mutex_init(&mu_, &attr), &mu_);
-    CHECK_PTHREAD(pthread_cond_init(&cond_, NULL), &cond_);
   }
   ~ProducerConsumerQueue() {
-    pthread_mutex_unlock(&mu_);
-    CHECK_PTHREAD(pthread_cond_destroy(&cond_), &cond_);
-    CHECK_PTHREAD(pthread_mutex_destroy(&mu_), &mu_);
   }
 
   void Put(void* val) {
-    CHECK_PTHREAD(pthread_mutex_lock(&mu_), &mu_);
+    unique_lock<mutex> lock(mu_);
     d_.push_back(val);
-    CHECK_PTHREAD(pthread_cond_signal(&cond_), &cond_);
-    CHECK_PTHREAD(pthread_mutex_unlock(&mu_), &mu_);
+    lock.unlock();
+    cond_.notify_one();
   }
   void* Get() {
-    CHECK_PTHREAD(pthread_mutex_lock(&mu_), &mu_);
+    unique_lock<mutex> lock(mu_);
     while (d_.empty()) {
-      CHECK_PTHREAD(pthread_cond_wait(&cond_, &mu_), &cond_);
+      cond_.wait(lock);
     }
     void* ret = d_.front();
     d_.pop_front();
-    CHECK_PTHREAD(pthread_mutex_unlock(&mu_), &mu_);
     return ret;
   }
   bool TryGet(void** val) {
-    CHECK_PTHREAD(pthread_mutex_lock(&mu_), &mu_);
+    unique_lock<mutex> lock(mu_);
     if (d_.empty()) {
       return false;
     }
     *val = d_.front();
     d_.pop_front();
-    CHECK_PTHREAD(pthread_mutex_unlock(&mu_), &mu_);
     return true;
   }
 
  private:
-  pthread_mutex_t mu_;
-  pthread_cond_t cond_;
+  mutex mu_;
+  condition_variable cond_;
   deque<void*> d_;
   DISALLOW_COPY_AND_ASSIGN(ProducerConsumerQueue);
 };
-
-#undef CHECK_PTHREAD
 
 // Errno returns a util::Status based on the current value of errno and the
 // success flag.  If success is true, returns OK.  Otherwise, returns a

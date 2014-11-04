@@ -277,6 +277,8 @@ void DropIndexThreadPrivileges() {
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 1,
                    SCMP_A1(SCMP_CMP_EQ, O_WRONLY | O_CREAT | O_TRUNC));
+  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 1,
+                   SCMP_A1(SCMP_CMP_EQ, O_RDWR | O_CREAT | O_TRUNC));
   CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
 }
 
@@ -317,6 +319,7 @@ void WriteIndexes(st::ProducerConsumerQueue* write_index) {
   while (true) {
     Index* i = reinterpret_cast<Index*>(write_index->Get());
     if (i == NULL) {
+      LOG(V1) << "Exiting write index thread";
       return;
     }
     LOG_IF_ERROR(i->Flush(), "index flush");
@@ -456,12 +459,14 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
       }
     }
   }
+  LOG(V1) << "Finishing thread " << thread;
   // Write out the last index.
   if (flag_index) {
     write_index->Put(index);
   }
   // Close last open file.
   CHECK_SUCCESS(output.Flush());
+  LOG(INFO) << "Finished thread " << thread << " successfully";
 }
 
 int Main(int argc, char** argv) {
@@ -524,6 +529,7 @@ int Main(int argc, char** argv) {
     for (auto thread : index_threads) {
       CHECK(thread->joinable());
       thread->join();
+      LOG(V1) << "Index thread finished";
       delete thread;
     }
   }

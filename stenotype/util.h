@@ -263,10 +263,8 @@ class Barrier {
 // Notification allows multiple threads to wait for one thread to do something.
 class Notification {
  public:
-  Notification() : waiting_(true) {
-  }
-  ~Notification() {
-  }
+  Notification() : waiting_(true) {}
+  ~Notification() {}
   void WaitForNotification() {
     unique_lock<mutex> lock(mu_);
     while (waiting_) {
@@ -292,10 +290,8 @@ class Notification {
 // ProducerConsumerQueue is a very simple thread-safe FIFO queue.
 class ProducerConsumerQueue {
  public:
-  ProducerConsumerQueue() {
-  }
-  ~ProducerConsumerQueue() {
-  }
+  ProducerConsumerQueue() {}
+  ~ProducerConsumerQueue() {}
 
   void Put(void* val) {
     unique_lock<mutex> lock(mu_);

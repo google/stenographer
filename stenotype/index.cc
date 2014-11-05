@@ -85,6 +85,40 @@ void Index::Process(const Packet& p, int64_t block_offset) {
       start += sizeof(struct ip6_hdr);
       src_ip = leveldb::Slice(reinterpret_cast<const char*>(&ip6->ip6_src), 16);
       dst_ip = leveldb::Slice(reinterpret_cast<const char*>(&ip6->ip6_dst), 16);
+      bool ip6extensions = true;
+      while (ip6extensions) {
+        switch (protocol) {
+          case IPPROTO_FRAGMENT: {
+            if (start + sizeof(struct ip6_frag) > limit) {
+              return;
+            }
+            auto ip6frag = reinterpret_cast<const struct ip6_frag*>(start);
+            if (ntohs(ip6frag->ip6f_offlg) & 0xfff8) {
+              // If we're not the first fragment, break out of the loop so we
+              // can store the IPs we have but recognize in the protocol switch
+              // later on that we don't know what this packet is.
+              ip6extensions = false;
+              break;
+            }
+            // otherwise, fall through to treating this like any other
+            // extention.
+          }
+          case IPPROTO_HOPOPTS:
+          case IPPROTO_ROUTING:
+          case IPPROTO_DSTOPTS:
+          case IPPROTO_MH: {
+            if (start + sizeof(struct ip6_ext) > limit) {
+              return;
+            }
+            auto ip6ext = reinterpret_cast<const struct ip6_ext*>(start);
+            protocol = ip6ext->ip6e_nxt;
+            start += (ip6ext->ip6e_len + 1) * 8;
+            break;
+          }
+          default:
+            ip6extensions = false;
+        }
+      }
       break;
     }
     default:

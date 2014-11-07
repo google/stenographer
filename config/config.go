@@ -34,6 +34,9 @@ import (
 )
 
 var v = base.V // verbose logging
+const packetPrefix = "PKT"
+const indexPrefix = "IDX"
+const minDiskSpacePercentage = 10
 
 type ThreadConfig struct {
 	PacketsDirectory string
@@ -68,12 +71,12 @@ func (c Config) Directory() (_ *Directory, returnedErr error) {
 	for i, thread := range c.Threads {
 		if _, err := os.Stat(thread.PacketsDirectory); err != nil {
 			return nil, fmt.Errorf("invalid packets directory %q in configuration: %v", thread.PacketsDirectory, err)
-		} else if err := os.Symlink(thread.PacketsDirectory, filepath.Join(dirname, "PKT"+strconv.Itoa(i))); err != nil {
+		} else if err := os.Symlink(thread.PacketsDirectory, filepath.Join(dirname, packetPrefix+strconv.Itoa(i))); err != nil {
 			return nil, fmt.Errorf("couldn't create symlink for thread %d to directory %q: %v", i, thread.PacketsDirectory, err)
 		}
 		if _, err := os.Stat(thread.IndexDirectory); err != nil {
 			return nil, fmt.Errorf("invalid index directory %q in configuration: %v", thread.IndexDirectory, err)
-		} else if err := os.Symlink(thread.IndexDirectory, filepath.Join(dirname, "IDX"+strconv.Itoa(i))); err != nil {
+		} else if err := os.Symlink(thread.IndexDirectory, filepath.Join(dirname, indexPrefix+strconv.Itoa(i))); err != nil {
 			return nil, fmt.Errorf("couldn't create symlink for index %d to directory %q: %v", i, thread.IndexDirectory, err)
 		}
 	}
@@ -113,8 +116,16 @@ func newDirectory(dirname string, threads int) *Directory {
 		files:   map[fileKey]*blockfile.BlockFile{},
 	}
 	go d.newFiles()
-	go d.oldFiles()
+	go d.cleanUpOnLowDiskSpace()
 	return d
+}
+
+func (d *Directory) ThreadPacketPath(threadIdx int) string {
+	return filepath.Join(d.name, packetPrefix+strconv.Itoa(threadIdx))
+}
+
+func (d *Directory) ThreadIndexPath(threadIdx int) string {
+	return filepath.Join(d.name, indexPrefix+strconv.Itoa(threadIdx))
 }
 
 func (d *Directory) newFiles() {
@@ -131,12 +142,56 @@ func (d *Directory) newFiles() {
 	}
 }
 
+func (d *Directory) cleanUpOnLowDiskSpace() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-d.done:
+			return
+		case <-ticker.C:
+			for i := 0; i < d.threads; i++ {
+				pktDirPath := d.ThreadPacketPath(i)
+				for df, err := base.PathDiskFreePercentage(pktDirPath); ; {
+					if err != nil {
+						log.Printf("could not get the free disk percentage for %q: %v", pktDirPath, err)
+						break
+					}
+					if df > minDiskSpacePercentage {
+						break
+					}
+					log.Printf("disk usage is high for thread %d (packet path=%q): %d%% free\n",
+						i, pktDirPath, df)
+					if err := d.deleteOldThreadFiles(i); err != nil {
+						log.Printf("could not free up space by deleting old files: %v", err)
+						break
+					}
+				}
+			}
+		}
+	}
+}
+
+func (d *Directory) deleteOldThreadFiles(threadIdx int) error {
+	filename, fErr := base.OldestNonHiddenFileInDir(d.ThreadPacketPath(threadIdx))
+	if fErr != nil {
+		return fErr
+	}
+	if err := os.Remove(filepath.Join(d.ThreadPacketPath(threadIdx), filename)); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(d.ThreadIndexPath(threadIdx), filename)); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (d *Directory) checkForNewFiles() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	gotNew := false
 	for i := 0; i < d.threads; i++ {
-		dirpath := filepath.Join(d.name, "PKT" + strconv.Itoa(i))
+		dirpath := d.ThreadPacketPath(i)
 		files, err := ioutil.ReadDir(dirpath)
 		if err != nil {
 			log.Printf("could not read dir %q: %v", dirpath, err)
@@ -180,9 +235,6 @@ func (d *Directory) checkForRemovedFiles() {
 	if count > 0 {
 		log.Printf("Detected %d blockfiles removed", count)
 	}
-}
-
-func (d *Directory) oldFiles() {
 }
 
 func (d *Directory) Path() string {

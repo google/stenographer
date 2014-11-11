@@ -102,7 +102,7 @@ func main() {
 	}()
 
 	http.HandleFunc("/dump/", func(w http.ResponseWriter, r *http.Request) {
-		fpath := r.URL.Path[5:]
+		fpath := r.URL.Path[6:]
 		log.Printf("dumping %q", fpath)
 		w.Header().Set("Content-Type", "text/plain")
 		dir.DumpIndex(fpath, w)

@@ -18,14 +18,10 @@ package base
 import (
 	"container/heap"
 	"flag"
-	"fmt"
-	"io/ioutil"
 	"log"
 	"sort"
-	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"code.google.com/p/gopacket"
 )
@@ -245,24 +241,4 @@ func PathDiskFreePercentage(path string) (int, error) {
 		return 0, err
 	}
 	return int(100 * stat.Bfree / stat.Blocks), nil
-}
-
-func OldestNonHiddenFileInDir(packetPath string) (string, error) {
-	filesSlice, err := ioutil.ReadDir(packetPath)
-	if err != nil {
-		return "", err
-	}
-	oldestFileModif, oldestFileName := time.Now(), ""
-	for _, f := range filesSlice {
-		if f.IsDir() || strings.HasPrefix(f.Name(), ".") {
-			continue
-		}
-		if f.ModTime().Before(oldestFileModif) {
-			oldestFileModif, oldestFileName = f.ModTime(), f.Name()
-		}
-	}
-	if oldestFileName == "" {
-		return "", fmt.Errorf("no files found in %q", packetPath)
-	}
-	return oldestFileName, nil
 }

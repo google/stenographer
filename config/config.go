@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -34,9 +35,13 @@ import (
 )
 
 var v = base.V // verbose logging
-const packetPrefix = "PKT"
-const indexPrefix = "IDX"
-const minDiskSpacePercentage = 10
+const (
+	packetPrefix           = "PKT"
+	indexPrefix            = "IDX"
+	minDiskSpacePercentage = 10
+	fileSyncFrequency      = 15 * time.Second
+	cleanUpFrequency       = 45 * time.Second
+)
 
 type ThreadConfig struct {
 	PacketsDirectory string
@@ -51,13 +56,199 @@ type Config struct {
 	Port          int
 }
 
+type StenotypeThread struct {
+	id         int
+	indexPath  string
+	packetPath string
+	files      map[string]*blockfile.BlockFile
+	mu         sync.RWMutex
+}
+
+func newStenotypeThread(i int, baseDir string) *StenotypeThread {
+	return &StenotypeThread{
+		id:         i,
+		indexPath:  filepath.Join(baseDir, indexPrefix+strconv.Itoa(i)),
+		packetPath: filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
+		files:      map[string]*blockfile.BlockFile{},
+	}
+}
+
+func (st *StenotypeThread) createSymlinks(config *ThreadConfig) error {
+	if err := os.Symlink(config.PacketsDirectory, st.packetPath); err != nil {
+		return fmt.Errorf("couldn't create symlink for thread %d to directory %q: %v",
+			st.id, config.PacketsDirectory, err)
+	}
+	if err := os.Symlink(config.IndexDirectory, st.indexPath); err != nil {
+		return fmt.Errorf("couldn't create symlink for index %d to directory %q: %v",
+			st.id, config.IndexDirectory, err)
+	}
+	return nil
+}
+
+func (st *StenotypeThread) getPacketFilePath(filename string) string {
+	return filepath.Join(st.packetPath, filename)
+}
+
+func (st *StenotypeThread) getIndexFilePath(filename string) string {
+	return filepath.Join(st.indexPath, filename)
+}
+
+func (st *StenotypeThread) syncFilesWithDisk() {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	newFilesCnt := 0
+	for file := range st.listPacketFilesOnDisk() {
+		filename := file.Name()
+		if st.files[filename] != nil {
+			continue
+		}
+		if err := st.trackNewFile(filename); err != nil {
+			log.Printf("%v", err)
+			continue
+		}
+		newFilesCnt++
+	}
+	if newFilesCnt > 0 {
+		log.Printf("Found %d new blockfiles", newFilesCnt)
+	}
+}
+
+func (st *StenotypeThread) listPacketFilesOnDisk() <-chan os.FileInfo {
+	files, err := ioutil.ReadDir(st.packetPath)
+	if err != nil {
+		log.Printf("could not read dir %q: %v", st.packetPath, err)
+		return nil
+	}
+	c := make(chan os.FileInfo)
+	go func() {
+		for _, file := range files {
+			if file.IsDir() || file.Name()[0] == '.' {
+				continue
+			}
+			c <- file
+		}
+		close(c)
+	}()
+	return c
+}
+
+// This method should only be called once the st.mu has been acquired!
+func (st *StenotypeThread) trackNewFile(filename string) error {
+	filepath := filepath.Join(st.packetPath, filename)
+	bf, err := blockfile.NewBlockFile(filepath)
+	if err != nil {
+		return fmt.Errorf("could not open blockfile %q: %v", filepath, err)
+	}
+	v(1, "new blockfile %q", filepath)
+	st.files[filename] = bf
+	return nil
+}
+
+func (st *StenotypeThread) cleanUpOnLowDiskSpace() {
+	for df, err := base.PathDiskFreePercentage(st.packetPath); ; {
+		if err != nil {
+			log.Printf("could not get the free disk percentage for %q: %v", st.packetPath, err)
+			break
+		}
+		if df > minDiskSpacePercentage {
+			break
+		}
+		log.Printf("disk usage is high for thread %d (packet path=%q): %d%% free\n",
+			st.id, st.packetPath, df)
+		if err := st.deleteOlderThreadFiles(); err != nil {
+			log.Printf("could not free up space by deleting old files: %v", err)
+			break
+		}
+	}
+}
+
+func (st *StenotypeThread) deleteOlderThreadFiles() error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	oldestFile := st.getOldestFile()
+	if oldestFile == "" {
+		return fmt.Errorf("no files tracked for thread %d", st.id)
+	}
+	if err := os.Remove(st.getPacketFilePath(oldestFile)); err != nil {
+		return err
+	}
+	if err := os.Remove(st.getIndexFilePath(oldestFile)); err != nil {
+		return err
+	}
+	return st.untrackFile(oldestFile)
+}
+
+// getOldesFile returns the oldest known file for the given thread. Packet and
+// index files are named after the UNIX timestamp when they were created.
+// Because they are also rotated, we know that the file with the "smallest"
+// filename (as in first when lexicographically sorted) is the oldest one.
+//
+// This method should only be called once the st.mu has been acquired!
+func (st *StenotypeThread) getOldestFile() string {
+	if len(st.files) == 0 {
+		return ""
+	}
+	var sortedFiles []string
+	for name, _ := range st.files {
+		sortedFiles = append(sortedFiles, name)
+	}
+	sort.Strings(sortedFiles)
+	return sortedFiles[0]
+}
+
+// This method should only be called once the st.mu has been acquired!
+func (st *StenotypeThread) untrackFile(filename string) error {
+	b := st.files[filename]
+	if b == nil {
+		return fmt.Errorf("trying to untrack file %q for thread %d, but that file is not monitored",
+			st.getPacketFilePath(filename), st.id)
+	}
+	v(1, "old blockfile %q", b.Name())
+	b.Close()
+	delete(st.files, filename)
+	return nil
+}
+
+func (st *StenotypeThread) lookup(q query.Query) base.PacketChan {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	var inputs []base.PacketChan
+	for _, file := range st.files {
+		inputs = append(inputs, file.Lookup(q))
+	}
+	return base.MergePacketChans(inputs)
+}
+
+func (st *StenotypeThread) getBlockFile(name string) *blockfile.BlockFile {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	return st.files[name]
+}
+
 func (c Config) args() []string {
 	return append(c.Flags,
 		fmt.Sprintf("--threads=%d", len(c.Threads)),
 		fmt.Sprintf("--iface=%s", c.Interface))
 }
 
+func (c Config) validateThreadsConfig() error {
+	for _, thread := range c.Threads {
+		if _, err := os.Stat(thread.PacketsDirectory); err != nil {
+			return fmt.Errorf("invalid packets directory %q in configuration: %v", thread.PacketsDirectory, err)
+		}
+		if _, err := os.Stat(thread.IndexDirectory); err != nil {
+			return fmt.Errorf("invalid index directory %q in configuration: %v", thread.IndexDirectory, err)
+		}
+	}
+	return nil
+}
+
 func (c Config) Directory() (_ *Directory, returnedErr error) {
+	if err := c.validateThreadsConfig(); err != nil {
+		return nil, err
+	}
 	dirname, err := ioutil.TempDir("", "stenographer")
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create temp directory: %v", err)
@@ -68,23 +259,15 @@ func (c Config) Directory() (_ *Directory, returnedErr error) {
 			os.RemoveAll(dirname)
 		}
 	}()
-	for i, thread := range c.Threads {
-		if _, err := os.Stat(thread.PacketsDirectory); err != nil {
-			return nil, fmt.Errorf("invalid packets directory %q in configuration: %v", thread.PacketsDirectory, err)
-		} else if err := os.Symlink(thread.PacketsDirectory, filepath.Join(dirname, packetPrefix+strconv.Itoa(i))); err != nil {
-			return nil, fmt.Errorf("couldn't create symlink for thread %d to directory %q: %v", i, thread.PacketsDirectory, err)
+	threads := make([]*StenotypeThread, len(c.Threads))
+	for i, threadConfig := range c.Threads {
+		st := newStenotypeThread(i, dirname)
+		if err := st.createSymlinks(&threadConfig); err != nil {
+			return nil, err
 		}
-		if _, err := os.Stat(thread.IndexDirectory); err != nil {
-			return nil, fmt.Errorf("invalid index directory %q in configuration: %v", thread.IndexDirectory, err)
-		} else if err := os.Symlink(thread.IndexDirectory, filepath.Join(dirname, indexPrefix+strconv.Itoa(i))); err != nil {
-			return nil, fmt.Errorf("couldn't create symlink for index %d to directory %q: %v", i, thread.IndexDirectory, err)
-		}
+		threads[i] = st
 	}
-	return newDirectory(dirname, len(c.Threads)), nil
-}
-
-func (d *Directory) Close() error {
-	return os.RemoveAll(d.name)
+	return newDirectory(dirname, threads), nil
 }
 
 func (c Config) Stenotype(d *Directory) *exec.Cmd {
@@ -94,146 +277,49 @@ func (c Config) Stenotype(d *Directory) *exec.Cmd {
 	return exec.Command(c.StenotypePath, args...)
 }
 
-type fileKey struct {
-	basedir string
-	thread  int
-	name    string
-}
-
 type Directory struct {
-	mu      sync.RWMutex
 	name    string
-	threads int
-	files   map[fileKey]*blockfile.BlockFile
+	threads []*StenotypeThread
 	done    chan bool
 }
 
-func newDirectory(dirname string, threads int) *Directory {
+func newDirectory(dirname string, threads []*StenotypeThread) *Directory {
 	d := &Directory{
 		name:    dirname,
 		threads: threads,
 		done:    make(chan bool),
-		files:   map[fileKey]*blockfile.BlockFile{},
 	}
-	go d.newFiles()
-	go d.cleanUpOnLowDiskSpace()
+	go d.callEvery(d.detectNewFiles, fileSyncFrequency)
+	go d.callEvery(d.cleanUpDisksIfneeded, cleanUpFrequency)
 	return d
 }
 
-func (d *Directory) ThreadPacketPath(threadIdx int) string {
-	return filepath.Join(d.name, packetPrefix+strconv.Itoa(threadIdx))
+func (d *Directory) Close() error {
+	return os.RemoveAll(d.name)
 }
 
-func (d *Directory) ThreadIndexPath(threadIdx int) string {
-	return filepath.Join(d.name, indexPrefix+strconv.Itoa(threadIdx))
-}
-
-func (d *Directory) newFiles() {
-	ticker := time.NewTicker(time.Second * 15)
+func (d *Directory) callEvery(cb func(), freq time.Duration) {
+	ticker := time.NewTicker(freq)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-d.done:
 			return
 		case <-ticker.C:
-			d.checkForNewFiles()
-			d.checkForRemovedFiles()
+			cb()
 		}
 	}
 }
 
-func (d *Directory) cleanUpOnLowDiskSpace() {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-d.done:
-			return
-		case <-ticker.C:
-			for i := 0; i < d.threads; i++ {
-				pktDirPath := d.ThreadPacketPath(i)
-				for df, err := base.PathDiskFreePercentage(pktDirPath); ; {
-					if err != nil {
-						log.Printf("could not get the free disk percentage for %q: %v", pktDirPath, err)
-						break
-					}
-					if df > minDiskSpacePercentage {
-						break
-					}
-					log.Printf("disk usage is high for thread %d (packet path=%q): %d%% free\n",
-						i, pktDirPath, df)
-					if err := d.deleteOldThreadFiles(i); err != nil {
-						log.Printf("could not free up space by deleting old files: %v", err)
-						break
-					}
-				}
-			}
-		}
+func (d *Directory) detectNewFiles() {
+	for _, t := range d.threads {
+		t.syncFilesWithDisk()
 	}
 }
 
-func (d *Directory) deleteOldThreadFiles(threadIdx int) error {
-	filename, fErr := base.OldestNonHiddenFileInDir(d.ThreadPacketPath(threadIdx))
-	if fErr != nil {
-		return fErr
-	}
-	if err := os.Remove(filepath.Join(d.ThreadPacketPath(threadIdx), filename)); err != nil {
-		return err
-	}
-	if err := os.Remove(filepath.Join(d.ThreadIndexPath(threadIdx), filename)); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (d *Directory) checkForNewFiles() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	gotNew := false
-	for i := 0; i < d.threads; i++ {
-		dirpath := d.ThreadPacketPath(i)
-		files, err := ioutil.ReadDir(dirpath)
-		if err != nil {
-			log.Printf("could not read dir %q: %v", dirpath, err)
-		}
-		for _, file := range files {
-			if file.IsDir() || file.Name()[0] == '.' {
-				continue
-			}
-			key := fileKey{d.name, i, file.Name()}
-			if d.files[key] != nil {
-				continue
-			}
-			filepath := filepath.Join(dirpath, file.Name())
-			bf, err := blockfile.NewBlockFile(filepath)
-			if err != nil {
-				log.Printf("could not open blockfile %q: %v", filepath, err)
-				continue
-			}
-			v(1, "new blockfile %q", filepath)
-			d.files[key] = bf
-			gotNew = true
-		}
-	}
-	if gotNew {
-		log.Printf("New blockfiles, now tracking %v", len(d.files))
-	}
-}
-
-func (d *Directory) checkForRemovedFiles() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	count := 0
-	for key, b := range d.files {
-		if !b.StillAtOriginalPath() {
-			v(1, "old blockfile %q", b.Name())
-			b.Close()
-			delete(d.files, key)
-			count++
-		}
-	}
-	if count > 0 {
-		log.Printf("Detected %d blockfiles removed", count)
+func (d *Directory) cleanUpDisksIfneeded() {
+	for _, t := range d.threads {
+		t.cleanUpOnLowDiskSpace()
 	}
 }
 
@@ -242,23 +328,19 @@ func (d *Directory) Path() string {
 }
 
 func (d *Directory) Lookup(q query.Query) base.PacketChan {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
 	var inputs []base.PacketChan
-	for _, file := range d.files {
-		inputs = append(inputs, file.Lookup(q))
+	for _, thread := range d.threads {
+		inputs = append(inputs, thread.lookup(q))
 	}
 	return base.MergePacketChans(inputs)
 }
 
 func (d *Directory) DumpIndex(name string, out io.Writer) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	for _, file := range d.files {
-		log.Printf("%q %q", file.Name(), name)
-		if file.Name() == name {
-			file.DumpIndex(out)
-			return
+	for _, thread := range d.threads {
+		b := thread.getBlockFile(name)
+		if b == nil {
+			continue
 		}
+		b.DumpIndex(out)
 	}
 }

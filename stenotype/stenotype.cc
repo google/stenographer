@@ -92,7 +92,13 @@ int32_t flag_aiops = 128;
 int64_t flag_filesize_mb = 4 << 10;
 int32_t flag_threads = 1;
 int64_t flag_fileage_sec = 60;
-uint16_t flag_fanout_type = PACKET_FANOUT_CPU;
+uint16_t flag_fanout_type =
+// Use rollover as the default if it's available.
+#ifdef PACKET_FANOUT_FLAG_ROLLOVER
+    PACKET_FANOUT_LB | PACKET_FANOUT_FLAG_ROLLOVER;
+#else
+    PACKET_FANOUT_LB;
+#endif
 uint16_t flag_fanout_id = 0;
 string flag_uid;
 string flag_gid;

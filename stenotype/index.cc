@@ -103,10 +103,12 @@ void Index::Process(const Packet& p, int64_t block_offset) {
             // otherwise, fall through to treating this like any other
             // extention.
           }
+#ifdef IPPROTO_MH
+          case IPPROTO_MH:
+#endif
           case IPPROTO_HOPOPTS:
           case IPPROTO_ROUTING:
-          case IPPROTO_DSTOPTS:
-          case IPPROTO_MH: {
+          case IPPROTO_DSTOPTS: {
             if (start + sizeof(struct ip6_ext) > limit) {
               return;
             }

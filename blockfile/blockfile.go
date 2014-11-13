@@ -63,15 +63,6 @@ func NewBlockFile(filename string) (*BlockFile, error) {
 	}, nil
 }
 
-// StillAtOriginalPath returns true if the file is still able to be accessed at
-// its original file path.  If not, we assumes that this file has been
-// removed, and it can clean up the blockfile so it doesn't stay around on the
-// filesystem as an unlinked file.
-func (b *BlockFile) StillAtOriginalPath() bool {
-	_, err := os.Stat(b.name)
-	return err == nil
-}
-
 // Name returns the name of the file underlying this blockfile.
 func (b *BlockFile) Name() string {
 	return b.name

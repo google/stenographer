@@ -101,12 +101,6 @@ func main() {
 		log.Printf("stenotype stopped")
 	}()
 
-	http.HandleFunc("/dump/", func(w http.ResponseWriter, r *http.Request) {
-		fpath := r.URL.Path[5:]
-		log.Printf("dumping %q", fpath)
-		w.Header().Set("Content-Type", "text/plain")
-		dir.DumpIndex(fpath, w)
-	})
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {

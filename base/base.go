@@ -21,6 +21,7 @@ import (
 	"log"
 	"sort"
 	"sync"
+	"syscall"
 
 	"code.google.com/p/gopacket"
 )
@@ -232,4 +233,12 @@ func (a Positions) Intersect(b Positions) (out Positions) {
 		}
 	}
 	return out
+}
+
+func PathDiskFreePercentage(path string) (int, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, err
+	}
+	return int(100 * stat.Bfree / stat.Blocks), nil
 }

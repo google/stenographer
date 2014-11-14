@@ -103,20 +103,20 @@ func (st *stenotypeThread) syncFilesWithDisk() {
 			continue
 		}
 		if err := st.trackNewFile(filename); err != nil {
-			log.Printf("%v", err)
+			log.Printf("Thread %v error tracking %q: %v", st.id, filename, err)
 			continue
 		}
 		newFilesCnt++
 	}
 	if newFilesCnt > 0 {
-		log.Printf("Found %d new blockfiles", newFilesCnt)
+		log.Printf("Thread %v found %d new blockfiles", st.id, newFilesCnt)
 	}
 }
 
 func (st *stenotypeThread) listPacketFilesOnDisk() []os.FileInfo {
 	files, err := ioutil.ReadDir(st.packetPath)
 	if err != nil {
-		log.Printf("could not read dir %q: %v", st.packetPath, err)
+		log.Printf("Thread %v could not read dir %q: %v", st.id, st.packetPath, err)
 		return nil
 	}
 	var out []os.FileInfo
@@ -145,18 +145,20 @@ func (st *stenotypeThread) cleanUpOnLowDiskSpace() {
 	for {
 		df, err := base.PathDiskFreePercentage(st.packetPath)
 		if err != nil {
-			log.Printf("could not get the free disk percentage for %q: %v", st.packetPath, err)
+			log.Printf("Thread %v could not get the free disk percentage for %q: %v", st.id, st.packetPath, err)
 			return
 		}
 		if df > minDiskSpacePercentage {
 			return
 		}
-		log.Printf("disk usage is high for thread %d (packet path=%q): %d%% free\n",
-			st.id, st.packetPath, df)
+		log.Printf("Thread %v disk usage is high (packet path=%q): %d%% free\n", st.id, st.packetPath, df)
 		if err := st.deleteOlderThreadFiles(); err != nil {
-			log.Printf("could not free up space by deleting old files: %v", err)
+			log.Printf("Thread %v could not free up space by deleting old files: %v", st.id, err)
 			return
 		}
+		// After deleting files, it may take a while for disk stats to be updated.
+		// We add this sleep so we don't accidentally delete WAY more files than
+		// we need to.
 		time.Sleep(100 * time.Millisecond)
 	}
 }
@@ -167,7 +169,7 @@ func (st *stenotypeThread) deleteOlderThreadFiles() error {
 
 	oldestFile := st.getOldestFile()
 	if oldestFile == "" {
-		return fmt.Errorf("no files tracked for thread %d", st.id)
+		return fmt.Errorf("Thread %v no files tracked", st.id)
 	}
 	if err := os.Remove(st.getPacketFilePath(oldestFile)); err != nil {
 		return err
@@ -203,19 +205,22 @@ func (st *stenotypeThread) untrackFile(filename string) error {
 		return fmt.Errorf("trying to untrack file %q for thread %d, but that file is not monitored",
 			st.getPacketFilePath(filename), st.id)
 	}
-	v(1, "old blockfile %q", b.Name())
+	v(1, "Thread %v old blockfile %q", st.id, b.Name())
 	b.Close()
 	delete(st.files, filename)
 	return nil
 }
 
-func (st *stenotypeThread) lookup(q query.Query) base.PacketChan {
+func (st *stenotypeThread) lookup(q query.Query) *base.PacketChan {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	var inputs []base.PacketChan
+	var inputs []*base.PacketChan
 	for _, file := range st.files {
 		inputs = append(inputs, file.Lookup(q))
 	}
+	// BUG:  MergePacketChans returns asynchronously, so there's a chance
+	// that we'll lose our st.mu lock while still looking up packets, then
+	// close/delete files.  Figure out how to fix this.
 	return base.MergePacketChans(inputs)
 }
 
@@ -325,8 +330,8 @@ func (d *Directory) Path() string {
 	return d.name
 }
 
-func (d *Directory) Lookup(q query.Query) base.PacketChan {
-	var inputs []base.PacketChan
+func (d *Directory) Lookup(q query.Query) *base.PacketChan {
+	var inputs []*base.PacketChan
 	for _, thread := range d.threads {
 		inputs = append(inputs, thread.lookup(q))
 	}

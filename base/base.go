@@ -66,8 +66,8 @@ func (p *PacketChan) Close(err error) {
 }
 
 // NewPacketChan returns a new PacketChan channel for passing packets around.
-func NewPacketChan(buffer int) PacketChan {
-	return PacketChan{
+func NewPacketChan(buffer int) *PacketChan {
+	return &PacketChan{
 		c: make(chan *Packet, buffer),
 	}
 }
@@ -117,7 +117,7 @@ func (p *packetHeap) Pop() (x interface{}) {
 
 // MergePacketChans merges an incoming set of packet chans, each sorted by
 // time, returning a new single packet chan that's also sorted by time.
-func MergePacketChans(in []PacketChan) PacketChan {
+func MergePacketChans(in []*PacketChan) *PacketChan {
 	out := NewPacketChan(100)
 	go func() {
 		count := 0

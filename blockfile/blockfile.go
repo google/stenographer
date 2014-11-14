@@ -183,7 +183,7 @@ func (b *BlockFile) AllPackets() Iter {
 	return &allPacketsIter{BlockFile: b}
 }
 
-func (b *BlockFile) Lookup(q query.Query) base.PacketChan {
+func (b *BlockFile) Lookup(q query.Query) *base.PacketChan {
 	c := base.NewPacketChan(100)
 	go func() {
 		var ci gopacket.CaptureInfo

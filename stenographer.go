@@ -56,7 +56,7 @@ func ReadConfig() *config.Config {
 // snapLen is the max packet size we'll return in pcap files to users.
 const snapLen = 65536
 
-func PacketsToFile(in base.PacketChan, out io.Writer) error {
+func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 	w := pcapgo.NewWriter(out)
 	w.WriteFileHeader(snapLen, layers.LinkTypeEthernet)
 	count := 0

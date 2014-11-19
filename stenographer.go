@@ -56,7 +56,7 @@ func ReadConfig() *config.Config {
 // snapLen is the max packet size we'll return in pcap files to users.
 const snapLen = 65536
 
-func PacketsToFile(in base.PacketChan, out io.Writer) error {
+func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 	w := pcapgo.NewWriter(out)
 	w.WriteFileHeader(snapLen, layers.LinkTypeEthernet)
 	count := 0
@@ -101,12 +101,6 @@ func main() {
 		log.Printf("stenotype stopped")
 	}()
 
-	http.HandleFunc("/dump/", func(w http.ResponseWriter, r *http.Request) {
-		fpath := r.URL.Path[5:]
-		log.Printf("dumping %q", fpath)
-		w.Header().Set("Content-Type", "text/plain")
-		dir.DumpIndex(fpath, w)
-	})
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {

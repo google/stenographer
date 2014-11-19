@@ -21,6 +21,7 @@ import (
 	"log"
 	"sort"
 	"sync"
+	"syscall"
 
 	"code.google.com/p/gopacket"
 )
@@ -65,8 +66,8 @@ func (p *PacketChan) Close(err error) {
 }
 
 // NewPacketChan returns a new PacketChan channel for passing packets around.
-func NewPacketChan(buffer int) PacketChan {
-	return PacketChan{
+func NewPacketChan(buffer int) *PacketChan {
+	return &PacketChan{
 		c: make(chan *Packet, buffer),
 	}
 }
@@ -116,7 +117,7 @@ func (p *packetHeap) Pop() (x interface{}) {
 
 // MergePacketChans merges an incoming set of packet chans, each sorted by
 // time, returning a new single packet chan that's also sorted by time.
-func MergePacketChans(in []PacketChan) PacketChan {
+func MergePacketChans(in []*PacketChan) *PacketChan {
 	out := NewPacketChan(100)
 	go func() {
 		count := 0
@@ -232,4 +233,12 @@ func (a Positions) Intersect(b Positions) (out Positions) {
 		}
 	}
 	return out
+}
+
+func PathDiskFreePercentage(path string) (int, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, err
+	}
+	return int(100 * stat.Bfree / stat.Blocks), nil
 }

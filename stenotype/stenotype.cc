@@ -103,7 +103,7 @@ uint16_t flag_fanout_id = 0;
 string flag_uid;
 string flag_gid;
 bool flag_index = true;
-bool flag_seccomp = true;
+string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
@@ -160,7 +160,7 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
       flag_filter = arg;
       break;
     case 315:
-      flag_seccomp = false;
+      flag_seccomp = arg;
       break;
   }
   return 0;
@@ -192,7 +192,7 @@ void ParseOptions(int argc, char** argv) {
        "will be captured. This has to be a compiled BPF in hexadecimal, which "
        "can be obtained from a human readable filter expression using the "
        "provided compile_bpf.sh script."},
-      {"no_seccomp", 315, 0, 0, "Skip seccomp sandboxing."},
+      {"seccomp", 315, s, 0, "Seccomp style, one of 'none', 'trace', 'kill'."},
       {0}, };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
@@ -269,9 +269,19 @@ void CommonPrivileges(scmp_filter_ctx ctx) {
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit), 0);
 }
 
+scmp_filter_ctx kSkipSeccomp = scmp_filter_ctx(-1);
+
+scmp_filter_ctx SeccompCtx() {
+  if (flag_seccomp == "none") return kSkipSeccomp;
+  if (flag_seccomp == "trace") return seccomp_init(SCMP_ACT_TRACE(1));
+  if (flag_seccomp == "kill") return seccomp_init(SCMP_ACT_KILL);
+  LOG(FATAL) << "invalid --seccomp flag: " << flag_seccomp;
+  return NULL;  // unreachable
+}
+
 void DropMainThreadPrivileges() {
-  if (!flag_seccomp) return;
-  scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
+  scmp_filter_ctx ctx = SeccompCtx();
+  if (ctx == kSkipSeccomp) return;
   CHECK(ctx != NULL);
   CommonPrivileges(ctx);
   CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
@@ -279,8 +289,8 @@ void DropMainThreadPrivileges() {
 }
 
 void DropIndexThreadPrivileges() {
-  if (!flag_seccomp) return;
-  scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
+  scmp_filter_ctx ctx = SeccompCtx();
+  if (ctx == kSkipSeccomp) return;
   CHECK(ctx != NULL);
   CommonPrivileges(ctx);
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
@@ -293,8 +303,8 @@ void DropIndexThreadPrivileges() {
 }
 
 void DropPacketThreadPrivileges() {
-  if (!flag_seccomp) return;
-  scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
+  scmp_filter_ctx ctx = SeccompCtx();
+  if (ctx == kSkipSeccomp) return;
   CHECK(ctx != NULL);
   CommonPrivileges(ctx);
   seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_setup), 0);

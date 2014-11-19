@@ -87,9 +87,9 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"io"
 	"os"
 	"sort"
+	"syscall"
 
 	"code.google.com/p/snappy-go/snappy"
 )
@@ -168,14 +168,13 @@ func unmaskCRC(crc uint32) uint32 {
 // readBlock returns the set of bytes which comprise the block pointed to
 // by the given handle.  Note that these may not correspond directly to bytes
 // on disk if the block is compressed.
-func readBlock(f io.ReaderAt, b blockHandle) ([]byte, error) {
-	actualLength := int64(b.length) + blockTrailerSize
-	out := make([]byte, actualLength)
-	n, err := f.ReadAt(out, int64(b.offset))
-	if int64(n) != actualLength {
-		return nil, fmt.Errorf("could not read %d bytes at offset %d, read %d: %v",
-			int64(b.length), b.offset, n, err)
+func readBlock(f []byte, b blockHandle) ([]byte, error) {
+	actualLength := int(b.length) + blockTrailerSize
+	if int(b.offset)+actualLength > len(f) {
+		return nil, fmt.Errorf("could not read %d bytes at offset %d, size is %v",
+			b.length, b.offset, len(f))
 	}
+	out := f[int(b.offset) : int(b.offset)+actualLength]
 	wantCRC := unmaskCRC(binary.LittleEndian.Uint32(out[int(b.length)+1:]))
 	gotCRC := crc32.Checksum(out[:int(b.length)+1], crc32.MakeTable(crc32.Castagnoli))
 	if gotCRC != wantCRC {
@@ -201,6 +200,7 @@ type Table struct {
 	f      *os.File
 	footer *footer
 	index  *block
+	mmap   []byte
 }
 
 // NewTable opens the named file as an on-disk sstable.
@@ -227,6 +227,12 @@ func NewTable(filename string) (*Table, error) {
 		return nil, fmt.Errorf("could not decode footer: %v", err)
 	}
 
+	// mmap the file.
+	t.mmap, err = syscall.Mmap(int(t.f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
+	if err != nil {
+		return nil, fmt.Errorf("unable to mmap file: %v", err)
+	}
+
 	indexBlock, err := t.newBlock(t.footer.index)
 	if err != nil {
 		return nil, fmt.Errorf("could not read index block: %v", err)
@@ -239,6 +245,9 @@ func NewTable(filename string) (*Table, error) {
 
 // Close closes the underlying table.
 func (t *Table) Close() error {
+	if err := syscall.Munmap(t.mmap); err != nil {
+		return err
+	}
 	return t.f.Close()
 }
 
@@ -253,7 +262,7 @@ type block struct {
 // unable to read it.
 func (t *Table) newBlock(b blockHandle) (*block, error) {
 	// TODO:  some simple block caching here would probably be great.
-	data, err := readBlock(t.f, b)
+	data, err := readBlock(t.mmap, b)
 	if err != nil {
 		return nil, err
 	}

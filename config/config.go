@@ -45,9 +45,9 @@ const (
 )
 
 type ThreadConfig struct {
-	PacketsDirectory string
-	IndexDirectory   string
-	MinDiskFree      int `json:",omitempty"`
+	PacketsDirectory   string
+	IndexDirectory     string
+	DiskFreePercentage int `json:",omitempty"`
 }
 
 type Config struct {
@@ -241,8 +241,8 @@ func ReadConfigFile(filename string) (*Config, error) {
 		return nil, fmt.Errorf("could not decode config file %q: %v", filename, err)
 	}
 	for i, thread := range out.Threads {
-		if thread.MinDiskFree <= 0 {
-			out.Threads[i].MinDiskFree = minDiskSpacePercentage
+		if thread.DiskFreePercentage <= 0 {
+			out.Threads[i].DiskFreePercentage = minDiskSpacePercentage
 		}
 	}
 	return &out, nil
@@ -283,7 +283,7 @@ func (c Config) Directory() (_ *Directory, returnedErr error) {
 	threads := make([]*stenotypeThread, len(c.Threads))
 	for i, threadConfig := range c.Threads {
 		st := newStenotypeThread(i, dirname)
-		st.minDiskFree = threadConfig.MinDiskFree
+		st.minDiskFree = threadConfig.DiskFreePercentage
 		if err := st.createSymlinks(&threadConfig); err != nil {
 			return nil, err
 		}

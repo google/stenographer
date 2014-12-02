@@ -209,22 +209,20 @@ func NewTable(filename string) (*Table, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open %q: %v", filename, err)
 	}
+	done := false
 	t := &Table{name: filename, f: f}
 	defer func() {
-		if f != nil {
-			f.Close()
+		if !done {
+			t.Close()
 		}
 	}()
-	stat, err := f.Stat()
+	stat, err := t.f.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("could not stat: %v", err)
 	}
 	size := stat.Size()
-	var footerBytes [footerLength]byte
-	if n, err := f.ReadAt(footerBytes[:], size-footerLength); n != footerLength {
-		return nil, fmt.Errorf("could not read footer bytes: %v", err)
-	} else if t.footer, err = footerFrom(footerBytes[:]); err != nil {
-		return nil, fmt.Errorf("could not decode footer: %v", err)
+	if size < footerLength {
+		return nil, fmt.Errorf("size too small: %v < %v", size, footerLength)
 	}
 
 	// mmap the file.
@@ -233,20 +231,22 @@ func NewTable(filename string) (*Table, error) {
 		return nil, fmt.Errorf("unable to mmap file: %v", err)
 	}
 
-	indexBlock, err := t.newBlock(t.footer.index)
-	if err != nil {
+	if t.footer, err = footerFrom(t.mmap[size-footerLength:]); err != nil {
+		return nil, fmt.Errorf("could not decode footer: %v", err)
+	} else if t.index, err = t.newBlock(t.footer.index); err != nil {
 		return nil, fmt.Errorf("could not read index block: %v", err)
 	}
-	t.index = indexBlock
 	// TODO:  we do nothing with the meta-index... should we?
-	f = nil
+	done = true
 	return t, nil
 }
 
 // Close closes the underlying table.
 func (t *Table) Close() error {
-	if err := syscall.Munmap(t.mmap); err != nil {
-		return err
+	if t.mmap != nil {
+		if err := syscall.Munmap(t.mmap); err != nil {
+			return err
+		}
 	}
 	return t.f.Close()
 }

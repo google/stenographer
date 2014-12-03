@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"time"
 
 	"code.google.com/p/gopacket/layers"
 	"code.google.com/p/gopacket/pcapgo"
@@ -96,18 +97,22 @@ func main() {
 	}()
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
 		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "could not read request body", http.StatusBadRequest)
 			return
 		}
 		queryStr := string(queryBytes)
+		log.Printf("Received query %q from %q", queryStr, r.RemoteAddr)
+		defer func() {
+			log.Printf("Handled query %q from %q in %v", queryStr, r.RemoteAddr, time.Since(start))
+		}()
 		q, err := query.NewQuery(queryStr)
 		if err != nil {
 			http.Error(w, "could not parse query", http.StatusBadRequest)
 			return
 		}
-		log.Printf("requesting %q", queryStr)
 		packets := dir.Lookup(q)
 		w.Header().Set("Content-Type", "appliation/octet-stream")
 		PacketsToFile(packets, w)

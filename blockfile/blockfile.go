@@ -187,6 +187,7 @@ func (b *BlockFile) Lookup(q query.Query) *base.PacketChan {
 	c := base.NewPacketChan(100)
 	go func() {
 		var ci gopacket.CaptureInfo
+		v(3, "Looking up query in %q in %q", q.String(), b.name)
 		positions, err := q.LookupIn(b.i)
 		if err != nil {
 			c.Close(fmt.Errorf("index lookup failure: %v", err))

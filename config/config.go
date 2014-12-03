@@ -129,7 +129,7 @@ func (st *stenotypeThread) listPacketFilesOnDisk() (out []string) {
 		if file.IsDir() || file.Name()[0] == '.' {
 			continue
 		}
-		out = append(out, indexfile.PathFromIndexPath(file.Name()))
+		out = append(out, indexfile.BlockfilePathFromIndexPath(file.Name()))
 	}
 	return
 }

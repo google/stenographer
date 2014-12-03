@@ -103,7 +103,7 @@ uint16_t flag_fanout_id = 0;
 string flag_uid;
 string flag_gid;
 bool flag_index = true;
-bool flag_seccomp = true;
+string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
@@ -160,7 +160,7 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
       flag_filter = arg;
       break;
     case 315:
-      flag_seccomp = false;
+      flag_seccomp = arg;
       break;
   }
   return 0;
@@ -192,7 +192,7 @@ void ParseOptions(int argc, char** argv) {
        "will be captured. This has to be a compiled BPF in hexadecimal, which "
        "can be obtained from a human readable filter expression using the "
        "provided compile_bpf.sh script."},
-      {"no_seccomp", 315, 0, 0, "Skip seccomp sandboxing."},
+      {"seccomp", 315, s, 0, "Seccomp style, one of 'none', 'trace', 'kill'."},
       {0}, };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
@@ -236,41 +236,54 @@ void DropPrivileges() {
   }
 }
 
+#define SECCOMP_RULE_ADD(...) \
+  CHECK_SUCCESS(NegErrno(seccomp_rule_add(__VA_ARGS__)))
+
 void CommonPrivileges(scmp_filter_ctx ctx) {
   // Very common operations, including sleeping, logging, and getting time.
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(clock_nanosleep), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(clock_gettime), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(clock_nanosleep), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(clock_gettime), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 0);
   // Mutex and other synchronization.
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(set_robust_list), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(futex), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(restart_syscall), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(set_robust_list), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(futex), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(restart_syscall), 0);
   // File operations.
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fallocate), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(ftruncate), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mkdir), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fallocate), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(ftruncate), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mkdir), 0);
   // Signal handling and propagation to threads.
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigprocmask), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigreturn), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(tgkill), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigprocmask), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigreturn), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(tgkill), 0);
   // Malloc/ringbuffer.
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(munmap), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(munmap), 0);
   // Malloc.
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mprotect), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(madvise), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(brk), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mprotect), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(madvise), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(brk), 0);
   // Exiting threads.
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit), 0);
+}
+
+scmp_filter_ctx kSkipSeccomp = scmp_filter_ctx(-1);
+
+scmp_filter_ctx SeccompCtx() {
+  if (flag_seccomp == "none") return kSkipSeccomp;
+  if (flag_seccomp == "trace") return seccomp_init(SCMP_ACT_TRACE(1));
+  if (flag_seccomp == "kill") return seccomp_init(SCMP_ACT_KILL);
+  LOG(FATAL) << "invalid --seccomp flag: " << flag_seccomp;
+  return NULL;  // unreachable
 }
 
 void DropMainThreadPrivileges() {
-  if (!flag_seccomp) return;
-  scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
+  scmp_filter_ctx ctx = SeccompCtx();
+  if (ctx == kSkipSeccomp) return;
   CHECK(ctx != NULL);
   CommonPrivileges(ctx);
   CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
@@ -278,40 +291,42 @@ void DropMainThreadPrivileges() {
 }
 
 void DropIndexThreadPrivileges() {
-  if (!flag_seccomp) return;
-  scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
+  scmp_filter_ctx ctx = SeccompCtx();
+  if (ctx == kSkipSeccomp) return;
   CHECK(ctx != NULL);
   CommonPrivileges(ctx);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 1,
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 1,
                    SCMP_A1(SCMP_CMP_EQ, O_WRONLY | O_CREAT | O_TRUNC));
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 1,
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 1,
                    SCMP_A1(SCMP_CMP_EQ, O_RDWR | O_CREAT | O_TRUNC));
   CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
   seccomp_release(ctx);
 }
 
 void DropPacketThreadPrivileges() {
-  if (!flag_seccomp) return;
-  scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_TRACE(1));
+  scmp_filter_ctx ctx = SeccompCtx();
+  if (ctx == kSkipSeccomp) return;
   CHECK(ctx != NULL);
   CommonPrivileges(ctx);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_setup), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_submit), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_getevents), 0);
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(poll), 1,
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_setup), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_submit), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(io_getevents), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(poll), 1,
                    SCMP_A1(SCMP_CMP_EQ, POLLIN));
-  seccomp_rule_add(
+  SECCOMP_RULE_ADD(
       ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 2,
       SCMP_A1(SCMP_CMP_EQ, O_WRONLY | O_CREAT | O_DSYNC | O_DIRECT),
       SCMP_A2(SCMP_CMP_EQ, 0600));
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 2,
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 2,
                    SCMP_A1(SCMP_CMP_EQ, SOL_PACKET),
                    SCMP_A2(SCMP_CMP_EQ, PACKET_STATISTICS));
-  seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
   CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
   seccomp_release(ctx);
 }
+
+#undef SECCOMP_RULE_ADD
 
 Error SetAffinity(int cpu) {
   cpu_set_t cpus;

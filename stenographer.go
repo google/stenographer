@@ -25,6 +25,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime"
 
 	"code.google.com/p/gopacket/layers"
 	"code.google.com/p/gopacket/pcapgo"
@@ -70,6 +71,7 @@ func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 
 func main() {
 	flag.Parse()
+	runtime.GOMAXPROCS(32)
 	conf := ReadConfig()
 	v(1, "Using config:\n%v", conf)
 	dir, err := conf.Directory()

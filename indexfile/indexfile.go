@@ -42,6 +42,12 @@ func IndexPathFromPath(p string) string {
 	return strings.Replace(p, "PKT", "IDX", 1)
 }
 
+// PathFromIndexPath returns the path to a block file based on the path to an
+// index file.
+func PathFromIndexPath(p string) string {
+	return strings.Replace(p, "IDX", "PKT", 1)
+}
+
 // NewIndexFile returns a new handle to the named index file.
 func NewIndexFile(filename string) (*IndexFile, error) {
 	v(1, "opening index %q", filename)

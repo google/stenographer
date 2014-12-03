@@ -153,6 +153,7 @@ func (st *stenotypeThread) cleanUpOnLowDiskSpace() {
 			return
 		}
 		if df > st.minDiskFree {
+			v(1, "Thread %v disk space is sufficient: %v > %v", st.id, df, st.minDiskFree)
 			return
 		}
 		log.Printf("Thread %v disk usage is high (packet path=%q): %d%% free\n", st.id, st.packetPath, df)
@@ -175,6 +176,7 @@ func (st *stenotypeThread) deleteOlderThreadFiles() error {
 	if oldestFile == "" {
 		return fmt.Errorf("Thread %v no files tracked", st.id)
 	}
+	v(1, "Thread %v removing %q", st.id, oldestFile)
 	if err := os.Remove(st.getPacketFilePath(oldestFile)); err != nil {
 		return err
 	}
@@ -204,6 +206,7 @@ func (st *stenotypeThread) getOldestFile() string {
 
 // This method should only be called once the st.mu has been acquired!
 func (st *stenotypeThread) untrackFile(filename string) error {
+	v(1, "Thread %v untracking %q", st.id, filename)
 	b := st.files[filename]
 	if b == nil {
 		return fmt.Errorf("trying to untrack file %q for thread %d, but that file is not monitored",

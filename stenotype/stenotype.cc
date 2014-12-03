@@ -217,8 +217,7 @@ void DropPrivileges() {
     LOG(INFO) << "Dropping priviledges to GID " << flag_gid;
     auto group = getgrnam(flag_gid.c_str());
     CHECK(group != NULL) << "Unable to get info for user " << flag_gid;
-    CHECK(0 == setgid(group->gr_gid))
-        << "could not setgid: " << strerror(errno);
+    CHECK_SUCCESS(Errno(setgid(group->gr_gid)));
   } else {
     LOG(V1) << "Staying with GID=" << getgid();
   }
@@ -230,8 +229,8 @@ void DropPrivileges() {
     auto passwd = getpwnam(flag_uid.c_str());
     CHECK(passwd != NULL) << "Unable to get info for user 'nobody'";
     flag_uid = passwd->pw_uid;
-    CHECK(0 == setuid(passwd->pw_uid))
-        << "could not setuid: " << strerror(errno);
+    CHECK_SUCCESS(Errno(initgroups(flag_uid.c_str(), getgid())));
+    CHECK_SUCCESS(Errno(setuid(passwd->pw_uid)));
   } else {
     LOG(V1) << "Staying with UID=" << getuid();
   }

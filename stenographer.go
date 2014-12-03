@@ -18,8 +18,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -40,17 +38,11 @@ var configFilename = flag.String("config", "", "File location to read configurat
 var v = base.V
 
 func ReadConfig() *config.Config {
-	var out config.Config
-	log.Printf("Reading config %q", *configFilename)
-	data, err := ioutil.ReadFile(*configFilename)
+	c, err := config.ReadConfigFile(*configFilename)
 	if err != nil {
-		log.Fatalf("could not read config file %q: %v", *configFilename, err)
+		log.Fatal(err.Error())
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	if err := dec.Decode(&out); err != nil {
-		log.Fatalf("could not decode config file %q: %v", *configFilename, err)
-	}
-	return &out
+	return c
 }
 
 // snapLen is the max packet size we'll return in pcap files to users.

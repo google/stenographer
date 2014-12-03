@@ -17,6 +17,8 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -43,8 +45,9 @@ const (
 )
 
 type ThreadConfig struct {
-	PacketsDirectory string
-	IndexDirectory   string
+	PacketsDirectory   string
+	IndexDirectory     string
+	DiskFreePercentage int `json:",omitempty"`
 }
 
 type Config struct {
@@ -56,11 +59,12 @@ type Config struct {
 }
 
 type stenotypeThread struct {
-	id         int
-	indexPath  string
-	packetPath string
-	files      map[string]*blockfile.BlockFile
-	mu         sync.RWMutex
+	id          int
+	indexPath   string
+	packetPath  string
+	minDiskFree int
+	files       map[string]*blockfile.BlockFile
+	mu          sync.RWMutex
 }
 
 func newStenotypeThread(i int, baseDir string) *stenotypeThread {
@@ -148,7 +152,7 @@ func (st *stenotypeThread) cleanUpOnLowDiskSpace() {
 			log.Printf("Thread %v could not get the free disk percentage for %q: %v", st.id, st.packetPath, err)
 			return
 		}
-		if df > minDiskSpacePercentage {
+		if df > st.minDiskFree {
 			return
 		}
 		log.Printf("Thread %v disk usage is high (packet path=%q): %d%% free\n", st.id, st.packetPath, df)
@@ -230,6 +234,25 @@ func (st *stenotypeThread) getBlockFile(name string) *blockfile.BlockFile {
 	return st.files[name]
 }
 
+func ReadConfigFile(filename string) (*Config, error) {
+	log.Printf("Reading config %q", filename)
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("could not read config file %q: %v", filename, err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	var out Config
+	if err := dec.Decode(&out); err != nil {
+		return nil, fmt.Errorf("could not decode config file %q: %v", filename, err)
+	}
+	for i, thread := range out.Threads {
+		if thread.DiskFreePercentage <= 0 {
+			out.Threads[i].DiskFreePercentage = minDiskSpacePercentage
+		}
+	}
+	return &out, nil
+}
+
 func (c Config) args() []string {
 	return append(c.Flags,
 		fmt.Sprintf("--threads=%d", len(c.Threads)),
@@ -265,6 +288,7 @@ func (c Config) Directory() (_ *Directory, returnedErr error) {
 	threads := make([]*stenotypeThread, len(c.Threads))
 	for i, threadConfig := range c.Threads {
 		st := newStenotypeThread(i, dirname)
+		st.minDiskFree = threadConfig.DiskFreePercentage
 		if err := st.createSymlinks(&threadConfig); err != nil {
 			return nil, err
 		}

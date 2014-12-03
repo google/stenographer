@@ -59,7 +59,6 @@ void Index::Process(const Packet& p, int64_t block_offset) {
     type = ntohs(*reinterpret_cast<const uint16_t*>(start + 2));
     start += 4;
   }
-  leveldb::Slice src_ip, dst_ip;
   uint8_t protocol = 0;
   switch (type) {
     case ETH_P_IP: {
@@ -67,8 +66,10 @@ void Index::Process(const Packet& p, int64_t block_offset) {
         return;
       }
       auto ip4 = reinterpret_cast<const struct iphdr*>(start);
-      src_ip = leveldb::Slice(reinterpret_cast<const char*>(&ip4->saddr), 4);
-      dst_ip = leveldb::Slice(reinterpret_cast<const char*>(&ip4->daddr), 4);
+      AddIP(leveldb::Slice(reinterpret_cast<const char*>(&ip4->saddr), 4),
+            packet_offset);
+      AddIP(leveldb::Slice(reinterpret_cast<const char*>(&ip4->daddr), 4),
+            packet_offset);
       size_t len = ip4->ihl;
       len *= 4;
       if (len < 20) return;
@@ -83,8 +84,10 @@ void Index::Process(const Packet& p, int64_t block_offset) {
       auto ip6 = reinterpret_cast<const struct ip6_hdr*>(start);
       protocol = ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
       start += sizeof(struct ip6_hdr);
-      src_ip = leveldb::Slice(reinterpret_cast<const char*>(&ip6->ip6_src), 16);
-      dst_ip = leveldb::Slice(reinterpret_cast<const char*>(&ip6->ip6_dst), 16);
+      AddIP(leveldb::Slice(reinterpret_cast<const char*>(&ip6->ip6_src), 16),
+            packet_offset);
+      AddIP(leveldb::Slice(reinterpret_cast<const char*>(&ip6->ip6_dst), 16),
+            packet_offset);
       bool ip6extensions = true;
       while (ip6extensions) {
         switch (protocol) {
@@ -126,18 +129,15 @@ void Index::Process(const Packet& p, int64_t block_offset) {
     default:
       return;
   }
-  AddIP(src_ip, packet_offset);
-  AddIP(dst_ip, packet_offset);
   AddProtocol(protocol, packet_offset);
-  uint16_t src_port, dst_port;
   switch (protocol) {
     case IPPROTO_TCP: {
       if (start + sizeof(struct tcphdr) > limit) {
         return;
       }
       auto tcp = reinterpret_cast<const struct tcphdr*>(start);
-      src_port = ntohs(tcp->source);
-      dst_port = ntohs(tcp->dest);
+      AddPort(ntohs(tcp->source), packet_offset);
+      AddPort(ntohs(tcp->dest), packet_offset);
       break;
     }
     case IPPROTO_UDP: {
@@ -145,15 +145,13 @@ void Index::Process(const Packet& p, int64_t block_offset) {
         return;
       }
       auto udp = reinterpret_cast<const struct udphdr*>(start);
-      src_port = ntohs(udp->source);
-      dst_port = ntohs(udp->dest);
+      AddPort(ntohs(udp->source), packet_offset);
+      AddPort(ntohs(udp->dest), packet_offset);
       break;
     }
     default:
       return;
   }
-  AddPort(src_port, packet_offset);
-  AddPort(dst_port, packet_offset);
 }
 
 namespace {

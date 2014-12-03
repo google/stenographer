@@ -36,10 +36,16 @@ type IndexFile struct {
 	ss   *sstable.Table
 }
 
-// IndexPathFromPath returns the path to an index file based on the path to a
+// IndexPathFromBlockfilePath returns the path to an index file based on the path to a
 // block file.
-func IndexPathFromPath(p string) string {
+func IndexPathFromBlockfilePath(p string) string {
 	return strings.Replace(p, "PKT", "IDX", 1)
+}
+
+// BlockfilePathFromIndexPath returns the path to a block file based on the path to an
+// index file.
+func BlockfilePathFromIndexPath(p string) string {
+	return strings.Replace(p, "IDX", "PKT", 1)
 }
 
 // NewIndexFile returns a new handle to the named index file.

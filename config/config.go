@@ -32,6 +32,7 @@ import (
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/blockfile"
+	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
 )
 
@@ -41,7 +42,6 @@ const (
 	indexPrefix            = "IDX"
 	minDiskSpacePercentage = 10
 	fileSyncFrequency      = 15 * time.Second
-	cleanUpFrequency       = 45 * time.Second
 )
 
 type ThreadConfig struct {
@@ -101,8 +101,7 @@ func (st *stenotypeThread) syncFilesWithDisk() {
 	defer st.mu.Unlock()
 
 	newFilesCnt := 0
-	for _, file := range st.listPacketFilesOnDisk() {
-		filename := file.Name()
+	for _, filename := range st.listPacketFilesOnDisk() {
 		if st.files[filename] != nil {
 			continue
 		}
@@ -117,20 +116,22 @@ func (st *stenotypeThread) syncFilesWithDisk() {
 	}
 }
 
-func (st *stenotypeThread) listPacketFilesOnDisk() []os.FileInfo {
-	files, err := ioutil.ReadDir(st.packetPath)
+func (st *stenotypeThread) listPacketFilesOnDisk() (out []string) {
+	// Since indexes tend to be written after blockfiles, we list index files,
+	// then translate them back to blockfiles.  This way, we don't get spurious
+	// errors when we find blockfiles that indexes haven't been written for yet.
+	files, err := ioutil.ReadDir(st.indexPath)
 	if err != nil {
-		log.Printf("Thread %v could not read dir %q: %v", st.id, st.packetPath, err)
+		log.Printf("Thread %v could not read dir %q: %v", st.id, st.indexPath, err)
 		return nil
 	}
-	var out []os.FileInfo
 	for _, file := range files {
 		if file.IsDir() || file.Name()[0] == '.' {
 			continue
 		}
-		out = append(out, file)
+		out = append(out, indexfile.BlockfilePathFromIndexPath(file.Name()))
 	}
-	return out
+	return
 }
 
 // This method should only be called once the st.mu has been acquired!
@@ -319,8 +320,7 @@ func newDirectory(dirname string, threads []*stenotypeThread) *Directory {
 		threads: threads,
 		done:    make(chan bool),
 	}
-	go d.callEvery(d.detectNewFiles, fileSyncFrequency)
-	go d.callEvery(d.cleanUpDisksIfneeded, cleanUpFrequency)
+	go d.callEvery(d.syncFiles, fileSyncFrequency)
 	return d
 }
 
@@ -341,14 +341,9 @@ func (d *Directory) callEvery(cb func(), freq time.Duration) {
 	}
 }
 
-func (d *Directory) detectNewFiles() {
+func (d *Directory) syncFiles() {
 	for _, t := range d.threads {
 		t.syncFilesWithDisk()
-	}
-}
-
-func (d *Directory) cleanUpDisksIfneeded() {
-	for _, t := range d.threads {
 		t.cleanUpOnLowDiskSpace()
 	}
 }

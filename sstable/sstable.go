@@ -226,14 +226,15 @@ func NewTable(filename string) (*Table, error) {
 	}
 
 	// mmap the file.
-	t.mmap, err = syscall.Mmap(int(t.f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_SHARED)
+	t.mmap, err = syscall.Mmap(int(t.f.Fd()), 0, int(size), syscall.PROT_READ, syscall.MAP_PRIVATE)
 	if err != nil {
 		return nil, fmt.Errorf("unable to mmap file: %v", err)
 	}
 
 	if t.footer, err = footerFrom(t.mmap[size-footerLength:]); err != nil {
 		return nil, fmt.Errorf("could not decode footer: %v", err)
-	} else if t.index, err = t.newBlock(t.footer.index); err != nil {
+	}
+	if t.index, err = t.newBlock(t.footer.index); err != nil {
 		return nil, fmt.Errorf("could not read index block: %v", err)
 	}
 	// TODO:  we do nothing with the meta-index... should we?
@@ -247,6 +248,7 @@ func (t *Table) Close() error {
 		if err := syscall.Munmap(t.mmap); err != nil {
 			return err
 		}
+		t.mmap = nil
 	}
 	return t.f.Close()
 }

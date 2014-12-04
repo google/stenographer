@@ -37,7 +37,10 @@ import (
 
 var configFilename = flag.String("config", "", "File location to read configuration from")
 
+// Verbose logging.
 var v = base.V
+
+const minStenotypeRuntimeForRestart = time.Minute
 
 func ReadConfig() *config.Config {
 	c, err := config.ReadConfigFile(*configFilename)
@@ -70,7 +73,7 @@ func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 	return in.Err()
 }
 
-func runStenotypeOnce() error {
+func runStenotypeOnce(conf *config.Config, dir *config.Directory) error {
 	// Start running stenotype.
 	cmd := conf.Stenotype(dir)
 	cmd.Stdout = os.Stdout
@@ -85,13 +88,13 @@ func runStenotypeOnce() error {
 	return fmt.Errorf("stenotype stopped")
 }
 
-func runStenotype() {
+func runStenotype(conf *config.Config, dir *config.Directory) {
 	for {
 		start := time.Now()
-		err := runStenotypeOnce()
+		err := runStenotypeOnce(conf, dir)
 		duration := time.Since(start)
 		log.Printf("Stenotype ran for %v: %v", duration, err)
-		if duration < time.Minute {
+		if duration < minStenotypeRuntimeForRestart {
 			log.Fatalf("Stenotype ran for too little time, crashing to avoid stenotype crash loop")
 		}
 	}
@@ -108,7 +111,7 @@ func main() {
 	}
 	defer dir.Close()
 
-	go runStenotype()
+	go runStenotype(conf, dir)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

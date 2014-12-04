@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -41,6 +42,7 @@ type BlockFile struct {
 	name string
 	f    *os.File
 	i    *indexfile.IndexFile
+	mu   sync.RWMutex // Stops Close() from invalidating a file before a current query is done with it.
 }
 
 // NewBlockFile opens up a named block file (and its index), returning a handle
@@ -92,6 +94,8 @@ func (b *BlockFile) readPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, err
 
 // Close() cleans up this blockfile.
 func (b *BlockFile) Close() (err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if e := b.i.Close(); e != nil {
 		err = e
 	}
@@ -184,8 +188,10 @@ func (b *BlockFile) AllPackets() Iter {
 }
 
 func (b *BlockFile) Lookup(q query.Query) *base.PacketChan {
+	b.mu.RLock()
 	c := base.NewPacketChan(100)
 	go func() {
+		defer b.mu.RUnlock()
 		var ci gopacket.CaptureInfo
 		v(3, "Blockfile %q looking up query %q", q.String(), b.name)
 		start := time.Now()

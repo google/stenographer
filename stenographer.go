@@ -70,6 +70,33 @@ func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 	return in.Err()
 }
 
+func runStenotypeOnce() error {
+	// Start running stenotype.
+	cmd := conf.Stenotype(dir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("cannot start stenotype: %v", err)
+	}
+	defer cmd.Process.Signal(os.Interrupt)
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("stenotype wait failed: %v", err)
+	}
+	return fmt.Errorf("stenotype stopped")
+}
+
+func runStenotype() {
+	for {
+		start := time.Now()
+		err := runStenotypeOnce()
+		duration := time.Since(start)
+		log.Printf("Stenotype ran for %v: %v", duration, err)
+		if duration < time.Minute {
+			log.Fatalf("Stenotype ran for too little time, crashing to avoid stenotype crash loop")
+		}
+	}
+}
+
 func main() {
 	flag.Parse()
 	runtime.GOMAXPROCS(32)
@@ -81,20 +108,7 @@ func main() {
 	}
 	defer dir.Close()
 
-	// Start running stenotype.
-	cmd := conf.Stenotype(dir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		log.Fatalf("cannot start stenotype: %v", err)
-	}
-	defer cmd.Process.Signal(os.Interrupt)
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			log.Fatalf("stenotype wait failed: %v", err)
-		}
-		log.Printf("stenotype stopped")
-	}()
+	go runStenotype()
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

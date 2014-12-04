@@ -24,6 +24,7 @@ import (
 	"syscall"
 
 	"code.google.com/p/gopacket"
+	"golang.org/x/net/context"
 )
 
 var verboseLogging = flag.Int("v", 0, "log many verbose logs")
@@ -117,7 +118,7 @@ func (p *packetHeap) Pop() (x interface{}) {
 
 // MergePacketChans merges an incoming set of packet chans, each sorted by
 // time, returning a new single packet chan that's also sorted by time.
-func MergePacketChans(in []*PacketChan) *PacketChan {
+func MergePacketChans(ctx context.Context, in []*PacketChan) *PacketChan {
 	out := NewPacketChan(100)
 	go func() {
 		count := 0
@@ -129,15 +130,21 @@ func MergePacketChans(in []*PacketChan) *PacketChan {
 			defer in[i].Discard()
 		}
 		for i, c := range in {
-			if pkt := <-c.Receive(); pkt != nil {
-				heap.Push(&h, indexedPacket{Packet: pkt, i: i})
-			}
-			if err := c.Err(); err != nil {
-				out.Close(err)
+			select {
+			case pkt := <-c.Receive():
+				if pkt != nil {
+					heap.Push(&h, indexedPacket{Packet: pkt, i: i})
+				}
+				if err := c.Err(); err != nil {
+					out.Close(err)
+					return
+				}
+			case <-ctx.Done():
+				out.Close(ctx.Err())
 				return
 			}
 		}
-		for h.Len() > 0 {
+		for h.Len() > 0 && ctx.Err() == nil {
 			p := heap.Pop(&h).(indexedPacket)
 			count++
 			if pkt := <-in[p.i].Receive(); pkt != nil {
@@ -149,7 +156,7 @@ func MergePacketChans(in []*PacketChan) *PacketChan {
 				return
 			}
 		}
-		out.Close(nil)
+		out.Close(ctx.Err())
 	}()
 	return out
 }

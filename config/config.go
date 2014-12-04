@@ -33,6 +33,7 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/blockfile"
 	"github.com/google/stenographer/query"
+	"golang.org/x/net/context"
 )
 
 var v = base.V // verbose logging
@@ -215,17 +216,17 @@ func (st *stenotypeThread) untrackFile(filename string) error {
 	return nil
 }
 
-func (st *stenotypeThread) lookup(q query.Query) *base.PacketChan {
+func (st *stenotypeThread) lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
 	var inputs []*base.PacketChan
 	for _, file := range st.files {
-		inputs = append(inputs, file.Lookup(q))
+		inputs = append(inputs, file.Lookup(ctx, q))
 	}
 	// BUG:  MergePacketChans returns asynchronously, so there's a chance
 	// that we'll lose our st.mu lock while still looking up packets, then
 	// close/delete files.  Figure out how to fix this.
-	return base.MergePacketChans(inputs)
+	return base.MergePacketChans(ctx, inputs)
 }
 
 func (st *stenotypeThread) getBlockFile(name string) *blockfile.BlockFile {
@@ -354,10 +355,10 @@ func (d *Directory) Path() string {
 	return d.name
 }
 
-func (d *Directory) Lookup(q query.Query) *base.PacketChan {
+func (d *Directory) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	var inputs []*base.PacketChan
 	for _, thread := range d.threads {
-		inputs = append(inputs, thread.lookup(q))
+		inputs = append(inputs, thread.lookup(ctx, q))
 	}
-	return base.MergePacketChans(inputs)
+	return base.MergePacketChans(ctx, inputs)
 }

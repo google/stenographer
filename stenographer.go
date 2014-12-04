@@ -31,6 +31,7 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
 	"github.com/google/stenographer/query"
+	"golang.org/x/net/context"
 )
 
 var configFilename = flag.String("config", "", "File location to read configuration from")
@@ -48,7 +49,7 @@ func ReadConfig() *config.Config {
 // snapLen is the max packet size we'll return in pcap files to users.
 const snapLen = 65536
 
-func PacketsToFile(in *base.PacketChan, out io.Writer) error {
+func PacketsToFile(in *base.PacketChan, out io.Writer, cancel context.CancelFunc) error {
 	w := pcapgo.NewWriter(out)
 	w.WriteFileHeader(snapLen, layers.LinkTypeEthernet)
 	count := 0
@@ -61,6 +62,7 @@ func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 			// This can happen if our pipe is broken, and we don't want to blow stack
 			// traces all over our users when that happens, so Error/Exit instead of
 			// Fatal.
+			cancel()
 			return fmt.Errorf("error writing packet: %v", err)
 		}
 		count++
@@ -106,9 +108,10 @@ func main() {
 			return
 		}
 		log.Printf("requesting %q", queryStr)
-		packets := dir.Lookup(q)
+		ctx, cancel := context.WithCancel(context.Background())
+		packets := dir.Lookup(ctx, q)
 		w.Header().Set("Content-Type", "appliation/octet-stream")
-		PacketsToFile(packets, w)
+		PacketsToFile(packets, w, cancel)
 	})
 	log.Printf("Serving on port %v", conf.Port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", conf.Port), nil))

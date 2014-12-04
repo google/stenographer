@@ -27,6 +27,7 @@ import (
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/sstable"
+	"golang.org/x/net/context"
 )
 
 var v = base.V // verbose logging locally.
@@ -61,7 +62,7 @@ func (i *IndexFile) Name() string {
 // IPPositions returns the positions in the block file of all packets with IPs
 // between the given ranges.  Both IPs must be 4 or 16 bytes long, both must be
 // the same length, and from must be <= to.
-func (i *IndexFile) IPPositions(from, to net.IP) (base.Positions, error) {
+func (i *IndexFile) IPPositions(ctx context.Context, from, to net.IP) (base.Positions, error) {
 	var version byte
 	switch {
 	case len(from) != len(to):
@@ -76,23 +77,24 @@ func (i *IndexFile) IPPositions(from, to net.IP) (base.Positions, error) {
 		return nil, fmt.Errorf("Invalid IP length")
 	}
 	return i.positions(
+		ctx,
 		append([]byte{version}, []byte(from)...),
 		append([]byte{version}, []byte(to)...))
 }
 
 // ProtoPositions returns the positions in the block file of all packets with
 // the give IP protocol number.
-func (i *IndexFile) ProtoPositions(proto byte) (base.Positions, error) {
-	return i.positionsSingleKey([]byte{1, proto})
+func (i *IndexFile) ProtoPositions(ctx context.Context, proto byte) (base.Positions, error) {
+	return i.positionsSingleKey(ctx, []byte{1, proto})
 }
 
 // ProtoPositions returns the positions in the block file of all packets with
 // the give port number (TCP or UDP).
-func (i *IndexFile) PortPositions(port uint16) (base.Positions, error) {
+func (i *IndexFile) PortPositions(ctx context.Context, port uint16) (base.Positions, error) {
 	var buf [3]byte
 	binary.BigEndian.PutUint16(buf[1:], port)
 	buf[0] = 2
-	return i.positionsSingleKey(buf[:])
+	return i.positionsSingleKey(ctx, buf[:])
 }
 
 // Dump writes out a debug version of the entire index to the given writer.
@@ -106,12 +108,12 @@ func (i *IndexFile) Dump(out io.Writer) {
 	}
 }
 
-func (i *IndexFile) positionsSingleKey(key []byte) (base.Positions, error) {
+func (i *IndexFile) positionsSingleKey(ctx context.Context, key []byte) (base.Positions, error) {
 	var sortedPos base.Positions
 	v(4, "%q single key iterator %+v start", i.name, key)
 	iter := i.ss.Iter(key)
 	count := int64(0)
-	for iter.Next() {
+	for ctx.Err() == nil && iter.Next() {
 		if !bytes.Equal(key, iter.Key()) {
 			v(4, "%q single key iterator high key %v", i.name, iter.Key())
 			break
@@ -126,18 +128,22 @@ func (i *IndexFile) positionsSingleKey(key []byte) (base.Positions, error) {
 		v(4, "%q single key iterator err=%v", i.name, err)
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		v(4, "%q single key iterator ctx err=%v", i.name, err)
+		return nil, err
+	}
 	return sortedPos, nil
 }
 
-func (i *IndexFile) positions(from, to []byte) (base.Positions, error) {
+func (i *IndexFile) positions(ctx context.Context, from, to []byte) (base.Positions, error) {
 	if bytes.Equal(from, to) {
-		return i.positionsSingleKey(from)
+		return i.positionsSingleKey(ctx, from)
 	}
 	v(4, "%q multi key iterator %v:%v start", i.name, from, to)
 	iter := i.ss.Iter(from)
 	positions := map[uint32]bool{}
 	count := int64(0)
-	for iter.Next() {
+	for ctx.Err() == nil && iter.Next() {
 		if bytes.Compare(iter.Key(), from) > 0 {
 			v(4, "%q multi key iterator high key %v", i.name, iter.Key())
 			break
@@ -150,6 +156,10 @@ func (i *IndexFile) positions(from, to []byte) (base.Positions, error) {
 	v(4, "%q multi key iterator done", i.name)
 	if err := iter.Err(); err != nil {
 		v(4, "%q multi key iterator err=%v", i.name, err)
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		v(4, "%q single key iterator ctx err=%v", i.name, err)
 		return nil, err
 	}
 	sortedPos := make(base.Positions, 0, len(positions))

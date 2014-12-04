@@ -25,6 +25,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime"
+	"time"
 
 	"code.google.com/p/gopacket/layers"
 	"code.google.com/p/gopacket/pcapgo"
@@ -72,6 +74,7 @@ func PacketsToFile(in *base.PacketChan, out io.Writer, cancel context.CancelFunc
 
 func main() {
 	flag.Parse()
+	runtime.GOMAXPROCS(32)
 	conf := ReadConfig()
 	v(1, "Using config:\n%v", conf)
 	dir, err := conf.Directory()
@@ -96,18 +99,22 @@ func main() {
 	}()
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
 		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "could not read request body", http.StatusBadRequest)
 			return
 		}
 		queryStr := string(queryBytes)
+		log.Printf("Received query %q from %q", queryStr, r.RemoteAddr)
+		defer func() {
+			log.Printf("Handled query %q from %q in %v", queryStr, r.RemoteAddr, time.Since(start))
+		}()
 		q, err := query.NewQuery(queryStr)
 		if err != nil {
 			http.Error(w, "could not parse query", http.StatusBadRequest)
 			return
 		}
-		log.Printf("requesting %q", queryStr)
 		ctx, cancel := context.WithCancel(context.Background())
 		packets := dir.Lookup(ctx, q)
 		w.Header().Set("Content-Type", "appliation/octet-stream")

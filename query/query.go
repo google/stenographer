@@ -48,29 +48,45 @@ type Query interface {
 	// instead pass the query into BlockFile's Lookup() to get back actual
 	// packets.
 	LookupIn(context.Context, *indexfile.IndexFile) (base.Positions, error)
+	// String returns a human readable string for this query.
+	String() string
+}
+
+func log(q Query, i *indexfile.IndexFile, bp *base.Positions, err *error) func() {
+	start := time.Now()
+	return func() {
+		v(3, "Query %q in %q took %v, found %d  %v", q, i.Name(), time.Since(start), len(*bp), *err)
+	}
 }
 
 type portQuery uint16
 
 func (q portQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (base.Positions, error) {
+	defer log(q, index, &bp, &err)()
 	return index.PortPositions(ctx, uint16(q))
 }
+func (q portQuery) String() string { return fmt.Sprintf("port=%d", q) }
 
 type protocolQuery byte
 
 func (q protocolQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (base.Positions, error) {
+	defer log(q, index, &bp, &err)()
 	return index.ProtoPositions(ctx, byte(q))
 }
+func (q protocolQuery) String() string { return fmt.Sprintf("protocol=%d", q) }
 
 type ipQuery [2]net.IP
 
 func (q ipQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (base.Positions, error) {
+	defer log(q, index, &bp, &err)()
 	return index.IPPositions(ctx, q[0], q[1])
 }
+func (q ipQuery) String() string { return fmt.Sprintf("ip=%v-%v", q[0], q[1]) }
 
 type unionQuery []Query
 
 func (a unionQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (base.Positions, error) {
+	defer log(a, index, &bp, &err)()
 	var positions base.Positions
 	for _, query := range a {
 		pos, err := query.LookupIn(ctx, index)
@@ -81,10 +97,18 @@ func (a unionQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (b
 	}
 	return positions, nil
 }
+func (q unionQuery) String() string {
+	all := make([]string, len(q))
+	for i, query := range q {
+		all[i] = query.String()
+	}
+	return strings.Join(all, "|")
+}
 
 type intersectQuery []Query
 
 func (a intersectQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (base.Positions, error) {
+	defer log(a, index, &bp, &err)()
 	positions := base.AllPositions
 	for _, query := range a {
 		pos, err := query.LookupIn(ctx, index)
@@ -95,10 +119,18 @@ func (a intersectQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile
 	}
 	return positions, nil
 }
+func (q intersectQuery) String() string {
+	all := make([]string, len(q))
+	for i, query := range q {
+		all[i] = query.String()
+	}
+	return strings.Join(all, " ")
+}
 
 type sinceQuery time.Time
 
 func (a sinceQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (base.Positions, error) {
+	defer log(a, index, &bp, &err)()
 	last := filepath.Base(index.Name())
 	intval, err := strconv.ParseInt(last, 10, 64)
 	if err != nil {
@@ -111,6 +143,9 @@ func (a sinceQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (b
 	}
 	v(2, "time query skipping %q", index.Name())
 	return base.NoPositions, nil
+}
+func (a sinceQuery) String() string {
+	return fmt.Sprintf("since=%v", time.Time(a))
 }
 
 func singleArgument(arg string) (Query, error) {

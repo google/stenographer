@@ -52,7 +52,7 @@ func NewBlockFile(filename string) (*BlockFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open %q: %v", filename, err)
 	}
-	i, err := indexfile.NewIndexFile(indexfile.IndexPathFromPath(filename))
+	i, err := indexfile.NewIndexFile(indexfile.IndexPathFromBlockfilePath(filename))
 	if err != nil {
 		f.Close()
 		return nil, fmt.Errorf("could not open index for %q: %v", filename, err)
@@ -188,13 +188,15 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 	c := base.NewPacketChan(100)
 	go func() {
 		var ci gopacket.CaptureInfo
+		v(3, "Blockfile %q looking up query %q", q.String(), b.name)
+		start := time.Now()
 		positions, err := q.LookupIn(ctx, b.i)
 		if err != nil {
 			c.Close(fmt.Errorf("index lookup failure: %v", err))
 			return
 		}
 		if positions.IsAllPositions() {
-			v(2, "blockfile %q reading all packets", b.name)
+			v(2, "Blockfile %q reading all packets", b.name)
 			iter := &allPacketsIter{BlockFile: b}
 			for iter.Next() {
 				if err := ctx.Err(); err != nil {
@@ -208,7 +210,7 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 				return
 			}
 		} else {
-			v(2, "blockfile %q reading %v packets", b.name, len(positions))
+			v(2, "Blockfile %q reading %v packets", b.name, len(positions))
 			for _, pos := range positions {
 				if err := ctx.Err(); err != nil {
 					c.Close(err)
@@ -226,6 +228,7 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 			}
 		}
 		c.Close(nil)
+		v(3, "Blockfile %q finished reading all packets in %v", b.name, time.Since(start))
 	}()
 	return c
 }

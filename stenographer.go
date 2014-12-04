@@ -51,7 +51,7 @@ func ReadConfig() *config.Config {
 // snapLen is the max packet size we'll return in pcap files to users.
 const snapLen = 65536
 
-func PacketsToFile(in *base.PacketChan, out io.Writer, cancel context.CancelFunc) error {
+func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 	w := pcapgo.NewWriter(out)
 	w.WriteFileHeader(snapLen, layers.LinkTypeEthernet)
 	count := 0
@@ -64,7 +64,6 @@ func PacketsToFile(in *base.PacketChan, out io.Writer, cancel context.CancelFunc
 			// This can happen if our pipe is broken, and we don't want to blow stack
 			// traces all over our users when that happens, so Error/Exit instead of
 			// Fatal.
-			cancel()
 			return fmt.Errorf("error writing packet: %v", err)
 		}
 		count++
@@ -115,11 +114,27 @@ func main() {
 			http.Error(w, "could not parse query", http.StatusBadRequest)
 			return
 		}
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := contextFromHTTP(w, r)
+		defer cancel()
 		packets := dir.Lookup(ctx, q)
 		w.Header().Set("Content-Type", "appliation/octet-stream")
-		PacketsToFile(packets, w, cancel)
+		PacketsToFile(packets, w)
 	})
 	log.Printf("Serving on port %v", conf.Port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", conf.Port), nil))
+}
+
+func contextFromHTTP(w http.ResponseWriter, r *http.Request) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	if closer, ok := w.(http.CloseNotifier); ok {
+		go func() {
+			select {
+			case <-closer.CloseNotify():
+				log.Printf("Detected closed HTTP connection, canceling query")
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+	}
+	return ctx, cancel
 }

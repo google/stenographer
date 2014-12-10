@@ -33,6 +33,7 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
 	"github.com/google/stenographer/query"
+	"golang.org/x/net/context"
 )
 
 var configFilename = flag.String("config", "", "File location to read configuration from")
@@ -130,10 +131,27 @@ func main() {
 			http.Error(w, "could not parse query", http.StatusBadRequest)
 			return
 		}
-		packets := dir.Lookup(q)
+		ctx, cancel := contextFromHTTP(w, r)
+		defer cancel()
+		packets := dir.Lookup(ctx, q)
 		w.Header().Set("Content-Type", "appliation/octet-stream")
 		PacketsToFile(packets, w)
 	})
 	log.Printf("Serving on port %v", conf.Port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", conf.Port), nil))
+}
+
+func contextFromHTTP(w http.ResponseWriter, r *http.Request) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	if closer, ok := w.(http.CloseNotifier); ok {
+		go func() {
+			select {
+			case <-closer.CloseNotify():
+				log.Printf("Detected closed HTTP connection, canceling query")
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+	}
+	return ctx, cancel
 }

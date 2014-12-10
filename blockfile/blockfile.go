@@ -29,6 +29,7 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
+	"golang.org/x/net/context"
 )
 
 // #include <linux/if_packet.h>
@@ -187,7 +188,7 @@ func (b *BlockFile) AllPackets() Iter {
 	return &allPacketsIter{BlockFile: b}
 }
 
-func (b *BlockFile) Lookup(q query.Query) *base.PacketChan {
+func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	b.mu.RLock()
 	c := base.NewPacketChan(100)
 	go func() {
@@ -195,7 +196,7 @@ func (b *BlockFile) Lookup(q query.Query) *base.PacketChan {
 		var ci gopacket.CaptureInfo
 		v(3, "Blockfile %q looking up query %q", q.String(), b.name)
 		start := time.Now()
-		positions, err := q.LookupIn(b.i)
+		positions, err := q.LookupIn(ctx, b.i)
 		if err != nil {
 			c.Close(fmt.Errorf("index lookup failure: %v", err))
 			return
@@ -204,6 +205,10 @@ func (b *BlockFile) Lookup(q query.Query) *base.PacketChan {
 			v(2, "Blockfile %q reading all packets", b.name)
 			iter := &allPacketsIter{BlockFile: b}
 			for iter.Next() {
+				if err := ctx.Err(); err != nil {
+					c.Close(err)
+					return
+				}
 				c.Send(iter.Packet())
 			}
 			if iter.Err() != nil {
@@ -213,6 +218,10 @@ func (b *BlockFile) Lookup(q query.Query) *base.PacketChan {
 		} else {
 			v(2, "Blockfile %q reading %v packets", b.name, len(positions))
 			for _, pos := range positions {
+				if err := ctx.Err(); err != nil {
+					c.Close(err)
+					return
+				}
 				buffer, err := b.readPacket(pos, &ci)
 				if err != nil {
 					c.Close(fmt.Errorf("error reading packets from %q @ %v: %v", b.name, pos, err))

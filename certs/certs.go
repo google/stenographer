@@ -20,10 +20,12 @@ package certs
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"os"
 	"time"
@@ -36,7 +38,7 @@ const (
 
 // WriteNewCerts generates a self-signed certificate pair for use in
 // locally authorizing clients.
-func WriteNewCerts(certFile, keyFile string) error {
+func WriteNewCerts(certFile, keyFile string, server bool) error {
 	// Implementation mostly taken from http://golang.org/src/pkg/crypto/tls/generate_cert.go
 	priv, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
@@ -57,10 +59,15 @@ func WriteNewCerts(certFile, keyFile string) error {
 		NotBefore: time.Now(),
 		NotAfter:  time.Now().Add(validFor),
 
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		BasicConstraintsValid: true,
 		DNSNames:              []string{"localhost"},
+		IsCA:                  true,
+	}
+	if server {
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	} else {
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
 	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
@@ -91,4 +98,22 @@ func WriteNewCerts(certFile, keyFile string) error {
 		return fmt.Errorf("could not close key file: %v", err)
 	}
 	return nil
+}
+
+func ClientVerifyingTLSConfig(certFile string) (*tls.Config, error) {
+	// Test cert file
+	var cert *x509.Certificate
+	if certBytes, err := ioutil.ReadFile(certFile); err != nil {
+		return nil, fmt.Errorf("could not read cert file: %v", err)
+	} else if block, _ := pem.Decode(certBytes); block == nil {
+		return nil, fmt.Errorf("could not get cert pem block: %v", err)
+	} else if cert, err = x509.ParseCertificate(block.Bytes); err != nil {
+		return nil, fmt.Errorf("could not parse cert: %v", err)
+	}
+	cas := x509.NewCertPool()
+	cas.AddCert(cert)
+	return &tls.Config{
+		ClientAuth: tls.RequireAndVerifyClientCert,
+		ClientCAs:  cas,
+	}, nil
 }

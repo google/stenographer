@@ -13,6 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+if ! which jq >/dev/null; then
+  echo "Must install 'jq' for JSON parsing (apt-get install jq)"
+fi
+
 if [ "$#" -lt 1 ]; then
   cat 1>&2 <<EOF
 $0 provides a simple method for reading logs out of stenographer.
@@ -28,15 +32,33 @@ Examples:
  $0 'ip=1.1.1.1 ip=2.2.2.2' -w /tmp/out.pcap
 
 See README.md for more details on the Stenographer query language.
+
+Set the STENOGRAPHER_CONFIG environmental variable to point to your stenographer
+config if it's in a nonstandard place (defaults to /etc/stenographer/config).
 EOF
   exit 1
 fi
 
-PORT="${PORT-1234}"
+STENOGRAPHER_CONFIG="${STENOGRAPHER_CONFIG-/etc/stenographer/config}"
+PORT="$(cat "$STENOGRAPHER_CONFIG" | jq -r '.Port')"
+CERTPATH="$(cat "$STENOGRAPHER_CONFIG" | jq -r '.CertPath')"
+if [ -z "$PORT" -o -z "$CERTPATH" ]; then
+  echo "Unable to get port ($PORT) or certpath ($CERTPATH) from config ($STENOGRAPHER_CONFIG)" 1>&2
+  exit 1
+fi
 SERVER="localhost:$PORT"
 STENOQUERY="$1"
 shift
+echo "PORT=$PORT"
+echo "CERTPATH=$CERTPATH"
 
 echo "Running stenotype query '$STENOQUERY' against '$SERVER'" 1>&2
-curl -d "$STENOQUERY" "http://$SERVER/" 2>/dev/null |
+curl \
+    -d "$STENOQUERY" \
+    --cert "$CERTPATH/client_cert.pem" \
+    --key "$CERTPATH/client_key.pem" \
+    --cacert "$CERTPATH/server_cert.pem" \
+    --silent \
+    --show-error \
+    "https://$SERVER/" |
     tcpdump -r /dev/stdin -s 0 "$@"

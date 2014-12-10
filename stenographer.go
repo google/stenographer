@@ -137,8 +137,7 @@ func main() {
 		w.Header().Set("Content-Type", "appliation/octet-stream")
 		PacketsToFile(packets, w)
 	})
-	log.Printf("Serving on port %v", conf.Port)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", conf.Port), nil))
+	log.Fatal(conf.Serve())
 }
 
 func contextFromHTTP(w http.ResponseWriter, r *http.Request) (context.Context, context.CancelFunc) {

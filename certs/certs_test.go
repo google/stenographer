@@ -30,7 +30,7 @@ func TestWriteCerts(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 	certFile, keyFile := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
-	if err := WriteNewCerts(certFile, keyFile); err != nil {
+	if err := WriteNewCerts(certFile, keyFile, true); err != nil {
 		t.Errorf("unable to generate certs files: %v", err)
 	}
 	// Test cert file

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/blockfile"
+	"github.com/google/stenographer/certs"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
 	"golang.org/x/net/context"
@@ -43,6 +45,12 @@ const (
 	indexPrefix            = "IDX"
 	minDiskSpacePercentage = 10
 	fileSyncFrequency      = 15 * time.Second
+
+	// These files will be generated in Config.CertPath.
+	clientCertFilename = "client_cert.pem"
+	clientKeyFilename  = "client_key.pem"
+	serverCertFilename = "server_cert.pem"
+	serverKeyFilename  = "server_key.pem"
 )
 
 type ThreadConfig struct {
@@ -57,6 +65,7 @@ type Config struct {
 	Interface     string
 	Flags         []string
 	Port          int
+	CertPath      string // Directory where client and server certs are stored.
 }
 
 type stenotypeThread struct {
@@ -274,6 +283,30 @@ func (c Config) validateThreadsConfig() error {
 		}
 	}
 	return nil
+}
+
+func (c Config) Serve() error {
+	clientCert, clientKey, serverCert, serverKey :=
+		filepath.Join(c.CertPath, clientCertFilename),
+		filepath.Join(c.CertPath, clientKeyFilename),
+		filepath.Join(c.CertPath, serverCertFilename),
+		filepath.Join(c.CertPath, serverKeyFilename)
+	if err := certs.WriteNewCerts(clientCert, clientKey, false); err != nil {
+		return fmt.Errorf("cannot write client certs: %v", err)
+	}
+	if err := certs.WriteNewCerts(serverCert, serverKey, true); err != nil {
+		return fmt.Errorf("cannot write server certs: %v", err)
+	}
+	tlsConfig, err := certs.ClientVerifyingTLSConfig(clientCert)
+	if err != nil {
+		return fmt.Errorf("cannot verify client cert: %v", err)
+	}
+	server := &http.Server{
+		Addr:      fmt.Sprintf("localhost:%d", c.Port),
+		TLSConfig: tlsConfig,
+	}
+	return server.ListenAndServeTLS(serverCert, serverKey)
+
 }
 
 func (c Config) Directory() (_ *Directory, returnedErr error) {

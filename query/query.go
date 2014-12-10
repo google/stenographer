@@ -25,6 +25,7 @@ import (
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/indexfile"
+	"golang.org/x/net/context"
 )
 
 var v = base.V // verbose logging.
@@ -46,7 +47,7 @@ type Query interface {
 	// query from an index file.  Users shouldn't call this directly, and should
 	// instead pass the query into BlockFile's Lookup() to get back actual
 	// packets.
-	LookupIn(*indexfile.IndexFile) (base.Positions, error)
+	LookupIn(context.Context, *indexfile.IndexFile) (base.Positions, error)
 	// String returns a human readable string for this query.
 	String() string
 }
@@ -60,35 +61,35 @@ func log(q Query, i *indexfile.IndexFile, bp *base.Positions, err *error) func()
 
 type portQuery uint16
 
-func (q portQuery) LookupIn(index *indexfile.IndexFile) (bp base.Positions, err error) {
+func (q portQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
 	defer log(q, index, &bp, &err)()
-	return index.PortPositions(uint16(q))
+	return index.PortPositions(ctx, uint16(q))
 }
 func (q portQuery) String() string { return fmt.Sprintf("port=%d", q) }
 
 type protocolQuery byte
 
-func (q protocolQuery) LookupIn(index *indexfile.IndexFile) (bp base.Positions, err error) {
+func (q protocolQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
 	defer log(q, index, &bp, &err)()
-	return index.ProtoPositions(byte(q))
+	return index.ProtoPositions(ctx, byte(q))
 }
 func (q protocolQuery) String() string { return fmt.Sprintf("protocol=%d", q) }
 
 type ipQuery [2]net.IP
 
-func (q ipQuery) LookupIn(index *indexfile.IndexFile) (bp base.Positions, err error) {
+func (q ipQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
 	defer log(q, index, &bp, &err)()
-	return index.IPPositions(q[0], q[1])
+	return index.IPPositions(ctx, q[0], q[1])
 }
 func (q ipQuery) String() string { return fmt.Sprintf("ip=%v-%v", q[0], q[1]) }
 
 type unionQuery []Query
 
-func (a unionQuery) LookupIn(index *indexfile.IndexFile) (bp base.Positions, err error) {
+func (a unionQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
 	defer log(a, index, &bp, &err)()
 	var positions base.Positions
 	for _, query := range a {
-		pos, err := query.LookupIn(index)
+		pos, err := query.LookupIn(ctx, index)
 		if err != nil {
 			return nil, err
 		}
@@ -106,11 +107,11 @@ func (q unionQuery) String() string {
 
 type intersectQuery []Query
 
-func (a intersectQuery) LookupIn(index *indexfile.IndexFile) (bp base.Positions, err error) {
+func (a intersectQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
 	defer log(a, index, &bp, &err)()
 	positions := base.AllPositions
 	for _, query := range a {
-		pos, err := query.LookupIn(index)
+		pos, err := query.LookupIn(ctx, index)
 		if err != nil {
 			return nil, err
 		}
@@ -128,7 +129,7 @@ func (q intersectQuery) String() string {
 
 type sinceQuery time.Time
 
-func (a sinceQuery) LookupIn(index *indexfile.IndexFile) (bp base.Positions, err error) {
+func (a sinceQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
 	defer log(a, index, &bp, &err)()
 	last := filepath.Base(index.Name())
 	intval, err := strconv.ParseInt(last, 10, 64)

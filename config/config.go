@@ -248,6 +248,8 @@ func (st *stenotypeThread) getBlockFile(name string) *blockfile.BlockFile {
 	return st.files[name]
 }
 
+// ReadConfigFile reads in the given JSON encoded configuration file and returns
+// the Config object associated with the decoded configuration data.
 func ReadConfigFile(filename string) (*Config, error) {
 	log.Printf("Reading config %q", filename)
 	data, err := ioutil.ReadFile(filename)
@@ -285,6 +287,9 @@ func (c Config) validateThreadsConfig() error {
 	return nil
 }
 
+// Serve starts up an HTTP server using http.DefaultServerMux to handle
+// requests.  This server will server over TLS, using the certs
+// stored in c.CertPath to verify itself to clients and verify clients.
 func (c Config) Serve() error {
 	clientCert, clientKey, serverCert, serverKey :=
 		filepath.Join(c.CertPath, clientCertFilename),
@@ -306,9 +311,9 @@ func (c Config) Serve() error {
 		TLSConfig: tlsConfig,
 	}
 	return server.ListenAndServeTLS(serverCert, serverKey)
-
 }
 
+// Directory returns a new Directory for use in running Stenotype.
 func (c Config) Directory() (_ *Directory, returnedErr error) {
 	if err := c.validateThreadsConfig(); err != nil {
 		return nil, err
@@ -335,6 +340,8 @@ func (c Config) Directory() (_ *Directory, returnedErr error) {
 	return newDirectory(dirname, threads), nil
 }
 
+// Stenotype returns a exec.Cmd which runs the stenotype binary with all of
+// the appropriate flags.
 func (c Config) Stenotype(d *Directory) *exec.Cmd {
 	log.Printf("Starting stenotype")
 	args := append(c.args(), fmt.Sprintf("--dir=%s", d.Path()))
@@ -342,6 +349,7 @@ func (c Config) Stenotype(d *Directory) *exec.Cmd {
 	return exec.Command(c.StenotypePath, args...)
 }
 
+// Directory contains information necessary to run Stenotype.
 type Directory struct {
 	name    string
 	threads []*stenotypeThread
@@ -358,6 +366,8 @@ func newDirectory(dirname string, threads []*stenotypeThread) *Directory {
 	return d
 }
 
+// Close closes the directory.  This should only be done when stenotype has
+// stopped using it.  After this call, Directory should no longer be used.
 func (d *Directory) Close() error {
 	return os.RemoveAll(d.name)
 }
@@ -382,10 +392,13 @@ func (d *Directory) syncFiles() {
 	}
 }
 
+// Path returns the underlying directory path for the given Directory.
 func (d *Directory) Path() string {
 	return d.name
 }
 
+// Lookup looks up the given query in all blockfiles currently known in this
+// Directory.
 func (d *Directory) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	var inputs []*base.PacketChan
 	for _, thread := range d.threads {

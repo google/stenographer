@@ -37,7 +37,9 @@ const (
 )
 
 // WriteNewCerts generates a self-signed certificate pair for use in
-// locally authorizing clients.
+// locally authorizing clients.  If 'server' is true, it writes out certs
+// which can be used to verify the server, otherwise it writes out certs
+// clients can use to authorize themselves to the server.
 func WriteNewCerts(certFile, keyFile string, server bool) error {
 	// Implementation mostly taken from http://golang.org/src/pkg/crypto/tls/generate_cert.go
 	priv, err := rsa.GenerateKey(rand.Reader, bits)
@@ -62,7 +64,7 @@ func WriteNewCerts(certFile, keyFile string, server bool) error {
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		BasicConstraintsValid: true,
 		DNSNames:              []string{"localhost"},
-		IsCA:                  true,
+		IsCA:                  true, // we're self-signed.
 	}
 	if server {
 		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
@@ -100,6 +102,8 @@ func WriteNewCerts(certFile, keyFile string, server bool) error {
 	return nil
 }
 
+// ClientVerifyingTLSConfig returns a TLS config which verifies that clients
+// have a certificate signed by the CA certificate in the certFile.
 func ClientVerifyingTLSConfig(certFile string) (*tls.Config, error) {
 	// Test cert file
 	var cert *x509.Certificate

@@ -22,6 +22,18 @@
 BINDIR="${BINDIR-/usr/local/bin}"
 OUTDIR="${OUTDIR-/tmp/stenographer}"
 
+function Info {
+  echo -e -n '\e[7m'
+  echo "$@"
+  echo -e -n '\e[0m'
+}
+
+function Error {
+  echo -e -n '\e[41m'
+  echo "$@"
+  echo -e -n '\e[0m'
+}
+
 function Kill {
   sudo killall "$1" "$@" 2>/dev/null >/dev/null
 }
@@ -32,34 +44,35 @@ function Running {
 
 function ReallyKill {
   if Running "$1"; then
-    echo "Killing '$1'"
+    Info "Killing '$1'"
     Kill "$1"
     sleep 5
   fi
   if Running "$1"; then
-    echo "Killing '$1' again"
+    Info "Killing '$1' again"
     Kill "$1"
     sleep 5
   fi
   if Running "$1"; then
-    echo "Killing '$1' with fire"
+    Error "Killing '$1' with fire"
     Kill -9 "$1"
     sleep 1
   fi
 }
 
 cd "$(dirname $0)"
-set -e
 
-echo "Making sure we have sudo access"
+Info "Making sure we have sudo access"
 sudo cat /dev/null
 
-echo "Killing aleady-running processes"
+Info "Killing aleady-running processes"
 ReallyKill stenographer
 ReallyKill stenotype
 
+set -e
+
 if ! grep -q stenographer /etc/passwd; then
-  echo "Setting up stenographer user"
+  Info "Setting up stenographer user"
   sudo adduser \
     --system \
     --group \
@@ -68,52 +81,59 @@ if ! grep -q stenographer /etc/passwd; then
 fi
 
 if [ ! -d /etc/stenographer ]; then
-  echo "Setting up stenographer /etc directory"
+  Info "Setting up stenographer /etc directory"
   sudo mkdir -p /etc/stenographer/certs
-  sudo cp sample_config /etc/stenographer/config
+  sudo cp -vf sample_config /etc/stenographer/config
   sudo chown -R stenographer:stenographer /etc/stenographer
 fi
 
 if [ ! -d "$OUTDIR" ]; then
-  echo "Setting up initial steno output in $OUTDIR"
-  sudo mkdir -p "$OUTDIR"/{idx,pkt,logs}
+  Info "Setting up initial steno output in $OUTDIR"
+  sudo mkdir -p "$OUTDIR"/{idx,pkt}
   sudo chown -R stenographer:root "$OUTDIR"
   sudo chmod -R 0700 "$OUTDIR"
 fi
 
-echo "Building stenographer"
+Info "Building stenographer"
 go build
-sudo cp -v stenographer "$BINDIR/stenographer"
+sudo cp -vf stenographer "$BINDIR/stenographer"
 sudo chown stenographer:root "$BINDIR/stenographer"
 sudo chmod 0700 "$BINDIR/stenographer"  # make.sh does this for stenotype
 
-echo "Building stenotype"
+Info "Building stenotype"
 stenotype/make.sh
-sudo cp stenotype/stenotype "$BINDIR/stenotype"
+sudo cp -vf stenotype/stenotype "$BINDIR/stenotype"
 sudo chown stenographer:root "$BINDIR/stenotype"
 sudo chmod 0700 "$BINDIR/stenotype"
 sudo setcap 'CAP_NET_RAW+ep CAP_NET_ADMIN+ep CAP_IPC_LOCK+ep' "$BINDIR/stenotype"
 
-echo "Copying stenoread"
-sudo cp -v stenoread "$BINDIR/stenoread"
+Info "Copying stenoread"
+sudo cp -vf stenoread "$BINDIR/stenoread"
 sudo chown stenographer:stenographer "$BINDIR/stenoread"
 sudo chmod 0750 "$BINDIR/stenoread"
 
-echo "Starting stenographer, see logs in '$OUTDIR/logs'"
+LOG="$OUTDIR/log"
+Info "Starting stenographer, see logs in '$LOG'"
 # The weird sudo tee stuff is to correctly use sudo permissions when directing
 # output to a file.
 nohup sudo -u stenographer "$BINDIR/stenographer" \
-    2>&1 | sudo -u stenographer tee "$OUTDIR/logs/stdouterr" > /dev/null &
+    2>&1 | sudo -u stenographer tee "$LOG" > /dev/null &
 
-echo "Checking for running processes..."
+Info "Checking for running processes..."
 sleep 5
 if Running stenographer; then
-  echo "  * Stenographer up and running"
+  Info "  * Stenographer up and running"
 else
-  echo "  !!! Stenographer not running !!!"
+  Error "  !!! Stenographer not running !!!"
+  sudo cat $LOG
+  exit 1
 fi
 if Running stenotype; then
-  echo "  * Stenotype up and running"
+  Info "  * Stenotype up and running"
 else
-  echo "  !!! Stenotype not running !!!"
+  Error "  !!! Stenotype not running !!!"
+  sudo cat $LOG
+  exit 1
 fi
+Info "Tailing output, Ctrl-C will stop tailing, but stenographer will still run"
+exec sudo tail -f $LOG

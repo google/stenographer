@@ -1,10 +1,11 @@
 {
   "Threads": [
-    { "PacketsDirectory": "/tmp2/steno",
-      "IndexDirectory": "/tmp2/stenoidx",
-      "DiskFreePercentage": 10 }
+    { "PacketsDirectory": "/tmp/stenographer/pkt"
+    , "IndexDirectory": "/tmp/stenographer/idx"
+    , "DiskFreePercentage": 10
+    }
   ]
-  , "StenotypePath": "stenotype/stenotype"
+  , "StenotypePath": "/usr/local/bin/stenotype"
   , "Interface": "em1"
   , "Port": 1234
   , "Flags": []

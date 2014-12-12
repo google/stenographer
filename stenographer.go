@@ -36,7 +36,10 @@ import (
 	"golang.org/x/net/context"
 )
 
-var configFilename = flag.String("config", "", "File location to read configuration from")
+var configFilename = flag.String(
+	"config",
+	"/etc/stenographer/config",
+	"File location to read configuration from")
 
 // Verbose logging.
 var v = base.V

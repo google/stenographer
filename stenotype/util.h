@@ -115,7 +115,7 @@ class LogLine {
   LogLine(bool crash, const char* file, int line) : crash_(crash) {
     FillTimeBuffer();
     ss_ << setfill('0') << time_buffer_ << "." << setw(6) << tv_.tv_usec
-        << setw(0) << "Z T:" << setw(5) << uint16_t(pthread_self()) << setw(0)
+        << setw(0) << "Z T:" << setw(9) << uint32_t(pthread_self()) << setw(0)
         << " [" << file << ":" << line << "] ";
   }
   ~LogLine() {
@@ -290,10 +290,11 @@ class Notification {
 // ProducerConsumerQueue is a very simple thread-safe FIFO queue.
 class ProducerConsumerQueue {
  public:
-  ProducerConsumerQueue() {}
+  ProducerConsumerQueue() : closed_(false) {}
   ~ProducerConsumerQueue() {}
 
   void Put(void* val) {
+    CHECK(!closed_);
     unique_lock<mutex> lock(mu_);
     d_.push_back(val);
     lock.unlock();
@@ -301,26 +302,27 @@ class ProducerConsumerQueue {
   }
   void* Get() {
     unique_lock<mutex> lock(mu_);
-    while (d_.empty()) {
+    while (d_.empty() && !closed_) {
       cond_.wait(lock);
+    }
+    if (d_.empty() && closed_) {
+      return NULL;
     }
     void* ret = d_.front();
     d_.pop_front();
     return ret;
   }
-  bool TryGet(void** val) {
+  void Close() {
     unique_lock<mutex> lock(mu_);
-    if (d_.empty()) {
-      return false;
-    }
-    *val = d_.front();
-    d_.pop_front();
-    return true;
+    closed_ = true;
+    lock.unlock();
+    cond_.notify_all();
   }
 
  private:
   mutex mu_;
   condition_variable cond_;
+  bool closed_;
   deque<void*> d_;
   DISALLOW_COPY_AND_ASSIGN(ProducerConsumerQueue);
 };

@@ -344,7 +344,7 @@ void WriteIndexes(st::ProducerConsumerQueue* write_index) {
   privileges_dropped.WaitForNotification();
   DropIndexThreadPrivileges();
   while (true) {
-    LOG(INFO) << "Waiting for index";
+    LOG(V1) << "Waiting for index";
     Index* i = reinterpret_cast<Index*>(write_index->Get());
     LOG(INFO) << "Got index " << int64_t(i);
     if (i == NULL) {

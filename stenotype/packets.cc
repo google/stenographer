@@ -96,6 +96,7 @@ void Block::ResetTo(char* data, size_t sz, mutex* mu) {
   mu_ = mu;
   pkts_in_use_ = 0;
   if (mu_) {
+    LOG(V3) << "BlockReset m" << int64_t(mu_) << " IN b" << int64_t(this);
     mu_->lock();
   }
   if (!start_) {
@@ -112,6 +113,7 @@ void Block::Done() {
     start_ = NULL;
   }
   if (mu_ != NULL) {
+    LOG(V3) << "BlockDone m" << int64_t(mu_) << " IN b" << int64_t(this);
     mu_->unlock();
     mu_ = NULL;
   }
@@ -315,10 +317,13 @@ PacketsV3::State::~State() {
 }
 
 PacketsV3::~PacketsV3() {
+  pos_.Done();
   for (size_t i = 0; i < state_.num_blocks; i++) {
     // Wait for all blocks to be returned to kernel.
+    LOG(V3) << "PacketsV3Destructor lock m" << int64_t(&block_mus_[i]);
     block_mus_[i].lock();
     block_mus_[i].unlock();
+    LOG(V3) << "PacketsV3Destructor unlock m" << int64_t(&block_mus_[i]);
   }
   delete[] block_mus_;
 }
@@ -369,6 +374,8 @@ Error PacketsV3::NextBlock(Block* b, bool poll_once) {
   }
   if (pos_.ReadyForUser()) {
     pos_.UpdateStats(&stats_);
+    LOG(V3) << "PacketsV3NextBlock b"
+            << int64_t(&pos_) << " INTO b" << int64_t(b);
     pos_.Swap(b);
   }
   return SUCCESS;

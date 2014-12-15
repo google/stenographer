@@ -41,21 +41,4 @@ string Dirname(const string& filename) {
   return string(dirname(copy));
 }
 
-Error MkDirRecursive(const string& dirname) {
-  LOG(INFO) << "Making sure directory " << dirname << " exists";
-  if (mkdir(dirname.c_str(), 0700) == 0) {
-    return SUCCESS;
-  }
-  switch (errno) {
-    case ENOENT:
-      RETURN_IF_ERROR(MkDirRecursive(Dirname(dirname)), dirname);
-      break;
-    case EEXIST:
-      return SUCCESS;
-    default:
-      return Errno();
-  }
-  return Errno(mkdir(dirname.c_str(), 0700));
-}
-
 }  // namespace st

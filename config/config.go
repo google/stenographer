@@ -77,10 +77,29 @@ func newStenotypeThread(i int, baseDir string) *stenotypeThread {
 	}
 }
 
+func makeDirIfNecessary(dir string) error {
+	if stat, err := os.Stat(dir); os.IsNotExist(err) {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return fmt.Errorf("could not create directory %q: %v", dir, err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("could not stat directory %q: %v", dir, err)
+	} else if !stat.IsDir() {
+		return fmt.Errorf("%q is not a directory", dir)
+	}
+	return nil
+}
+
 func (st *stenotypeThread) createSymlinks(config *ThreadConfig) error {
+	if err := makeDirIfNecessary(config.PacketsDirectory); err != nil {
+		return fmt.Errorf("thread %v could not create packet directory: %v", st.id, err)
+	}
 	if err := os.Symlink(config.PacketsDirectory, st.packetPath); err != nil {
 		return fmt.Errorf("couldn't create symlink for thread %d to directory %q: %v",
 			st.id, config.PacketsDirectory, err)
+	}
+	if err := makeDirIfNecessary(config.IndexDirectory); err != nil {
+		return fmt.Errorf("thread %v could not create index directory: %v", st.id, err)
 	}
 	if err := os.Symlink(config.IndexDirectory, st.indexPath); err != nil {
 		return fmt.Errorf("couldn't create symlink for index %d to directory %q: %v",

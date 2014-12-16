@@ -353,7 +353,6 @@ inline Error NegErrno(int ret) {
 
 string Basename(const string& filename);
 string Dirname(const string& filename);
-Error MkDirRecursive(const string& dirname);
 inline string HiddenFile(const string& dirname, int64_t micros) {
   CHECK(dirname[dirname.size() - 1] == '/');
   return dirname + "." + to_string(micros);

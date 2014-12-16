@@ -65,7 +65,6 @@
 #include <sys/prctl.h>        // prctl(), PR_SET_*
 #include <sys/resource.h>     // setpriority(), PRIO_PROCESS
 #include <sys/socket.h>       // socket()
-#include <sys/stat.h>         // mkdir()
 #include <sys/syscall.h>      // syscall(), SYS_gettid
 #include <unistd.h>           // setuid(), setgid()
 
@@ -256,7 +255,6 @@ void CommonPrivileges(scmp_filter_ctx ctx) {
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(ftruncate), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
-  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mkdir), 0);
   // Signal handling and propagation to threads.
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigprocmask), 0);
@@ -419,8 +417,6 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   // All dirnames are guaranteed to end with '/'.
   string file_dirname = flag_dir + "PKT" + to_string(thread) + "/";
   string index_dirname = flag_dir + "IDX" + to_string(thread) + "/";
-  CHECK_SUCCESS(MkDirRecursive(file_dirname));
-  CHECK_SUCCESS(MkDirRecursive(index_dirname));
 
   Packet p;
   int64_t micros = GetCurrentTimeMicros();

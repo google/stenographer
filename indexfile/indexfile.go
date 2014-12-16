@@ -22,11 +22,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sort"
 	"strings"
 
+	"code.google.com/p/leveldb-go/leveldb/table"
 	"github.com/google/stenographer/base"
-	"github.com/google/stenographer/sstable"
 	"golang.org/x/net/context"
 )
 
@@ -34,7 +35,7 @@ var v = base.V // verbose logging locally.
 
 type IndexFile struct {
 	name string
-	ss   *sstable.Table
+	ss   *table.Reader
 }
 
 // IndexPathFromBlockfilePath returns the path to an index file based on the path to a
@@ -52,9 +53,18 @@ func BlockfilePathFromIndexPath(p string) string {
 // NewIndexFile returns a new handle to the named index file.
 func NewIndexFile(filename string) (*IndexFile, error) {
 	v(1, "opening index %q", filename)
-	ss, err := sstable.NewTable(filename)
+	f, err := os.Open(filename)
 	if err != nil {
-		return nil, fmt.Errorf("error opening index %q: %v", filename, err)
+		return nil, fmt.Errorf("error opening file %q: %v", filename, err)
+	}
+	ss := table.NewReader(f, nil)
+	if *base.VerboseLogging >= 4 {
+		iter := ss.Find([]byte{}, nil)
+		v(4, "=== %q ===", filename)
+		for iter.Next() {
+			v(4, "  %v %v", iter.Key(), iter.Value())
+		}
+		v(4, "  ERR: %v", iter.Close())
 	}
 	index := &IndexFile{ss: ss, name: filename}
 	return index, nil
@@ -105,11 +115,11 @@ func (i *IndexFile) PortPositions(ctx context.Context, port uint16) (base.Positi
 
 // Dump writes out a debug version of the entire index to the given writer.
 func (i *IndexFile) Dump(out io.Writer) {
-	iter := i.ss.Iter([]byte{})
+	iter := i.ss.Find([]byte{}, nil)
 	for iter.Next() {
 		fmt.Fprintf(out, "%v %v\n", iter.Key(), iter.Value())
 	}
-	if err := iter.Err(); err != nil {
+	if err := iter.Close(); err != nil {
 		fmt.Fprintf(out, "ERR: %v", err)
 	}
 }
@@ -117,7 +127,7 @@ func (i *IndexFile) Dump(out io.Writer) {
 func (i *IndexFile) positionsSingleKey(ctx context.Context, key []byte) (base.Positions, error) {
 	var sortedPos base.Positions
 	v(4, "%q single key iterator %+v start", i.name, key)
-	iter := i.ss.Iter(key)
+	iter := i.ss.Find(key, nil)
 	count := int64(0)
 	for ctx.Err() == nil && iter.Next() {
 		if !bytes.Equal(key, iter.Key()) {
@@ -130,7 +140,7 @@ func (i *IndexFile) positionsSingleKey(ctx context.Context, key []byte) (base.Po
 		count++
 	}
 	v(4, "%q single key iterator done", i.name)
-	if err := iter.Err(); err != nil {
+	if err := iter.Close(); err != nil {
 		v(4, "%q single key iterator err=%v", i.name, err)
 		return nil, err
 	}
@@ -146,7 +156,7 @@ func (i *IndexFile) positions(ctx context.Context, from, to []byte) (base.Positi
 		return i.positionsSingleKey(ctx, from)
 	}
 	v(4, "%q multi key iterator %v:%v start", i.name, from, to)
-	iter := i.ss.Iter(from)
+	iter := i.ss.Find(from, nil)
 	positions := map[uint32]bool{}
 	count := int64(0)
 	for ctx.Err() == nil && iter.Next() {
@@ -160,7 +170,7 @@ func (i *IndexFile) positions(ctx context.Context, from, to []byte) (base.Positi
 		count++
 	}
 	v(4, "%q multi key iterator done", i.name)
-	if err := iter.Err(); err != nil {
+	if err := iter.Close(); err != nil {
 		v(4, "%q multi key iterator err=%v", i.name, err)
 		return nil, err
 	}

@@ -27,11 +27,11 @@ import (
 	"golang.org/x/net/context"
 )
 
-var verboseLogging = flag.Int("v", 0, "log many verbose logs")
+var VerboseLogging = flag.Int("v", 0, "log many verbose logs")
 
 // V provides verbose logging which can be turned on/off with the -v flag.
 func V(level int, fmt string, args ...interface{}) {
-	if *verboseLogging >= level {
+	if *VerboseLogging >= level {
 		log.Printf(fmt, args...)
 	}
 }

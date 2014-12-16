@@ -153,7 +153,6 @@ func singleArgument(arg string) (Query, error) {
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid arg: %q", arg)
 	}
-	var err error
 	switch parts[0] {
 	case "ip":
 		ips := strings.Split(parts[1], "-")
@@ -174,20 +173,23 @@ func singleArgument(arg string) (Query, error) {
 			if to == nil {
 				return nil, fmt.Errorf("invalid IP %v", ips[1])
 			}
+			if len(from) != len(to) {
+				return nil, fmt.Errorf("IP type mismatch: %v / %v", from, to)
+			}
 		default:
 			return nil, fmt.Errorf("invalid #IPs: %q", arg)
 		}
 		return ipQuery{from, to}, nil
 	case "port":
-		port, perr := strconv.Atoi(parts[1])
+		port, err := strconv.Atoi(parts[1])
 		if err != nil {
-			return nil, fmt.Errorf("invalid port %q: %v", parts[1], perr)
+			return nil, fmt.Errorf("invalid port %q: %v", parts[1], err)
 		}
 		return portQuery(port), nil
 	case "protocol":
-		proto, perr := strconv.Atoi(parts[1])
+		proto, err := strconv.Atoi(parts[1])
 		if err != nil {
-			return nil, fmt.Errorf("invalid proto %q: %v", parts[1], perr)
+			return nil, fmt.Errorf("invalid proto %q: %v", parts[1], err)
 		}
 		return protocolQuery(proto), nil
 	case "last":
@@ -224,7 +226,7 @@ func unionArguments(arg string) (Query, error) {
 func NewQuery(query string) (Query, error) {
 	var intersect intersectQuery
 	for _, a := range strings.Fields(query) {
-		query, err := singleArgument(a)
+		query, err := unionArguments(a)
 		if err != nil {
 			return nil, fmt.Errorf("error with intersection arg %q: %v", a, err)
 		}

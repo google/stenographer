@@ -32,8 +32,13 @@ class SingleFile;
 class PWrite {
  public:
   PWrite(Block* b, SingleFile* f) {
+    LOG(V3) << "PWriteBlockConstructor b" << int64_t(b)
+            << " INTO b" << int64_t(&block);
     block.Swap(b);
     file = f;
+  }
+  ~PWrite() {
+    LOG(V3) << "PWriteBLockDestructor b" << int64_t(&block);
   }
 
   Error Done(io_event* evt);
@@ -91,7 +96,10 @@ Error PWrite::Done(io_event* event) {
   return move(result);
 }
 
-SingleFile::~SingleFile() { CHECK(fd_ == 0); }
+SingleFile::~SingleFile() {
+  CHECK(outstanding_.size() == 0);
+  CHECK(fd_ == 0);
+}
 
 void SingleFile::Write(io_context_t ctx, Block* b) {
   auto data = b->Data();
@@ -188,11 +196,10 @@ Error Output::Rotate(const string& dirname, int64_t micros) {
 }
 
 Error Output::Flush() {
-  if (current_ == NULL) {
-    return SUCCESS;
+  if (current_ != NULL) {
+    current_->RequestClose();
+    current_ = NULL;
   }
-  current_->RequestClose();
-  current_ = NULL;
   while (files_.size()) {
     RETURN_IF_ERROR(CheckForCompletedOps(true), "flush");
   }

@@ -51,22 +51,22 @@
  *     kernel to write more packets.
  */
 
-#include <linux/if_packet.h>  // AF_PACKET, sockaddr_ll
-#include <string.h>           // strerror()
 #include <errno.h>            // errno
-#include <sys/socket.h>       // socket()
-#include <sys/stat.h>         // mkdir()
-#include <sys/syscall.h>      // syscall(), SYS_gettid
-#include <sys/resource.h>     // setpriority(), PRIO_PROCESS
-#include <sched.h>            // sched_setaffinity()
-#include <signal.h>           // signal()
-#include <pwd.h>              // getpwnam()
-#include <grp.h>              // getgrnam()
-#include <unistd.h>           // setuid(), setgid()
-#include <sys/prctl.h>        // prctl(), PR_SET_*
-#include <seccomp.h>          // scmp_filter_ctx, seccomp_*(), SCMP_*
-#include <poll.h>             // POLLIN
 #include <fcntl.h>            // O_*
+#include <grp.h>              // getgrnam()
+#include <linux/if_packet.h>  // AF_PACKET, sockaddr_ll
+#include <poll.h>             // POLLIN
+#include <pthread.h>          // pthread_sigmask()
+#include <pwd.h>              // getpwnam()
+#include <sched.h>            // sched_setaffinity()
+#include <seccomp.h>          // scmp_filter_ctx, seccomp_*(), SCMP_*
+#include <signal.h>           // sigaction(), SIGINT, SIGTERM
+#include <string.h>           // strerror()
+#include <sys/prctl.h>        // prctl(), PR_SET_*
+#include <sys/resource.h>     // setpriority(), PRIO_PROCESS
+#include <sys/socket.h>       // socket()
+#include <sys/syscall.h>      // syscall(), SYS_gettid
+#include <unistd.h>           // setuid(), setgid()
 
 #include <string>
 #include <sstream>
@@ -206,6 +206,7 @@ namespace st {
 // chroot/chuid so it's after when the threads create their sockets but before
 // they start writing files.
 Notification privileges_dropped;
+Notification main_complete;
 Barrier* sockets_created;
 
 void DropPrivileges() {
@@ -214,7 +215,8 @@ void DropPrivileges() {
     if (flag_gid == "") {
       flag_gid = "nobody";
     }
-    LOG(INFO) << "Dropping priviledges to GID " << flag_gid;
+    LOG(INFO) << "Dropping priviledges from " << getgid()
+              << " to GID " << flag_gid;
     auto group = getgrnam(flag_gid.c_str());
     CHECK(group != NULL) << "Unable to get info for user " << flag_gid;
     CHECK_SUCCESS(Errno(setgid(group->gr_gid)));
@@ -225,7 +227,8 @@ void DropPrivileges() {
     if (flag_uid == "") {
       flag_uid = "nobody";
     }
-    LOG(INFO) << "Dropping priviledges to UID " << flag_uid;
+    LOG(INFO) << "Dropping priviledges from " << getuid()
+              << " to UID " << flag_uid;
     auto passwd = getpwnam(flag_uid.c_str());
     CHECK(passwd != NULL) << "Unable to get info for user 'nobody'";
     flag_uid = passwd->pw_uid;
@@ -254,7 +257,6 @@ void CommonPrivileges(scmp_filter_ctx ctx) {
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(ftruncate), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
-  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mkdir), 0);
   // Signal handling and propagation to threads.
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigprocmask), 0);
@@ -281,7 +283,7 @@ scmp_filter_ctx SeccompCtx() {
   return NULL;  // unreachable
 }
 
-void DropMainThreadPrivileges() {
+void DropCommonThreadPrivileges() {
   scmp_filter_ctx ctx = SeccompCtx();
   if (ctx == kSkipSeccomp) return;
   CHECK(ctx != NULL);
@@ -342,7 +344,9 @@ void WriteIndexes(st::ProducerConsumerQueue* write_index) {
   privileges_dropped.WaitForNotification();
   DropIndexThreadPrivileges();
   while (true) {
+    LOG(V1) << "Waiting for index";
     Index* i = reinterpret_cast<Index*>(write_index->Get());
+    LOG(INFO) << "Got index " << int64_t(i);
     if (i == NULL) {
       LOG(V1) << "Exiting write index thread";
       return;
@@ -353,12 +357,25 @@ void WriteIndexes(st::ProducerConsumerQueue* write_index) {
 }
 
 bool run_threads = true;
-void HandleStopRequest(int sig) {
+
+void HandleSignals(int sig) {
   if (run_threads) {
-    LOG(INFO) << "Caught signal " << sig
-              << ", stopping threads (could take ~15 seconds)";
+    LOG(INFO) << "Got signal " << sig << ", stopping threads";
     run_threads = false;
   }
+}
+
+void HandleSignalsThread() {
+  LOG(V1) << "Handling signals";
+  struct sigaction handler;
+  handler.sa_handler = &HandleSignals;
+  sigemptyset(&handler.sa_mask);
+  handler.sa_flags = 0;
+  sigaction(SIGINT, &handler, NULL);
+  sigaction(SIGTERM, &handler, NULL);
+  DropCommonThreadPrivileges();
+  main_complete.WaitForNotification();
+  LOG(V1) << "Signal handling done";
 }
 
 void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
@@ -402,8 +419,6 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   // All dirnames are guaranteed to end with '/'.
   string file_dirname = flag_dir + "PKT" + to_string(thread) + "/";
   string index_dirname = flag_dir + "IDX" + to_string(thread) + "/";
-  CHECK_SUCCESS(MkDirRecursive(file_dirname));
-  CHECK_SUCCESS(MkDirRecursive(index_dirname));
 
   Packet p;
   int64_t micros = GetCurrentTimeMicros();
@@ -512,14 +527,21 @@ int Main(int argc, char** argv) {
     flag_dir += "/";
   }
 
-  // Handle sigint by stopping all threads.
-  signal(SIGINT, &HandleStopRequest);
-  signal(SIGTERM, &HandleStopRequest);
+  // Start a thread whose sole purpose is to handle signals.
+  std::thread signal_thread(&HandleSignalsThread);
+  signal_thread.detach();
+
+  // Block stopping signals, they'll be handled by the HandleSignalsThread.
+  sigset_t sigset;
+  sigemptyset(&sigset);
+  sigaddset(&sigset, SIGINT);
+  sigaddset(&sigset, SIGTERM);
+  CHECK_SUCCESS(Errno(pthread_sigmask(SIG_BLOCK, &sigset, NULL)));
 
   st::ProducerConsumerQueue write_index;
   // To avoid blocking on index writes, each writer thread has a secondary
-  // thread just for creating and writing the indexes.  We pass to-write indexes
-  // through to the writing thread via the write_index FIFO queue.
+  // thread just for creating and writing the indexes.  We pass to-write
+  // indexes through to the writing thread via the write_index FIFO queue.
   vector<std::thread*> index_threads;
   if (flag_index) {
     LOG(V1) << "Starting indexing threads";
@@ -538,18 +560,18 @@ int Main(int argc, char** argv) {
   sockets_created->Block();
   DropPrivileges();
   privileges_dropped.Notify();
-  DropMainThreadPrivileges();
+  DropCommonThreadPrivileges();
 
-  LOG(V1) << "Waiting for threads";
   for (auto thread : threads) {
+    LOG(V1) << "===============Waiting for thread==============";
+    CHECK(thread->joinable());
     thread->join();
     LOG(V1) << "Thread finished";
     delete thread;
   }
+  LOG(V1) << "Finished all threads";
   if (flag_index) {
-    for (int i = 0; i < flag_threads; i++) {
-      write_index.Put(NULL);
-    }
+    write_index.Close();
     LOG(V1) << "Waiting for last index to write";
     for (auto thread : index_threads) {
       CHECK(thread->joinable());
@@ -559,6 +581,7 @@ int Main(int argc, char** argv) {
     }
   }
   LOG(INFO) << "Process exiting successfully";
+  main_complete.Notify();
   return 0;
 }
 

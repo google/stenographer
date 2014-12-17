@@ -116,9 +116,8 @@ LOG="$OUTDIR/log"
 Info "Starting stenographer, see logs in '$LOG'"
 # The weird sudo tee stuff is to correctly use sudo permissions when directing
 # output to a file.
-sudo -u stenographer "$BINDIR/stenographer" \
-    2>&1 | sudo -u stenographer tee "$LOG" > /dev/null &
-disown -h
+sudo -u stenographer -b "$BINDIR/stenographer" \
+    2>&1 | sudo -u stenographer -b tee "$LOG" > /dev/null &
 
 Info "Checking for running processes..."
 sleep 5

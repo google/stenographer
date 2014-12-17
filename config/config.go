@@ -351,6 +351,7 @@ func (d *Directory) Close() error {
 func (d *Directory) callEvery(cb func(), freq time.Duration) {
 	ticker := time.NewTicker(freq)
 	defer ticker.Stop()
+	cb() // Call function immediately the first time around.
 	for {
 		select {
 		case <-d.done:

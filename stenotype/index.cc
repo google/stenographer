@@ -156,8 +156,21 @@ void Index::Process(const Packet& p, int64_t block_offset) {
 
 namespace {
 
+// Simple, horribly inefficient, and slow.  You've been warned.
+string Hex(const char* start, int size) {
+  const char* vals = "0123456789ABCDEF";
+  string out;
+  for (const char* limit = start + size; start < limit; start++) {
+    unsigned char c = *start;
+    out.append(1, vals[c >> 4]);
+    out.append(1, vals[c & 0x7]);
+  }
+  return out;
+}
+
 void WriteToIndex(char first, const char* start, int size, int64_t pos,
                   leveldb::TableBuilder* ss) {
+  LOG(V4) << "Writing index " << int(first) << ":*" << size << ")" << Hex(start, size) << "=" << pos;
   char buf[17];
   CHECK(size <= 16);
   CHECK(pos < int64_t(1) << 32);

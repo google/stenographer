@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-CC=gcc
+CC=g++
 CFLAGS=-I. -std=c++0x -g -O3 -rdynamic -Wall -lleveldb -lrt -laio -lpthread -lsnappy -lseccomp
 
 all: stenotype

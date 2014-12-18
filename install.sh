@@ -60,6 +60,14 @@ function ReallyKill {
   fi
 }
 
+function InstallPackage {
+  Info "Checking for package '$1'"
+  if ! dpkg -s $1 >/dev/null 2>/dev/null; then
+    Info "Have to install package $1"
+    sudo apt-get install $1
+  fi
+}
+
 cd "$(dirname $0)"
 
 Info "Making sure we have sudo access"
@@ -70,6 +78,12 @@ ReallyKill stenographer
 ReallyKill stenotype
 
 set -e
+InstallPackage libaio-dev
+InstallPackage libleveldb-dev
+InstallPackage libsnappy-dev
+InstallPackage g++
+InstallPackage libcap2-bin
+InstallPackage libseccomp-dev
 
 if ! grep -q stenographer /etc/passwd; then
   Info "Setting up stenographer user"
@@ -98,10 +112,12 @@ Info "Building stenographer"
 go build
 sudo cp -vf stenographer "$BINDIR/stenographer"
 sudo chown stenographer:root "$BINDIR/stenographer"
-sudo chmod 0700 "$BINDIR/stenographer"  # make.sh does this for stenotype
+sudo chmod 0700 "$BINDIR/stenographer"
 
 Info "Building stenotype"
-stenotype/make.sh
+pushd stenotype
+make
+popd
 sudo cp -vf stenotype/stenotype "$BINDIR/stenotype"
 sudo chown stenographer:root "$BINDIR/stenotype"
 sudo chmod 0700 "$BINDIR/stenotype"

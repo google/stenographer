@@ -15,6 +15,7 @@
 
 if ! which jq >/dev/null; then
   echo "Must install 'jq' for JSON parsing (apt-get install jq)"
+  exit 1
 fi
 
 if [ "$#" -lt 1 ]; then

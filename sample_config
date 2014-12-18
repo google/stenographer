@@ -9,4 +9,5 @@
   , "Interface": "em1"
   , "Port": 1234
   , "Flags": []
+  , "CertPath": "/etc/stenographer/certs"
 }

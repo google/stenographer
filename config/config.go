@@ -60,22 +60,22 @@ type Config struct {
 }
 
 type stenotypeThread struct {
-	id              int
-	indexPath       string
-	packetPath      string
-	minDiskFree     int
-	files           map[string]*blockfile.BlockFile
-	mu              sync.RWMutex
-    FileLastSeen    time.Time
+	id           int
+	indexPath    string
+	packetPath   string
+	minDiskFree  int
+	files        map[string]*blockfile.BlockFile
+	mu           sync.RWMutex
+	FileLastSeen time.Time
 }
 
 func newStenotypeThread(i int, baseDir string) *stenotypeThread {
 	return &stenotypeThread{
-		id:             i,
-		indexPath:      filepath.Join(baseDir, indexPrefix+strconv.Itoa(i)),
-		packetPath:     filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
-		files:          map[string]*blockfile.BlockFile{},
-        FileLastSeen:   time.Now(),
+		id:           i,
+		indexPath:    filepath.Join(baseDir, indexPrefix+strconv.Itoa(i)),
+		packetPath:   filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
+		files:        map[string]*blockfile.BlockFile{},
+		FileLastSeen: time.Now(),
 	}
 }
 
@@ -125,7 +125,7 @@ func (st *stenotypeThread) syncFilesWithDisk() {
 	newFilesCnt := 0
 	for _, filename := range st.listPacketFilesOnDisk() {
 		if st.files[filename] != nil {
-            st.FileLastSeen = time.Now()
+			st.FileLastSeen = time.Now()
 			continue
 		}
 		if err := st.trackNewFile(filename); err != nil {

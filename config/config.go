@@ -60,20 +60,22 @@ type Config struct {
 }
 
 type stenotypeThread struct {
-	id          int
-	indexPath   string
-	packetPath  string
-	minDiskFree int
-	files       map[string]*blockfile.BlockFile
-	mu          sync.RWMutex
+	id              int
+	indexPath       string
+	packetPath      string
+	minDiskFree     int
+	files           map[string]*blockfile.BlockFile
+	mu              sync.RWMutex
+    FileLastSeen    time.Time
 }
 
 func newStenotypeThread(i int, baseDir string) *stenotypeThread {
 	return &stenotypeThread{
-		id:         i,
-		indexPath:  filepath.Join(baseDir, indexPrefix+strconv.Itoa(i)),
-		packetPath: filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
-		files:      map[string]*blockfile.BlockFile{},
+		id:             i,
+		indexPath:      filepath.Join(baseDir, indexPrefix+strconv.Itoa(i)),
+		packetPath:     filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
+		files:          map[string]*blockfile.BlockFile{},
+        FileLastSeen:   time.Now(),
 	}
 }
 
@@ -123,6 +125,7 @@ func (st *stenotypeThread) syncFilesWithDisk() {
 	newFilesCnt := 0
 	for _, filename := range st.listPacketFilesOnDisk() {
 		if st.files[filename] != nil {
+            st.FileLastSeen = time.Now()
 			continue
 		}
 		if err := st.trackNewFile(filename); err != nil {
@@ -330,14 +333,14 @@ func (c Config) Stenotype(d *Directory) *exec.Cmd {
 
 type Directory struct {
 	name    string
-	threads []*stenotypeThread
+	Threads []*stenotypeThread
 	done    chan bool
 }
 
 func newDirectory(dirname string, threads []*stenotypeThread) *Directory {
 	d := &Directory{
 		name:    dirname,
-		threads: threads,
+		Threads: threads,
 		done:    make(chan bool),
 	}
 	go d.callEvery(d.syncFiles, fileSyncFrequency)
@@ -363,7 +366,7 @@ func (d *Directory) callEvery(cb func(), freq time.Duration) {
 }
 
 func (d *Directory) syncFiles() {
-	for _, t := range d.threads {
+	for _, t := range d.Threads {
 		t.syncFilesWithDisk()
 		t.cleanUpOnLowDiskSpace()
 	}
@@ -375,7 +378,7 @@ func (d *Directory) Path() string {
 
 func (d *Directory) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	var inputs []*base.PacketChan
-	for _, thread := range d.threads {
+	for _, thread := range d.Threads {
 		inputs = append(inputs, thread.lookup(ctx, q))
 	}
 	return base.MergePacketChans(ctx, inputs)

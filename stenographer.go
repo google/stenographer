@@ -32,6 +32,7 @@ import (
 	"code.google.com/p/gopacket/pcapgo"
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
+	"github.com/google/stenographer/logbuf"
 	"github.com/google/stenographer/query"
 	"golang.org/x/net/context"
 )
@@ -41,10 +42,18 @@ var configFilename = flag.String(
 	"/etc/stenographer/config",
 	"File location to read configuration from")
 
-// Verbose logging.
-var v = base.V
+var (
+	// Verbose logging.
+	v = base.V
 
-const minStenotypeRuntimeForRestart = time.Minute
+	// Buffers for stenotype STDOUT/STDERR.
+	stenotypeLog = logbuf.New(logBufferSize)
+)
+
+const (
+	minStenotypeRuntimeForRestart = time.Minute
+	logBufferSize                 = 4 << 20 // 4MB
+)
 
 func ReadConfig() *config.Config {
 	c, err := config.ReadConfigFile(*configFilename)
@@ -80,8 +89,8 @@ func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 func runStenotypeOnce(conf *config.Config, dir *config.Directory) error {
 	// Start running stenotype.
 	cmd := conf.Stenotype(dir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stenotypeLog
+	cmd.Stderr = stenotypeLog
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("cannot start stenotype: %v", err)
 	}
@@ -140,6 +149,7 @@ func main() {
 		w.Header().Set("Content-Type", "appliation/octet-stream")
 		PacketsToFile(packets, w)
 	})
+	http.Handle("/stenotype", stenotypeLog)
 	log.Printf("Serving on port %v", conf.Port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", conf.Port), nil))
 }

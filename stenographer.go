@@ -55,6 +55,7 @@ const (
 	logBufferSize                 = 4 << 20 // 4MB
 )
 
+// ReadConfig reads in the config specified by the --config flag.
 func ReadConfig() *config.Config {
 	c, err := config.ReadConfigFile(*configFilename)
 	if err != nil {
@@ -66,6 +67,8 @@ func ReadConfig() *config.Config {
 // snapLen is the max packet size we'll return in pcap files to users.
 const snapLen = 65536
 
+// PacketsToFile writes all packets from 'in' to 'out', writing out all packets
+// in a valid PCAP file format.
 func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 	w := pcapgo.NewWriter(out)
 	w.WriteFileHeader(snapLen, layers.LinkTypeEthernet)
@@ -86,6 +89,8 @@ func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 	return in.Err()
 }
 
+// runStenotypeOnce runs the stenotype binary a single time, returning any
+// errors associated with its running.
 func runStenotypeOnce(conf *config.Config, dir *config.Directory) error {
 	// Start running stenotype.
 	cmd := conf.Stenotype(dir)
@@ -101,6 +106,8 @@ func runStenotypeOnce(conf *config.Config, dir *config.Directory) error {
 	return fmt.Errorf("stenotype stopped")
 }
 
+// runStenotype keeps the stenotype binary running, restarting it if necessary
+// but trying not to allow crash loops.
 func runStenotype(conf *config.Config, dir *config.Directory) {
 	for {
 		start := time.Now()
@@ -150,10 +157,11 @@ func main() {
 		PacketsToFile(packets, w)
 	})
 	http.Handle("/stenotype", stenotypeLog)
-	log.Printf("Serving on port %v", conf.Port)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf("localhost:%d", conf.Port), nil))
+	log.Fatal(conf.Serve())
 }
 
+// contextFromHTTP returns a new context.Content that cancels when the
+// underlying http.ResponseWriter closes.
 func contextFromHTTP(w http.ResponseWriter, r *http.Request) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	if closer, ok := w.(http.CloseNotifier); ok {

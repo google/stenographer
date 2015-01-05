@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/blockfile"
+	"github.com/google/stenographer/certs"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
 	"golang.org/x/net/context"
@@ -43,6 +45,12 @@ const (
 	indexPrefix            = "IDX"
 	minDiskSpacePercentage = 10
 	fileSyncFrequency      = 15 * time.Second
+
+	// These files will be generated in Config.CertPath.
+	clientCertFilename = "client_cert.pem"
+	clientKeyFilename  = "client_key.pem"
+	serverCertFilename = "server_cert.pem"
+	serverKeyFilename  = "server_key.pem"
 )
 
 type ThreadConfig struct {
@@ -57,6 +65,7 @@ type Config struct {
 	Interface     string
 	Flags         []string
 	Port          int
+	CertPath      string // Directory where client and server certs are stored.
 }
 
 type stenotypeThread struct {
@@ -258,6 +267,8 @@ func (st *stenotypeThread) getBlockFile(name string) *blockfile.BlockFile {
 	return st.files[name]
 }
 
+// ReadConfigFile reads in the given JSON encoded configuration file and returns
+// the Config object associated with the decoded configuration data.
 func ReadConfigFile(filename string) (*Config, error) {
 	log.Printf("Reading config %q", filename)
 	data, err := ioutil.ReadFile(filename)
@@ -295,6 +306,33 @@ func (c Config) validateThreadsConfig() error {
 	return nil
 }
 
+// Serve starts up an HTTP server using http.DefaultServerMux to handle
+// requests.  This server will server over TLS, using the certs
+// stored in c.CertPath to verify itself to clients and verify clients.
+func (c Config) Serve() error {
+	clientCert, clientKey, serverCert, serverKey :=
+		filepath.Join(c.CertPath, clientCertFilename),
+		filepath.Join(c.CertPath, clientKeyFilename),
+		filepath.Join(c.CertPath, serverCertFilename),
+		filepath.Join(c.CertPath, serverKeyFilename)
+	if err := certs.WriteNewCerts(clientCert, clientKey, false); err != nil {
+		return fmt.Errorf("cannot write client certs: %v", err)
+	}
+	if err := certs.WriteNewCerts(serverCert, serverKey, true); err != nil {
+		return fmt.Errorf("cannot write server certs: %v", err)
+	}
+	tlsConfig, err := certs.ClientVerifyingTLSConfig(clientCert)
+	if err != nil {
+		return fmt.Errorf("cannot verify client cert: %v", err)
+	}
+	server := &http.Server{
+		Addr:      fmt.Sprintf("localhost:%d", c.Port),
+		TLSConfig: tlsConfig,
+	}
+	return server.ListenAndServeTLS(serverCert, serverKey)
+}
+
+// Directory returns a new Directory for use in running Stenotype.
 func (c Config) Directory() (_ *Directory, returnedErr error) {
 	if err := c.validateThreadsConfig(); err != nil {
 		return nil, err
@@ -321,6 +359,8 @@ func (c Config) Directory() (_ *Directory, returnedErr error) {
 	return newDirectory(dirname, threads), nil
 }
 
+// Stenotype returns a exec.Cmd which runs the stenotype binary with all of
+// the appropriate flags.
 func (c Config) Stenotype(d *Directory) *exec.Cmd {
 	log.Printf("Starting stenotype")
 	args := append(c.args(), fmt.Sprintf("--dir=%s", d.Path()))
@@ -328,6 +368,7 @@ func (c Config) Stenotype(d *Directory) *exec.Cmd {
 	return exec.Command(c.StenotypePath, args...)
 }
 
+// Directory contains information necessary to run Stenotype.
 type Directory struct {
 	name    string
 	threads []*stenotypeThread
@@ -344,6 +385,8 @@ func newDirectory(dirname string, threads []*stenotypeThread) *Directory {
 	return d
 }
 
+// Close closes the directory.  This should only be done when stenotype has
+// stopped using it.  After this call, Directory should no longer be used.
 func (d *Directory) Close() error {
 	return os.RemoveAll(d.name)
 }
@@ -369,10 +412,13 @@ func (d *Directory) syncFiles() {
 	}
 }
 
+// Path returns the underlying directory path for the given Directory.
 func (d *Directory) Path() string {
 	return d.name
 }
 
+// Lookup looks up the given query in all blockfiles currently known in this
+// Directory.
 func (d *Directory) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	var inputs []*base.PacketChan
 	for _, thread := range d.threads {

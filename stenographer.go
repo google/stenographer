@@ -31,6 +31,8 @@ import (
 	"github.com/google/stenographer/config"
 	"github.com/google/stenographer/query"
 	"golang.org/x/net/context"
+
+	_ "net/http/pprof" // server debugging info in /debug/pprof/*
 )
 
 var configFilename = flag.String(

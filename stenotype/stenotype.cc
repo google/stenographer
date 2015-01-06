@@ -111,9 +111,6 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
     case 'v':
       st::logging_verbose_level++;
       break;
-    case 'q':
-      st::logging_verbose_level--;
-      break;
     case 300:
       flag_iface = arg;
       break;
@@ -171,7 +168,6 @@ void ParseOptions(int argc, char** argv) {
   const char* n = "NUM";
   struct argp_option options[] = {
       {0, 'v', 0, 0, "Verbose logging, may be given multiple times"},
-      {0, 'q', 0, 0, "Quiet logging.  Each -q counteracts one -v"},
       {"iface", 300, s, 0, "Interface to read packets from"},
       {"dir", 301, s, 0, "Directory to store packet files in"},
       {"count", 302, n, 0,
@@ -215,8 +211,8 @@ void DropPrivileges() {
     if (flag_gid == "") {
       flag_gid = "nobody";
     }
-    LOG(INFO) << "Dropping priviledges from " << getgid()
-              << " to GID " << flag_gid;
+    LOG(INFO) << "Dropping priviledges from " << getgid() << " to GID "
+              << flag_gid;
     auto group = getgrnam(flag_gid.c_str());
     CHECK(group != NULL) << "Unable to get info for user " << flag_gid;
     CHECK_SUCCESS(Errno(setgid(group->gr_gid)));
@@ -227,8 +223,8 @@ void DropPrivileges() {
     if (flag_uid == "") {
       flag_uid = "nobody";
     }
-    LOG(INFO) << "Dropping priviledges from " << getuid()
-              << " to UID " << flag_uid;
+    LOG(INFO) << "Dropping priviledges from " << getuid() << " to UID "
+              << flag_uid;
     auto passwd = getpwnam(flag_uid.c_str());
     CHECK(passwd != NULL) << "Unable to get info for user 'nobody'";
     flag_uid = passwd->pw_uid;

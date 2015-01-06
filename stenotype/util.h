@@ -116,8 +116,8 @@ class LogLine {
     FillTimeBuffer();
     uint32_t tid = uint32_t(pthread_self()) >> 8;  // first bits always 0.
     ss_ << setfill('0') << time_buffer_ << "." << setw(6) << tv_.tv_usec
-        << "Z T:" << std::hex << setw(6) << tid
-        << setw(0) << std::dec << " [" << file << ":" << line << "] ";
+        << "Z T:" << std::hex << setw(6) << tid << setw(0) << std::dec << " ["
+        << file << ":" << line << "] ";
   }
   ~LogLine() {
     ss_ << "\n";

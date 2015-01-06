@@ -19,7 +19,7 @@
 
 namespace st {
 
-int logging_verbose_level = 0;
+int logging_verbose_level = -1;  // by default, log ERROR only
 
 // When implementing basename and dirname, we copy everything to a buffer, then
 // call libgen's basename()/dirname() functions on that buffer.  We do this

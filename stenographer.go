@@ -104,7 +104,7 @@ func runStenotype(conf *config.Config, dir *config.Directory) {
 		start := time.Now()
 		err := runStenotypeOnce(conf, dir)
 		duration := time.Since(start)
-		log.Printf("Stenotype ran for %v: %v", duration, err)
+		log.Printf("Stenotype stopped after %v: %v", duration, err)
 		if duration < minStenotypeRuntimeForRestart {
 			log.Fatalf("Stenotype ran for too little time, crashing to avoid stenotype crash loop")
 		}

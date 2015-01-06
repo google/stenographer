@@ -141,7 +141,7 @@ func (st *stenotypeThread) syncFilesWithDisk() {
 		newFilesCnt++
 	}
 	if newFilesCnt > 0 {
-		log.Printf("Thread %v found %d new blockfiles", st.id, newFilesCnt)
+		v(0, "Thread %v found %d new blockfiles", st.id, newFilesCnt)
 	}
 }
 
@@ -186,7 +186,7 @@ func (st *stenotypeThread) cleanUpOnLowDiskSpace() {
 			v(1, "Thread %v disk space is sufficient: %v > %v", st.id, df, st.minDiskFree)
 			return
 		}
-		log.Printf("Thread %v disk usage is high (packet path=%q): %d%% free\n", st.id, st.packetPath, df)
+		v(0, "Thread %v disk usage is high (packet path=%q): %d%% free\n", st.id, st.packetPath, df)
 		if err := st.deleteOlderThreadFiles(); err != nil {
 			log.Printf("Thread %v could not free up space by deleting old files: %v", st.id, err)
 			return
@@ -270,7 +270,7 @@ func (st *stenotypeThread) getBlockFile(name string) *blockfile.BlockFile {
 // ReadConfigFile reads in the given JSON encoded configuration file and returns
 // the Config object associated with the decoded configuration data.
 func ReadConfigFile(filename string) (*Config, error) {
-	log.Printf("Reading config %q", filename)
+	v(0, "Reading config %q", filename)
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("could not read config file %q: %v", filename, err)
@@ -362,7 +362,7 @@ func (c Config) Directory() (_ *Directory, returnedErr error) {
 // Stenotype returns a exec.Cmd which runs the stenotype binary with all of
 // the appropriate flags.
 func (c Config) Stenotype(d *Directory) *exec.Cmd {
-	log.Printf("Starting stenotype")
+	v(0, "Starting stenotype")
 	args := append(c.args(), fmt.Sprintf("--dir=%s", d.Path()))
 	v(1, "Starting as %q with args %q", c.StenotypePath, args)
 	return exec.Command(c.StenotypePath, args...)

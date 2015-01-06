@@ -20,7 +20,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -28,8 +27,6 @@ import (
 	"runtime"
 	"time"
 
-	"code.google.com/p/gopacket/layers"
-	"code.google.com/p/gopacket/pcapgo"
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
 	"github.com/google/stenographer/query"
@@ -53,31 +50,6 @@ func ReadConfig() *config.Config {
 		log.Fatal(err.Error())
 	}
 	return c
-}
-
-// snapLen is the max packet size we'll return in pcap files to users.
-const snapLen = 65536
-
-// PacketsToFile writes all packets from 'in' to 'out', writing out all packets
-// in a valid PCAP file format.
-func PacketsToFile(in *base.PacketChan, out io.Writer) error {
-	w := pcapgo.NewWriter(out)
-	w.WriteFileHeader(snapLen, layers.LinkTypeEthernet)
-	count := 0
-	defer in.Discard()
-	for p := range in.Receive() {
-		if len(p.Data) > snapLen {
-			p.Data = p.Data[:snapLen]
-		}
-		if err := w.WritePacket(p.CaptureInfo, p.Data); err != nil {
-			// This can happen if our pipe is broken, and we don't want to blow stack
-			// traces all over our users when that happens, so Error/Exit instead of
-			// Fatal.
-			return fmt.Errorf("error writing packet: %v", err)
-		}
-		count++
-	}
-	return in.Err()
 }
 
 // runStenotypeOnce runs the stenotype binary a single time, returning any
@@ -123,8 +95,9 @@ func main() {
 	defer dir.Close()
 
 	go runStenotype(conf, dir)
-
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	conf.ExportDebugHandlers(http.DefaultServeMux)
+	dir.ExportDebugHandlers(http.DefaultServeMux)
+	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -145,7 +118,7 @@ func main() {
 		defer cancel()
 		packets := dir.Lookup(ctx, q)
 		w.Header().Set("Content-Type", "appliation/octet-stream")
-		PacketsToFile(packets, w)
+		base.PacketsToFile(packets, w)
 	})
 	log.Fatal(conf.Serve())
 }

@@ -18,12 +18,16 @@ package base
 import (
 	"container/heap"
 	"flag"
+	"fmt"
+	"io"
 	"log"
 	"sort"
 	"sync"
 	"syscall"
 
 	"code.google.com/p/gopacket"
+	"code.google.com/p/gopacket/layers"
+	"code.google.com/p/gopacket/pcapgo"
 	"golang.org/x/net/context"
 )
 
@@ -248,4 +252,29 @@ func PathDiskFreePercentage(path string) (int, error) {
 		return 0, err
 	}
 	return int(100 * stat.Bfree / stat.Blocks), nil
+}
+
+// snapLen is the max packet size we'll return in pcap files to users.
+const snapLen = 65536
+
+// PacketsToFile writes all packets from 'in' to 'out', writing out all packets
+// in a valid PCAP file format.
+func PacketsToFile(in *PacketChan, out io.Writer) error {
+	w := pcapgo.NewWriter(out)
+	w.WriteFileHeader(snapLen, layers.LinkTypeEthernet)
+	count := 0
+	defer in.Discard()
+	for p := range in.Receive() {
+		if len(p.Data) > snapLen {
+			p.Data = p.Data[:snapLen]
+		}
+		if err := w.WritePacket(p.CaptureInfo, p.Data); err != nil {
+			// This can happen if our pipe is broken, and we don't want to blow stack
+			// traces all over our users when that happens, so Error/Exit instead of
+			// Fatal.
+			return fmt.Errorf("error writing packet: %v", err)
+		}
+		count++
+	}
+	return in.Err()
 }

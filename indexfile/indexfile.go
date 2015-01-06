@@ -19,6 +19,7 @@ package indexfile
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -117,7 +118,7 @@ func (i *IndexFile) PortPositions(ctx context.Context, port uint16) (base.Positi
 func (i *IndexFile) Dump(out io.Writer) {
 	iter := i.ss.Find([]byte{}, nil)
 	for iter.Next() {
-		fmt.Fprintf(out, "%v %v\n", iter.Key(), iter.Value())
+		fmt.Fprintf(out, "%v %v\n", hex.EncodeToString(iter.Key()), hex.EncodeToString(iter.Value()))
 	}
 	if err := iter.Close(); err != nil {
 		fmt.Fprintf(out, "ERR: %v", err)

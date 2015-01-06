@@ -368,6 +368,13 @@ func (c Config) Stenotype(d *Directory) *exec.Cmd {
 	return exec.Command(c.StenotypePath, args...)
 }
 
+func (c Config) ExportDebugHandlers(mux *http.ServeMux) {
+	mux.HandleFunc("/debug/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(c)
+	})
+}
+
 // Directory contains information necessary to run Stenotype.
 type Directory struct {
 	name    string
@@ -425,4 +432,57 @@ func (d *Directory) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 		inputs = append(inputs, thread.lookup(ctx, q))
 	}
 	return base.MergePacketChans(ctx, inputs)
+}
+
+// ExportDebugHandlers exports a few debugging handlers to an HTTP ServeMux.
+func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
+	mux.HandleFunc("/debug/files", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		for _, thread := range d.threads {
+			fmt.Fprintf(w, "Thread %d (IDX: %q, PKT: %q)\n", thread.id, thread.indexPath, thread.packetPath)
+			thread.mu.RLock()
+			for name := range thread.files {
+				fmt.Fprintf(w, "\t%v\n", name)
+			}
+			thread.mu.RUnlock()
+		}
+	})
+	mux.HandleFunc("/debug/index", func(w http.ResponseWriter, r *http.Request) {
+		vals := r.URL.Query()
+		threadID, err := strconv.Atoi(vals.Get("thread"))
+		if threadID < 0 || threadID > len(d.threads) || err != nil {
+			http.Error(w, "invalid thread", http.StatusBadRequest)
+			return
+		}
+		thread := d.threads[threadID]
+		name := vals.Get("name")
+		thread.mu.RLock()
+		defer thread.mu.RUnlock()
+		file, ok := thread.files[name]
+		if !ok {
+			http.Error(w, "index not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		file.DumpIndex(w)
+	})
+	mux.HandleFunc("/debug/packets", func(w http.ResponseWriter, r *http.Request) {
+		vals := r.URL.Query()
+		threadID, err := strconv.Atoi(vals.Get("thread"))
+		if threadID < 0 || threadID > len(d.threads) || err != nil {
+			http.Error(w, "invalid thread", http.StatusBadRequest)
+			return
+		}
+		thread := d.threads[threadID]
+		name := vals.Get("name")
+		thread.mu.RLock()
+		defer thread.mu.RUnlock()
+		file, ok := thread.files[name]
+		if !ok {
+			http.Error(w, "index not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		base.PacketsToFile(file.AllPackets(), w)
+	})
 }

@@ -184,8 +184,16 @@ func (a *allPacketsIter) Err() error {
 	return a.err
 }
 
-func (b *BlockFile) AllPackets() Iter {
-	return &allPacketsIter{BlockFile: b}
+func (b *BlockFile) AllPackets() *base.PacketChan {
+	c := base.NewPacketChan(100)
+	go func() {
+		pkts := &allPacketsIter{BlockFile: b}
+		for pkts.Next() {
+			c.Send(pkts.Packet())
+		}
+		c.Close(pkts.Err())
+	}()
+	return c
 }
 
 func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan {

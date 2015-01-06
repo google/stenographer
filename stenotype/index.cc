@@ -170,7 +170,8 @@ string Hex(const char* start, int size) {
 
 void WriteToIndex(char first, const char* start, int size, int64_t pos,
                   leveldb::TableBuilder* ss) {
-  LOG(V4) << "Writing index " << int(first) << ":*" << size << ")" << Hex(start, size) << "=" << pos;
+  LOG(V4) << "Writing index " << int(first) << ":*" << size << ")"
+          << Hex(start, size) << "=" << pos;
   char buf[17];
   CHECK(size <= 16);
   CHECK(pos < int64_t(1) << 32);

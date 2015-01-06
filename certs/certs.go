@@ -66,10 +66,13 @@ func WriteNewCerts(certFile, keyFile string, server bool) error {
 		DNSNames:              []string{"localhost"},
 		IsCA:                  true, // we're self-signed.
 	}
+	var keyFileMode os.FileMode
 	if server {
 		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+		keyFileMode = 0600
 	} else {
 		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
+		keyFileMode = 0640
 	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
@@ -89,7 +92,7 @@ func WriteNewCerts(certFile, keyFile string, server bool) error {
 		return fmt.Errorf("could not close cert file: %v", err)
 	}
 
-	keyOut, err := os.OpenFile(keyFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	keyOut, err := os.OpenFile(keyFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, keyFileMode)
 	if err != nil {
 		return fmt.Errorf("failed to open %q for writing: %v", keyFile, err)
 	}

@@ -23,6 +23,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"log/syslog"
 	"net/http"
 	"os"
 	"runtime"
@@ -36,13 +37,18 @@ import (
 	"golang.org/x/net/context"
 )
 
-var configFilename = flag.String(
-	"config",
-	"/etc/stenographer/config",
-	"File location to read configuration from")
+var (
+	configFilename = flag.String(
+		"config",
+		"/etc/stenographer/config",
+		"File location to read configuration from")
 
-// Verbose logging.
-var v = base.V
+	logToSyslog = flag.Bool(
+		"syslog", true, "If true, log to syslog.  Otherwise, log to stderr")
+
+	// Verbose logging.
+	v = base.V
+)
 
 const minStenotypeRuntimeForRestart = time.Minute
 
@@ -112,8 +118,17 @@ func runStenotype(conf *config.Config, dir *config.Directory) {
 }
 
 func main() {
+	// Set up syslog logging
+	if *logToSyslog {
+		logwriter, err := syslog.New(syslog.LOG_USER|syslog.LOG_INFO, "stenographer")
+		if err != nil {
+			log.Fatalf("could not set up syslog logging")
+		}
+		log.SetOutput(logwriter)
+	}
+
 	flag.Parse()
-	runtime.GOMAXPROCS(32)
+	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 	conf := ReadConfig()
 	v(1, "Using config:\n%v", conf)
 	dir, err := conf.Directory()

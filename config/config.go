@@ -263,12 +263,6 @@ func (st *stenotypeThread) lookup(ctx context.Context, q query.Query) *base.Pack
 	return base.MergePacketChans(ctx, inputs)
 }
 
-func (st *stenotypeThread) getBlockFile(name string) *blockfile.BlockFile {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return st.files[name]
-}
-
 // ReadConfigFile reads in the given JSON encoded configuration file and returns
 // the Config object associated with the decoded configuration data.
 func ReadConfigFile(filename string) (*Config, error) {
@@ -436,6 +430,22 @@ func (d *Directory) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 	return base.MergePacketChans(ctx, inputs)
 }
 
+func (d *Directory) getHTTPBlockfile(r *http.Request) (*blockfile.BlockFile, func(), error) {
+	vals := r.URL.Query()
+	threadID, err := strconv.Atoi(vals.Get("thread"))
+	if threadID < 0 || threadID > len(d.threads) || err != nil {
+		return nil, func() {}, fmt.Errorf("invalid thread")
+	}
+	thread := d.threads[threadID]
+	name := vals.Get("name")
+	thread.mu.RLock()
+	file, ok := thread.files[name]
+	if !ok {
+		return nil, thread.mu.RUnlock, fmt.Errorf("invalid name")
+	}
+	return file, thread.mu.RUnlock, nil
+}
+
 // ExportDebugHandlers exports a few debugging handlers to an HTTP ServeMux.
 func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/files", func(w http.ResponseWriter, r *http.Request) {
@@ -450,22 +460,14 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 		}
 	})
 	mux.HandleFunc("/debug/index", func(w http.ResponseWriter, r *http.Request) {
-		vals := r.URL.Query()
-		threadID, err := strconv.Atoi(vals.Get("thread"))
-		if threadID < 0 || threadID > len(d.threads) || err != nil {
-			http.Error(w, "invalid thread", http.StatusBadRequest)
-			return
-		}
-		thread := d.threads[threadID]
-		name := vals.Get("name")
-		thread.mu.RLock()
-		defer thread.mu.RUnlock()
-		file, ok := thread.files[name]
-		if !ok {
-			http.Error(w, "index not found", http.StatusNotFound)
+		file, cleanup, err := d.getHTTPBlockfile(r)
+		defer cleanup()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		var start, finish []byte
+		vals := r.URL.Query()
 		if s := vals.Get("start"); s != "" {
 			start, err = hex.DecodeString(s)
 			if err != nil {
@@ -484,38 +486,20 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 		file.DumpIndex(w, start, finish)
 	})
 	mux.HandleFunc("/debug/packets", func(w http.ResponseWriter, r *http.Request) {
-		vals := r.URL.Query()
-		threadID, err := strconv.Atoi(vals.Get("thread"))
-		if threadID < 0 || threadID > len(d.threads) || err != nil {
-			http.Error(w, "invalid thread", http.StatusBadRequest)
-			return
-		}
-		thread := d.threads[threadID]
-		name := vals.Get("name")
-		thread.mu.RLock()
-		defer thread.mu.RUnlock()
-		file, ok := thread.files[name]
-		if !ok {
-			http.Error(w, "index not found", http.StatusNotFound)
+		file, cleanup, err := d.getHTTPBlockfile(r)
+		defer cleanup()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
 		base.PacketsToFile(file.AllPackets(), w)
 	})
 	mux.HandleFunc("/debug/positions", func(w http.ResponseWriter, r *http.Request) {
-		vals := r.URL.Query()
-		threadID, err := strconv.Atoi(vals.Get("thread"))
-		if threadID < 0 || threadID > len(d.threads) || err != nil {
-			http.Error(w, "invalid thread", http.StatusBadRequest)
-			return
-		}
-		thread := d.threads[threadID]
-		name := vals.Get("name")
-		thread.mu.RLock()
-		defer thread.mu.RUnlock()
-		file, ok := thread.files[name]
-		if !ok {
-			http.Error(w, "index not found", http.StatusNotFound)
+		file, cleanup, err := d.getHTTPBlockfile(r)
+		defer cleanup()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		queryBytes, err := ioutil.ReadAll(r.Body)
@@ -531,6 +515,10 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 		}
 		w.Header().Set("Content-Type", "text/plain")
 		positions, err := file.Positions(context.Background(), q)
+		if err != nil {
+			fmt.Fprintf(w, "ERROR: %v", err)
+			return
+		}
 		fmt.Fprintf(w, "POSITIONS:\n")
 		if positions.IsAllPositions() {
 			fmt.Fprintf(w, "\tALL")

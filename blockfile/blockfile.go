@@ -106,25 +106,6 @@ func (b *BlockFile) Close() (err error) {
 	return
 }
 
-// Iter provides a simple interface for iterating over all packets in a
-// blockfile.  It follows the normal Go convention:
-//   iter := myBlockfile.AllPackets()
-//   for iter.Next() {
-//     ... handle iter.Packet()
-//   }
-//   if err := iter.Err(); err != nil { ... handle error ... }
-type Iter interface {
-	// Packet returns the current packet pointed to by the iterator.  This call
-	// must be preceded by a Next() call that returns true.
-	Packet() *base.Packet
-	// Err returns any error that occurred during iteration.  It should be called
-	// after the first Next() call to return false.
-	Err() error
-	// Next advances the iterator to the first or next packet, returning false
-	// when there are no more packets to process.
-	Next() bool
-}
-
 // allPacketsIter implements Iter.
 type allPacketsIter struct {
 	*BlockFile

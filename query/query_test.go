@@ -20,28 +20,35 @@ import (
 
 func TestParsingValidQueries(t *testing.T) {
 	for _, test := range []string{
-		"ip=1.2.3.4",
-		"ip=1.1.1.1|ip=2.2.2.2",
-		"ip=1.1.1.1 port=234 protocol=7",
-		"port=123|port=456 ip=1::1 ip=2::2-2::8",
-		"port=1    port=2 \t port=4",
+		"net 1.2.3.4/8",
+		"net 1.2.3.4 mask 255.255.254.0",
+		"host 1.2.3.4",
+		"host 1.2.3.4 and port 255",
+		"(port 80 or (host 1.2.3.4 and protocol 6) or port 7)",
+		"udp and port 514 or tcp and port 80",
+		"(udp && port 514) or (tcp and port 80)",
 	} {
-		if _, err := NewQuery(test); err != nil {
+		if q, err := NewQuery(test); err != nil {
 			t.Fatalf("could not parse valid query %q: %v", test, err)
+		} else {
+			t.Log(q)
 		}
 	}
 }
 
 func TestParsingInvalidQuery(t *testing.T) {
 	for _, test := range []string{
-		"ip=1.1.1",
-		"port=1.2.3.4",
-		"port=1-6",
-		"foo",
-		"ip=1.2.3.4-1::8",
+		"host 1.2.3",
+		"net 1.2.3.4/44",
+		"port 8 and port 77777",
+		"port 77777 and port 8",
+		"protocol -1",
+		"protocol 256",
 	} {
 		if q, err := NewQuery(test); err == nil {
 			t.Fatalf("parsed invalid query %q: %v", test, q)
+		} else {
+			t.Log(err)
 		}
 	}
 }

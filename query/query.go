@@ -65,7 +65,7 @@ func (q portQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp
 	defer log(q, index, &bp, &err)()
 	return index.PortPositions(ctx, uint16(q))
 }
-func (q portQuery) String() string { return fmt.Sprintf("port=%d", q) }
+func (q portQuery) String() string { return fmt.Sprintf("port %d", q) }
 
 type protocolQuery byte
 
@@ -73,7 +73,7 @@ func (q protocolQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile)
 	defer log(q, index, &bp, &err)()
 	return index.ProtoPositions(ctx, byte(q))
 }
-func (q protocolQuery) String() string { return fmt.Sprintf("protocol=%d", q) }
+func (q protocolQuery) String() string { return fmt.Sprintf("protocol %d", q) }
 
 type ipQuery [2]net.IP
 
@@ -81,7 +81,7 @@ func (q ipQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp b
 	defer log(q, index, &bp, &err)()
 	return index.IPPositions(ctx, q[0], q[1])
 }
-func (q ipQuery) String() string { return fmt.Sprintf("ip=%v-%v", q[0], q[1]) }
+func (q ipQuery) String() string { return fmt.Sprintf("host %v-%v", q[0], q[1]) }
 
 type unionQuery []Query
 
@@ -102,7 +102,7 @@ func (q unionQuery) String() string {
 	for i, query := range q {
 		all[i] = query.String()
 	}
-	return strings.Join(all, "|")
+	return "(" + strings.Join(all, " or ") + ")"
 }
 
 type intersectQuery []Query
@@ -124,7 +124,7 @@ func (q intersectQuery) String() string {
 	for i, query := range q {
 		all[i] = query.String()
 	}
-	return strings.Join(all, " ")
+	return "(" + strings.Join(all, " and ") + ")"
 }
 
 type sinceQuery time.Time
@@ -224,13 +224,5 @@ func unionArguments(arg string) (Query, error) {
 // Currently, we support one simple method of parsing a query, detailed in the
 // README.md file.  Returns an error if the query string is invalid.
 func NewQuery(query string) (Query, error) {
-	var intersect intersectQuery
-	for _, a := range strings.Fields(query) {
-		query, err := unionArguments(a)
-		if err != nil {
-			return nil, fmt.Errorf("error with intersection arg %q: %v", a, err)
-		}
-		intersect = append(intersect, query)
-	}
-	return intersect, nil
+	return parse(query)
 }

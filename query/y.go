@@ -107,8 +107,9 @@ var tokens = map[string]int{
 	"icmp":     ICMP,
 }
 
-// The parser calls this method to get each new token.  This
-// implementation returns operators and NUM.
+// Lex is called by the parser to get each new token.  This implementation
+// is currently quite simplistic, but it seems to work pretty well for our
+// needs.
 func (x *parserLex) Lex(yylval *parserSymType) (ret int) {
 	for x.pos < len(x.in) && unicode.IsSpace(rune(x.in[x.pos])) {
 		x.pos++
@@ -161,17 +162,21 @@ L:
 	return -1
 }
 
-// The parser calls this method on a parse error.
+// Error is called by the parser on a parse error.
 func (x *parserLex) Error(s string) {
 	if x.err == nil {
 		x.err = fmt.Errorf("%v at character %v (%q HERE %q)", s, x.pos, x.in[:x.pos], x.in[x.pos:])
 	}
 }
 
+// parse parses an input string into a Query.
 func parse(in string) (Query, error) {
 	lex := &parserLex{in: in}
 	parserParse(lex)
-	return lex.out, lex.err
+	if lex.err != nil {
+		return nil, lex.err
+	}
+	return lex.out, nil
 }
 
 //line yacctab:1

@@ -148,7 +148,7 @@ func MergePacketChans(ctx context.Context, in []*PacketChan) *PacketChan {
 				return
 			}
 		}
-		for h.Len() > 0 && ctx.Err() == nil {
+		for h.Len() > 0 && !ContextDone(ctx) {
 			p := heap.Pop(&h).(indexedPacket)
 			count++
 			if pkt := <-in[p.i].Receive(); pkt != nil {
@@ -277,4 +277,19 @@ func PacketsToFile(in *PacketChan, out io.Writer) error {
 		count++
 	}
 	return in.Err()
+}
+
+// ContextDone returns true if a context is complete.
+func ContextDone(ctx context.Context) bool {
+	// There's two ways we could do this:  by checking ctx.Done or by
+	// seeing if ctx.Err != nil.  The latter, though, uses a single
+	// exclusive mutex, so when the context is shared by a ton of
+	// goroutines, it can actually block things quite a bit.  Checking
+	// ctx.Done is much more scalable across multiple goroutines.
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
 }

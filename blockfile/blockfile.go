@@ -200,11 +200,7 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 		if positions.IsAllPositions() {
 			v(2, "Blockfile %q reading all packets", b.name)
 			iter := &allPacketsIter{BlockFile: b}
-			for iter.Next() {
-				if err := ctx.Err(); err != nil {
-					c.Close(err)
-					return
-				}
+			for iter.Next() && !base.ContextDone(ctx) {
 				c.Send(iter.Packet())
 			}
 			if iter.Err() != nil {
@@ -214,9 +210,8 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 		} else {
 			v(2, "Blockfile %q reading %v packets", b.name, len(positions))
 			for _, pos := range positions {
-				if err := ctx.Err(); err != nil {
-					c.Close(err)
-					return
+				if base.ContextDone(ctx) {
+					break
 				}
 				buffer, err := b.readPacket(pos, &ci)
 				if err != nil {
@@ -229,7 +224,7 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 				})
 			}
 		}
-		c.Close(nil)
+		c.Close(ctx.Err())
 		v(3, "Blockfile %q finished reading all packets in %v", b.name, time.Since(start))
 	}()
 	return c

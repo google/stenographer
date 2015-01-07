@@ -141,7 +141,7 @@ func (i *IndexFile) positions(ctx context.Context, from, to []byte) (out base.Po
 	last := make([]byte, len(from))
 	copy(last, from)
 	var current base.Positions
-	for iter.Next() {
+	for iter.Next() && !base.ContextDone(ctx) {
 		if !found && bytes.Compare(iter.Key(), from) < 0 {
 			continue
 		}
@@ -155,13 +155,13 @@ func (i *IndexFile) positions(ctx context.Context, from, to []byte) (out base.Po
 		}
 		pos := binary.BigEndian.Uint32(iter.Value())
 		current = append(current, int64(pos))
-		if err := ctx.Err(); err != nil {
-			v(4, "%q single key iterator ctx err=%v", i.name, err)
-			return nil, err
-		}
+	}
+	if err := ctx.Err(); err != nil {
+		v(4, "%q multi key iterator context err: %v", i.name, err)
+		return nil, err
 	}
 	out = out.Union(current)
-	v(4, "%q multi key iterator done", i.name)
+	v(4, "%q multi key iterator done, got %d", i.name, len(out))
 	if err := iter.Close(); err != nil {
 		v(4, "%q multi key iterator err=%v", i.name, err)
 		return nil, err

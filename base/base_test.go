@@ -17,6 +17,8 @@ package base
 import (
 	"reflect"
 	"testing"
+
+	"golang.org/x/net/context"
 )
 
 func TestUnion(t *testing.T) {
@@ -74,5 +76,16 @@ func Testintersect(t *testing.T) {
 		if !reflect.DeepEqual(got, test.want) {
 			t.Errorf("nope:\n   a: %v\n   b: %v\n got: %v\nwant: %v", test.a, test.b, got, test.want)
 		}
+	}
+}
+
+func TestContextDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	if ContextDone(ctx) {
+		t.Fatal("shouldn't be done yet")
+	}
+	cancel()
+	if !ContextDone(ctx) {
+		t.Fatal("should be done now")
 	}
 }

@@ -18,6 +18,8 @@ package config
 
 import (
 	"bytes"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -463,8 +465,23 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 			http.Error(w, "index not found", http.StatusNotFound)
 			return
 		}
+		var start, finish []byte
+		if s := vals.Get("start"); s != "" {
+			start, err = hex.DecodeString(s)
+			if err != nil {
+				http.Error(w, "bad start", http.StatusBadRequest)
+				return
+			}
+		}
+		if f := vals.Get("finish"); f != "" {
+			finish, err = hex.DecodeString(f)
+			if err != nil {
+				http.Error(w, "bad finish", http.StatusBadRequest)
+				return
+			}
+		}
 		w.Header().Set("Content-Type", "text/plain")
-		file.DumpIndex(w)
+		file.DumpIndex(w, start, finish)
 	})
 	mux.HandleFunc("/debug/packets", func(w http.ResponseWriter, r *http.Request) {
 		vals := r.URL.Query()
@@ -484,5 +501,45 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
 		base.PacketsToFile(file.AllPackets(), w)
+	})
+	mux.HandleFunc("/debug/positions", func(w http.ResponseWriter, r *http.Request) {
+		vals := r.URL.Query()
+		threadID, err := strconv.Atoi(vals.Get("thread"))
+		if threadID < 0 || threadID > len(d.threads) || err != nil {
+			http.Error(w, "invalid thread", http.StatusBadRequest)
+			return
+		}
+		thread := d.threads[threadID]
+		name := vals.Get("name")
+		thread.mu.RLock()
+		defer thread.mu.RUnlock()
+		file, ok := thread.files[name]
+		if !ok {
+			http.Error(w, "index not found", http.StatusNotFound)
+			return
+		}
+		queryBytes, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "could not read request body", http.StatusBadRequest)
+			return
+		}
+		queryStr := string(queryBytes)
+		q, err := query.NewQuery(queryStr)
+		if err != nil {
+			http.Error(w, "could not parse query", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		positions, err := file.Positions(context.Background(), q)
+		fmt.Fprintf(w, "POSITIONS:\n")
+		if positions.IsAllPositions() {
+			fmt.Fprintf(w, "\tALL")
+		} else {
+			var buf [4]byte
+			for _, pos := range positions {
+				binary.BigEndian.PutUint32(buf[:], uint32(pos))
+				fmt.Fprintf(w, "\t%v\n", hex.EncodeToString(buf[:]))
+			}
+		}
 	})
 }

@@ -177,6 +177,13 @@ func (b *BlockFile) AllPackets() *base.PacketChan {
 	return c
 }
 
+// Positions returns the positions in the blockfile of all packets matched by
+// the passed-in query.
+func (b *BlockFile) Positions(ctx context.Context, q query.Query) (base.Positions, error) {
+	return q.LookupIn(ctx, b.i)
+}
+
+// Lookup returns all packets in the blockfile matched by the passed-in query.
 func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	b.mu.RLock()
 	c := base.NewPacketChan(100)
@@ -185,7 +192,7 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 		var ci gopacket.CaptureInfo
 		v(3, "Blockfile %q looking up query %q", q.String(), b.name)
 		start := time.Now()
-		positions, err := q.LookupIn(ctx, b.i)
+		positions, err := b.Positions(ctx, q)
 		if err != nil {
 			c.Close(fmt.Errorf("index lookup failure: %v", err))
 			return
@@ -228,6 +235,6 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 	return c
 }
 
-func (b *BlockFile) DumpIndex(out io.Writer) {
-	b.i.Dump(out)
+func (b *BlockFile) DumpIndex(out io.Writer, start, finish []byte) {
+	b.i.Dump(out, start, finish)
 }

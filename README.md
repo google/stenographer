@@ -44,7 +44,7 @@ Stenographer is actually two separate processes:
     cleanup, and running/babysitting stenotype.
 2.  Stenotype:  The actual packet-writing system; a multi-threaded NIC-to-disk
     writer.  Also writes out simple indexes for finding packets within files.
-3.  Readback:  A simple command-line script that automates requesting packets
+3.  Stenoread:  A simple command-line script that automates requesting packets
     from Stenographer and presenting them to analysts or other programs.
 
 Stenotype writes packet files in a set of directories, based on the number of
@@ -83,58 +83,43 @@ Querying
 ### Query Language ###
 
 A user requests packets from stenographer by specifying them with a very simple
-query language.  The primitives in this language are:
+query language.  This language is a simple subset of BPF, and includes the
+primitives:
 
-    ip=1.1.1.1            # Single IP address (IPv4 OR IPv6)
-    ip=1.1.1.0-1.1.2.200  # Arbitrary IP range
-    port=80               # Single port number
-    protocol=6            # Single IP protocol number
-    last=4h               # Only packets from the last 4 hours.  Must end in
-                          # 'h' for hours or 'm' for minutes.
+    host 8.8.8.8          # Single IP address (hostnames not allowed)
+    net 1.0.0.0/8         # Network with CIDR
+    net 1.0.0.0 mask 255.255.255.0  # Network with mask
+    port 80               # Port number (UDP or TCP)
+    ip proto 6            # IP protocol number 6
+    icmp                  # equivalent to 'ip proto 1'
+    tcp                   # equivalent to 'ip proto 6'
+    udp                   # equivalent to 'ip proto 17'
 
-You can do simple combinations of queries.  When combining queries, | does
-a union and has highest precedence.  Whitespace does an intersection and has
-lower precedence.  For example, to get all packets between IPs 1.1.1.1 and
-2.2.2.2 in the last 45 minutes, you could use:
+Primitives can be combined with and/&& and with or/||, which have equal
+precendence and evaluate left-to-right.  Parens can also be used to group.
 
-    # Packets must have both IP 1.1.1.1 (as src or dst) AND IP 2.2.2.2 (as
-    # src or dst), and must have occurred within the last 45 minutes.
-    ip=1.1.1.1 ip=2.2.2.2 last=45m
+    (udp and port 514) or (tcp and port 8080)
 
-To get packets between 1.1.1.1 and either 2.2.2.2 or 3.3.3.3, use:
+### Stenoread CLI ###
 
-    # Packets must have IP 1.1.1.1 (as src or dst) either IP 2.2.2.2 OR 3.3.3.3
-    # (as either src or dst).
-    ip=1.1.1.1 ip=2.2.2.2|ip=3.3.3.3
-
-To get all packets on ports 80, 8080, or 443 sent or received by 1.1.1.1, you can use:
-
-    ip=1.1.1.1 port=80|port=8080|port=443
-
-To get a specific tuple, you can use:
-
-    ip=1.1.1.1 ip=2.2.2.2 port=80 port=65555 proto=6
-
-### Readback CLI ###
-
-The *readback* command line script automates pulling packets from Stenographer
+The *stenoread* command line script automates pulling packets from Stenographer
 and presenting them in a usable format to analysts.  It requests raw packets
 from stenographer, then runs them through *tcpdump* to provide a more
-full-featured formatting/filtering experience.  The first argument to *readback*
+full-featured formatting/filtering experience.  The first argument to *stenoread*
 is a stenographer query (see 'Query Language' above).  All other arguments are
 passed to *tcpdump*.  For example:
 
     # Request all packets from IP 1.2.3.4 port 6543, then do extra filtering by
     # TCP flag, which typical stenographer does not support.
-    $ readback 'ip=1.2.3.4 port=6543' 'tcp[tcpflags] & tcp-push != 0'
+    $ stenoread 'host 1.2.3.4 and port 6543' 'tcp[tcpflags] & tcp-push != 0'
 
     # Request packets on port 8765, disabling IP resolution (-n) and showing
     # link-level headers (-e) when printing them out.
-    $ readback 'port=8765' -n -e
+    $ stenoread 'port 8765' -n -e
 
-    # Request packets for any IPs in the range 1.1.1.1-1.1.1.6, writing them
+    # Request packets for any IPs in the range 1.1.1.0-1.1.1.255, writing them
     # out to a local PCAP file so they can be opened in Wireshark.
-    $ readback 'ip=1.1.1.1-1.1.1.6' -w /tmp/output_for_wireshark.pcap
+    $ stenoread 'net 1.1.1.0/24' -w /tmp/output_for_wireshark.pcap
 
 ### Advanced Usage:  Writing Fast Queries ###
 
@@ -161,14 +146,14 @@ So how to optimize this?  If over 2% of all packets match a given filter, it’
 probably best to do that filtering in the tcpdump phase.  For example, these two
 queries are guaranteed to return the same packets:
 
-*   $ readback 'ip=1.2.3.4 port=80’ -n
+*   $ stenoread 'host 1.2.3.4 and port 80’ -n
 
     Will take a LONG time, because it has to find all port=80 packet positions
     in index files, using lots of disk reads, CPU, and RAM to
     read/hold/process them all, then throw them all away when filtering
-    against ip=1.2.3.4.
+    against host 1.2.3.4.
 
-*   $ readback 'ip=1.2.3.4’ -n port 80
+*   $ stenoread 'host 1.2.3.4’ -n port 80
 
     Only has to find ip=1.2.3.4 packets in index files (probably far less than
     1% of packets), then ships that small percentage to TCPDump where they’re
@@ -177,12 +162,12 @@ queries are guaranteed to return the same packets:
 Given this, we recommend against using any of the following filters with
 stenographer if you have typical traffic human-generated traffic patterns:
 
-*   port=80
-*   port=443
-*   protocol=6  (TCP)
-*   protocol=17  (UDP)
+*   port 80
+*   port 443
+*   protocol 6  (tcp)
+*   protocol 17  (udp)
 
-Of course, you can still use port=X for more esoteric ports, especially
+Of course, you can still use 'port X' for more esoteric ports, especially
 ephemeral ports when you’re trying to follow a single stream, and for highly
 esoteric protocols (especially because they won’t have port information for
 further filtering).

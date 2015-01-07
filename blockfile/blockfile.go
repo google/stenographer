@@ -106,25 +106,6 @@ func (b *BlockFile) Close() (err error) {
 	return
 }
 
-// Iter provides a simple interface for iterating over all packets in a
-// blockfile.  It follows the normal Go convention:
-//   iter := myBlockfile.AllPackets()
-//   for iter.Next() {
-//     ... handle iter.Packet()
-//   }
-//   if err := iter.Err(); err != nil { ... handle error ... }
-type Iter interface {
-	// Packet returns the current packet pointed to by the iterator.  This call
-	// must be preceded by a Next() call that returns true.
-	Packet() *base.Packet
-	// Err returns any error that occurred during iteration.  It should be called
-	// after the first Next() call to return false.
-	Err() error
-	// Next advances the iterator to the first or next packet, returning false
-	// when there are no more packets to process.
-	Next() bool
-}
-
 // allPacketsIter implements Iter.
 type allPacketsIter struct {
 	*BlockFile
@@ -184,10 +165,25 @@ func (a *allPacketsIter) Err() error {
 	return a.err
 }
 
-func (b *BlockFile) AllPackets() Iter {
-	return &allPacketsIter{BlockFile: b}
+func (b *BlockFile) AllPackets() *base.PacketChan {
+	c := base.NewPacketChan(100)
+	go func() {
+		pkts := &allPacketsIter{BlockFile: b}
+		for pkts.Next() {
+			c.Send(pkts.Packet())
+		}
+		c.Close(pkts.Err())
+	}()
+	return c
 }
 
+// Positions returns the positions in the blockfile of all packets matched by
+// the passed-in query.
+func (b *BlockFile) Positions(ctx context.Context, q query.Query) (base.Positions, error) {
+	return q.LookupIn(ctx, b.i)
+}
+
+// Lookup returns all packets in the blockfile matched by the passed-in query.
 func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	b.mu.RLock()
 	c := base.NewPacketChan(100)
@@ -196,7 +192,7 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 		var ci gopacket.CaptureInfo
 		v(3, "Blockfile %q looking up query %q", q.String(), b.name)
 		start := time.Now()
-		positions, err := q.LookupIn(ctx, b.i)
+		positions, err := b.Positions(ctx, q)
 		if err != nil {
 			c.Close(fmt.Errorf("index lookup failure: %v", err))
 			return
@@ -204,11 +200,7 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 		if positions.IsAllPositions() {
 			v(2, "Blockfile %q reading all packets", b.name)
 			iter := &allPacketsIter{BlockFile: b}
-			for iter.Next() {
-				if err := ctx.Err(); err != nil {
-					c.Close(err)
-					return
-				}
+			for iter.Next() && !base.ContextDone(ctx) {
 				c.Send(iter.Packet())
 			}
 			if iter.Err() != nil {
@@ -218,9 +210,8 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 		} else {
 			v(2, "Blockfile %q reading %v packets", b.name, len(positions))
 			for _, pos := range positions {
-				if err := ctx.Err(); err != nil {
-					c.Close(err)
-					return
+				if base.ContextDone(ctx) {
+					break
 				}
 				buffer, err := b.readPacket(pos, &ci)
 				if err != nil {
@@ -233,12 +224,12 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 				})
 			}
 		}
-		c.Close(nil)
+		c.Close(ctx.Err())
 		v(3, "Blockfile %q finished reading all packets in %v", b.name, time.Since(start))
 	}()
 	return c
 }
 
-func (b *BlockFile) DumpIndex(out io.Writer) {
-	b.i.Dump(out)
+func (b *BlockFile) DumpIndex(out io.Writer, start, finish []byte) {
+	b.i.Dump(out, start, finish)
 }

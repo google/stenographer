@@ -61,5 +61,5 @@ curl \
     --cacert "$CERTPATH/server_cert.pem" \
     --silent \
     --show-error \
-    "https://$SERVER/" |
+    "https://$SERVER/query" |
     tcpdump -r /dev/stdin -s 0 "$@"

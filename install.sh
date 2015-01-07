@@ -94,10 +94,12 @@ if ! grep -q stenographer /etc/passwd; then
     stenographer
 fi
 
-if [ ! -d /etc/stenographer ]; then
+if [ ! -d /etc/stenographer/certs ]; then
   Info "Setting up stenographer /etc directory"
   sudo mkdir -p /etc/stenographer/certs
-  sudo cp -vf sample_config /etc/stenographer/config
+  if [ ! -f /etc/stenographer/config ]; then
+    sudo cp -vf sample_config /etc/stenographer/config
+  fi
   sudo chown -R stenographer:stenographer /etc/stenographer
 fi
 

@@ -18,12 +18,16 @@ package base
 import (
 	"container/heap"
 	"flag"
+	"fmt"
+	"io"
 	"log"
 	"sort"
 	"sync"
 	"syscall"
 
 	"code.google.com/p/gopacket"
+	"code.google.com/p/gopacket/layers"
+	"code.google.com/p/gopacket/pcapgo"
 	"golang.org/x/net/context"
 )
 
@@ -144,7 +148,7 @@ func MergePacketChans(ctx context.Context, in []*PacketChan) *PacketChan {
 				return
 			}
 		}
-		for h.Len() > 0 && ctx.Err() == nil {
+		for h.Len() > 0 && !ContextDone(ctx) {
 			p := heap.Pop(&h).(indexedPacket)
 			count++
 			if pkt := <-in[p.i].Receive(); pkt != nil {
@@ -248,4 +252,44 @@ func PathDiskFreePercentage(path string) (int, error) {
 		return 0, err
 	}
 	return int(100 * stat.Bfree / stat.Blocks), nil
+}
+
+// snapLen is the max packet size we'll return in pcap files to users.
+const snapLen = 65536
+
+// PacketsToFile writes all packets from 'in' to 'out', writing out all packets
+// in a valid PCAP file format.
+func PacketsToFile(in *PacketChan, out io.Writer) error {
+	w := pcapgo.NewWriter(out)
+	w.WriteFileHeader(snapLen, layers.LinkTypeEthernet)
+	count := 0
+	defer in.Discard()
+	for p := range in.Receive() {
+		if len(p.Data) > snapLen {
+			p.Data = p.Data[:snapLen]
+		}
+		if err := w.WritePacket(p.CaptureInfo, p.Data); err != nil {
+			// This can happen if our pipe is broken, and we don't want to blow stack
+			// traces all over our users when that happens, so Error/Exit instead of
+			// Fatal.
+			return fmt.Errorf("error writing packet: %v", err)
+		}
+		count++
+	}
+	return in.Err()
+}
+
+// ContextDone returns true if a context is complete.
+func ContextDone(ctx context.Context) bool {
+	// There's two ways we could do this:  by checking ctx.Done or by
+	// seeing if ctx.Err != nil.  The latter, though, uses a single
+	// exclusive mutex, so when the context is shared by a ton of
+	// goroutines, it can actually block things quite a bit.  Checking
+	// ctx.Done is much more scalable across multiple goroutines.
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
 }

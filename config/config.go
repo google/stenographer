@@ -18,6 +18,8 @@ package config
 
 import (
 	"bytes"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -261,12 +263,6 @@ func (st *stenotypeThread) lookup(ctx context.Context, q query.Query) *base.Pack
 	return base.MergePacketChans(ctx, inputs)
 }
 
-func (st *stenotypeThread) getBlockFile(name string) *blockfile.BlockFile {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return st.files[name]
-}
-
 // ReadConfigFile reads in the given JSON encoded configuration file and returns
 // the Config object associated with the decoded configuration data.
 func ReadConfigFile(filename string) (*Config, error) {
@@ -368,6 +364,13 @@ func (c Config) Stenotype(d *Directory) *exec.Cmd {
 	return exec.Command(c.StenotypePath, args...)
 }
 
+func (c Config) ExportDebugHandlers(mux *http.ServeMux) {
+	mux.HandleFunc("/debug/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(c)
+	})
+}
+
 // Directory contains information necessary to run Stenotype.
 type Directory struct {
 	name    string
@@ -425,4 +428,106 @@ func (d *Directory) Lookup(ctx context.Context, q query.Query) *base.PacketChan 
 		inputs = append(inputs, thread.lookup(ctx, q))
 	}
 	return base.MergePacketChans(ctx, inputs)
+}
+
+func (d *Directory) getHTTPBlockfile(r *http.Request) (*blockfile.BlockFile, func(), error) {
+	vals := r.URL.Query()
+	threadID, err := strconv.Atoi(vals.Get("thread"))
+	if threadID < 0 || threadID > len(d.threads) || err != nil {
+		return nil, func() {}, fmt.Errorf("invalid thread")
+	}
+	thread := d.threads[threadID]
+	name := vals.Get("name")
+	thread.mu.RLock()
+	file, ok := thread.files[name]
+	if !ok {
+		return nil, thread.mu.RUnlock, fmt.Errorf("invalid name")
+	}
+	return file, thread.mu.RUnlock, nil
+}
+
+// ExportDebugHandlers exports a few debugging handlers to an HTTP ServeMux.
+func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
+	mux.HandleFunc("/debug/files", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		for _, thread := range d.threads {
+			fmt.Fprintf(w, "Thread %d (IDX: %q, PKT: %q)\n", thread.id, thread.indexPath, thread.packetPath)
+			thread.mu.RLock()
+			for name := range thread.files {
+				fmt.Fprintf(w, "\t%v\n", name)
+			}
+			thread.mu.RUnlock()
+		}
+	})
+	mux.HandleFunc("/debug/index", func(w http.ResponseWriter, r *http.Request) {
+		file, cleanup, err := d.getHTTPBlockfile(r)
+		defer cleanup()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var start, finish []byte
+		vals := r.URL.Query()
+		if s := vals.Get("start"); s != "" {
+			start, err = hex.DecodeString(s)
+			if err != nil {
+				http.Error(w, "bad start", http.StatusBadRequest)
+				return
+			}
+		}
+		if f := vals.Get("finish"); f != "" {
+			finish, err = hex.DecodeString(f)
+			if err != nil {
+				http.Error(w, "bad finish", http.StatusBadRequest)
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		file.DumpIndex(w, start, finish)
+	})
+	mux.HandleFunc("/debug/packets", func(w http.ResponseWriter, r *http.Request) {
+		file, cleanup, err := d.getHTTPBlockfile(r)
+		defer cleanup()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		base.PacketsToFile(file.AllPackets(), w)
+	})
+	mux.HandleFunc("/debug/positions", func(w http.ResponseWriter, r *http.Request) {
+		file, cleanup, err := d.getHTTPBlockfile(r)
+		defer cleanup()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		queryBytes, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "could not read request body", http.StatusBadRequest)
+			return
+		}
+		queryStr := string(queryBytes)
+		q, err := query.NewQuery(queryStr)
+		if err != nil {
+			http.Error(w, "could not parse query", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		positions, err := file.Positions(context.Background(), q)
+		if err != nil {
+			fmt.Fprintf(w, "ERROR: %v", err)
+			return
+		}
+		fmt.Fprintf(w, "POSITIONS:\n")
+		if positions.IsAllPositions() {
+			fmt.Fprintf(w, "\tALL")
+		} else {
+			var buf [4]byte
+			for _, pos := range positions {
+				binary.BigEndian.PutUint32(buf[:], uint32(pos))
+				fmt.Fprintf(w, "\t%v\n", hex.EncodeToString(buf[:]))
+			}
+		}
+	})
 }

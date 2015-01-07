@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:generate go tool yacc -p parser parser.y
+//go:generate go fmt y.go
+
 // Package query provides objects for specifying a query against stenographer.
 package query
 

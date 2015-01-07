@@ -1,9 +1,24 @@
 //line parser.y:16
+
+// Copyright 2014 Google Inc. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package query
 
 import __yyfmt__ "fmt"
 
-//line parser.y:17
+//line parser.y:30
 import (
 	"fmt"
 	"net"
@@ -12,7 +27,7 @@ import (
 	"unicode"
 )
 
-//line parser.y:29
+//line parser.y:42
 type parserSymType struct {
 	yys   int
 	num   int
@@ -54,7 +69,7 @@ const parserEofCode = 1
 const parserErrCode = 2
 const parserMaxDepth = 200
 
-//line parser.y:117
+//line parser.y:130
 func ipsFromNet(ip net.IP, mask net.IPMask) (from, to net.IP, _ error) {
 	if len(ip) != len(mask) || (len(ip) != 4 && len(ip) != 16) {
 		return nil, nil, fmt.Errorf("bad IP or mask: %v %v", ip, mask)
@@ -456,29 +471,29 @@ parserdefault:
 	switch parsernt {
 
 	case 1:
-		//line parser.y:46
+		//line parser.y:59
 		{
 			parserlex.(*parserLex).out = parserS[parserpt-0].query
 		}
 	case 2:
 		parserVAL.query = parserS[parserpt-0].query
 	case 3:
-		//line parser.y:53
+		//line parser.y:66
 		{
 			parserVAL.query = intersectQuery{parserS[parserpt-2].query, parserS[parserpt-0].query}
 		}
 	case 4:
-		//line parser.y:57
+		//line parser.y:70
 		{
 			parserVAL.query = unionQuery{parserS[parserpt-2].query, parserS[parserpt-0].query}
 		}
 	case 5:
-		//line parser.y:63
+		//line parser.y:76
 		{
 			parserVAL.query = ipQuery{parserS[parserpt-0].ip, parserS[parserpt-0].ip}
 		}
 	case 6:
-		//line parser.y:67
+		//line parser.y:80
 		{
 			if parserS[parserpt-0].num < 0 || parserS[parserpt-0].num >= 65536 {
 				parserlex.Error(fmt.Sprintf("invalid port %v", parserS[parserpt-0].num))
@@ -486,7 +501,7 @@ parserdefault:
 			parserVAL.query = portQuery(parserS[parserpt-0].num)
 		}
 	case 7:
-		//line parser.y:74
+		//line parser.y:87
 		{
 			if parserS[parserpt-0].num < 0 || parserS[parserpt-0].num >= 256 {
 				parserlex.Error(fmt.Sprintf("invalid protocol %v", parserS[parserpt-0].num))
@@ -494,7 +509,7 @@ parserdefault:
 			parserVAL.query = protocolQuery(parserS[parserpt-0].num)
 		}
 	case 8:
-		//line parser.y:81
+		//line parser.y:94
 		{
 			mask := net.CIDRMask(parserS[parserpt-0].num, len(parserS[parserpt-2].ip)*8)
 			if mask == nil {
@@ -507,7 +522,7 @@ parserdefault:
 			parserVAL.query = ipQuery{from, to}
 		}
 	case 9:
-		//line parser.y:93
+		//line parser.y:106
 		{
 			from, to, err := ipsFromNet(parserS[parserpt-2].ip, net.IPMask(parserS[parserpt-0].ip))
 			if err != nil {
@@ -516,22 +531,22 @@ parserdefault:
 			parserVAL.query = ipQuery{from, to}
 		}
 	case 10:
-		//line parser.y:101
+		//line parser.y:114
 		{
 			parserVAL.query = parserS[parserpt-1].query
 		}
 	case 11:
-		//line parser.y:105
+		//line parser.y:118
 		{
 			parserVAL.query = protocolQuery(6)
 		}
 	case 12:
-		//line parser.y:109
+		//line parser.y:122
 		{
 			parserVAL.query = protocolQuery(17)
 		}
 	case 13:
-		//line parser.y:113
+		//line parser.y:126
 		{
 			parserVAL.query = protocolQuery(1)
 		}

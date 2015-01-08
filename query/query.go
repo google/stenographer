@@ -129,11 +129,14 @@ func (a timeQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp
 		return nil, fmt.Errorf("could not parse basename %q: %v", last, err)
 	}
 	t := time.Unix(0, intval*1000) // converts micros -> nanos
-	if !a[0].IsZero() && t.Before(a[0]) {
+	// Note, we add a minute when doing 'before' queries and subtract a minute
+	// when doing 'after' queries, to make sure we actually get the time
+	// specified.
+	if !a[0].IsZero() && t.Before(a[0].Add(time.Minute)) {
 		v(2, "time query skipping %q", index.Name())
 		return base.NoPositions, nil
 	}
-	if !a[1].IsZero() && t.After(a[1]) {
+	if !a[1].IsZero() && t.After(a[1].Add(-time.Minute)) {
 		v(2, "time query skipping %q", index.Name())
 		return base.NoPositions, nil
 	}

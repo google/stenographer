@@ -50,6 +50,7 @@ import (
 }
 
 %type	<query>	top expr expr2
+%type <time> timestamp
 
 %token <str> HOST PORT PROTO AND OR NET MASK TCP UDP ICMP BEFORE AFTER IPP AGO
 %token <ip> IP
@@ -131,29 +132,27 @@ expr2:
 {
 	$$ = protocolQuery(1)
 }
-|   BEFORE TIME
+|   BEFORE timestamp
 {
 	var t timeQuery
 	t[1] = $2
 	$$ = t
 }
-|   AFTER TIME
+|   AFTER timestamp
 {
 	var t timeQuery
 	t[0] = $2
 	$$ = t
 }
-|   BEFORE DURATION AGO
+
+timestamp:
+    TIME
 {
-	var t timeQuery
-	t[1] = time.Now().Add(-$2)
-	$$ = t
+	$$ = $1
 }
-|   AFTER DURATION AGO
+|   DURATION AGO
 {
-	var t timeQuery
-	t[0] = time.Now().Add(-$2)
-	$$ = t
+	$$ = parserlex.(*parserLex).now.Add(-$1)
 }
 
 %%
@@ -175,6 +174,7 @@ func ipsFromNet(ip net.IP, mask net.IPMask) (from, to net.IP, _ error) {
 // It must be named <prefix>Lex (where prefix is passed into go tool yacc with
 // the -p flag).
 type parserLex struct {
+	now time.Time  // guarantees consistent time differences
 	in string
 	pos int
 	out Query
@@ -289,7 +289,7 @@ func (x *parserLex) Error(s string) {
 
 // parse parses an input string into a Query.
 func parse(in string) (Query, error) {
-	lex := &parserLex{in: in}
+	lex := &parserLex{in: in, now: time.Now()}
 	parserParse(lex)
 	if lex.err != nil {
 		return nil, lex.err

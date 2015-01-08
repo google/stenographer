@@ -33,17 +33,6 @@ import (
 
 var v = base.V // verbose logging.
 
-func parseIP(in string) net.IP {
-	ip := net.ParseIP(in)
-	if ip == nil {
-		return nil
-	}
-	if ip4 := ip.To4(); ip4 != nil {
-		ip = ip4
-	}
-	return ip
-}
-
 // Query encodes the set of packets a requester wants to get from stenographer.
 type Query interface {
 	// LookupIn finds the set of packet positions for all packets that match the
@@ -130,9 +119,9 @@ func (q intersectQuery) String() string {
 	return "(" + strings.Join(all, " and ") + ")"
 }
 
-type sinceQuery time.Time
+type timeQuery [2]time.Time
 
-func (a sinceQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
+func (a timeQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
 	defer log(a, index, &bp, &err)()
 	last := filepath.Base(index.Name())
 	intval, err := strconv.ParseInt(last, 10, 64)
@@ -140,84 +129,22 @@ func (a sinceQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (b
 		return nil, fmt.Errorf("could not parse basename %q: %v", last, err)
 	}
 	t := time.Unix(0, intval*1000) // converts micros -> nanos
-	if t.After(time.Time(a)) {
-		v(2, "time query using %q", index.Name())
-		return base.AllPositions, nil
+	if !a[0].IsZero() && t.Before(a[0]) {
+		v(2, "time query skipping %q", index.Name())
+		return base.NoPositions, nil
 	}
-	v(2, "time query skipping %q", index.Name())
-	return base.NoPositions, nil
+	if !a[1].IsZero() && t.After(a[1]) {
+		v(2, "time query skipping %q", index.Name())
+		return base.NoPositions, nil
+	}
+	v(2, "time query using %q", index.Name())
+	return base.AllPositions, nil
 }
-func (a sinceQuery) String() string {
-	return fmt.Sprintf("since=%v", time.Time(a))
-}
-
-func singleArgument(arg string) (Query, error) {
-	parts := strings.Split(arg, "=")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid arg: %q", arg)
+func (a timeQuery) String() string {
+	if a[0].IsZero() {
+		return fmt.Sprintf("before %v", a[1].Format(time.RFC3339))
 	}
-	switch parts[0] {
-	case "ip":
-		ips := strings.Split(parts[1], "-")
-		var from, to net.IP
-		switch len(ips) {
-		case 1:
-			from = parseIP(ips[0])
-			if from == nil {
-				return nil, fmt.Errorf("invalid IP %v", ips[0])
-			}
-			to = from
-		case 2:
-			from = parseIP(ips[0])
-			if from == nil {
-				return nil, fmt.Errorf("invalid IP %v", ips[0])
-			}
-			to = parseIP(ips[1])
-			if to == nil {
-				return nil, fmt.Errorf("invalid IP %v", ips[1])
-			}
-			if len(from) != len(to) {
-				return nil, fmt.Errorf("IP type mismatch: %v / %v", from, to)
-			}
-		default:
-			return nil, fmt.Errorf("invalid #IPs: %q", arg)
-		}
-		return ipQuery{from, to}, nil
-	case "port":
-		port, err := strconv.Atoi(parts[1])
-		if err != nil {
-			return nil, fmt.Errorf("invalid port %q: %v", parts[1], err)
-		}
-		return portQuery(port), nil
-	case "protocol":
-		proto, err := strconv.Atoi(parts[1])
-		if err != nil {
-			return nil, fmt.Errorf("invalid proto %q: %v", parts[1], err)
-		}
-		return protocolQuery(proto), nil
-	case "last":
-		dur, err := time.ParseDuration(parts[1])
-		if err != nil {
-			return nil, fmt.Errorf("invalid duration %q: %v", parts[1], err)
-		} else if dur%time.Minute != 0 {
-			return nil, fmt.Errorf("duration %q has high granularity, we support only 1m granularity", parts[1])
-		}
-		return sinceQuery(time.Now().Add(-dur)), nil
-	default:
-		return nil, fmt.Errorf("invalid query argument %q", arg)
-	}
-}
-
-func unionArguments(arg string) (Query, error) {
-	var union unionQuery
-	for _, a := range strings.Split(arg, "|") {
-		query, err := singleArgument(a)
-		if err != nil {
-			return nil, fmt.Errorf("error with union arg %q: %v", a, err)
-		}
-		union = append(union, query)
-	}
-	return union, nil
+	return fmt.Sprintf("after %v", a[0].Format(time.RFC3339))
 }
 
 // NewQuery parses the given query arg and returns a query object.

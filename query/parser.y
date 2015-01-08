@@ -30,10 +30,11 @@
 package query
 
 import (
-	"strconv"
-	"net"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -44,13 +45,17 @@ import (
 	ip net.IP
 	str string
 	query Query
+	dur time.Duration
+	time time.Time
 }
 
 %type	<query>	top expr expr2
 
-%token <str> HOST PORT PROTOCOL AND OR NET MASK TCP UDP ICMP
+%token <str> HOST PORT PROTO AND OR NET MASK TCP UDP ICMP BEFORE AFTER IPP AGO
 %token <ip> IP
 %token <num> NUM
+%token <dur> DURATION
+%token <time> TIME
 
 %%
 
@@ -83,12 +88,12 @@ expr2:
 	}
 	$$ = portQuery($2)
 }
-|   PROTOCOL NUM
+|   IPP PROTO NUM
 {
-	if $2 < 0 || $2 >= 256 {
-		parserlex.Error(fmt.Sprintf("invalid protocol %v", $2))
+	if $3 < 0 || $3 >= 256 {
+		parserlex.Error(fmt.Sprintf("invalid proto %v", $3))
 	}
-	$$ = protocolQuery($2)
+	$$ = protocolQuery($3)
 }
 |   NET IP '/' NUM
 {
@@ -126,6 +131,30 @@ expr2:
 {
 	$$ = protocolQuery(1)
 }
+|   BEFORE TIME
+{
+	var t timeQuery
+	t[1] = $2
+	$$ = t
+}
+|   AFTER TIME
+{
+	var t timeQuery
+	t[0] = $2
+	$$ = t
+}
+|   BEFORE DURATION AGO
+{
+	var t timeQuery
+	t[1] = time.Now().Add(-$2)
+	$$ = t
+}
+|   AFTER DURATION AGO
+{
+	var t timeQuery
+	t[0] = time.Now().Add(-$2)
+	$$ = t
+}
 
 %%
 
@@ -155,18 +184,22 @@ type parserLex struct {
 // tokens provides a simple map for adding new keywords and mapping them
 // to token types.
 var tokens = map[string]int{
- "host": HOST,
- "port": PORT,
- "protocol": PROTOCOL,
- "and": AND,
+ "after": AFTER,
+ "ago": AGO,
  "&&": AND,
- "or": OR,
- "||": OR,
- "net": NET,
+ "and": AND,
+ "before": BEFORE,
+ "host": HOST,
+ "icmp": ICMP,
+ "ip": IPP,
  "mask": MASK,
+ "net": NET,
+ "||": OR,
+ "or": OR,
+ "port": PORT,
+ "proto": PROTO,
  "tcp": TCP,
  "udp": UDP,
- "icmp": ICMP,
 }
 
 // Lex is called by the parser to get each new token.  This implementation
@@ -185,7 +218,7 @@ func (x *parserLex) Lex(yylval *parserSymType) (ret int) {
 		}
 	}
 	s := x.pos
-	var isIP bool
+	var isIP, isDuration, isTime bool
 L:
 	for x.pos < len(x.in) {
 		switch c := x.in[x.pos]; c {
@@ -194,26 +227,49 @@ L:
 			x.pos++
 		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f':
 			x.pos++
+		case 'm', 'h':
+			x.pos++
+			isDuration = true
+			break L
+		case '-', 'T', '+', 'Z':
+			x.pos++
+			isTime = true
 		default:
 			break L
 		}
 	}
-	if isIP {
-		yylval.ip = net.ParseIP(x.in[s:x.pos])
+	part := x.in[s:x.pos]
+	switch {
+	case isTime:
+		t, err := time.Parse(time.RFC3339, part)
+		if err != nil {
+			x.Error(fmt.Sprintf("bad time %q", part))
+		}
+		yylval.time = t
+		return TIME
+	case isIP:
+		yylval.ip = net.ParseIP(part)
 		if yylval.ip == nil {
-			x.Error(fmt.Sprintf("bad IP %q", x.in[s:x.pos]))
+			x.Error(fmt.Sprintf("bad IP %q", part))
 			return -1
 		}
 		if ip4 := yylval.ip.To4(); ip4 != nil {
 			yylval.ip = ip4
 		}
 		return IP
-	} else if x.pos != s {
-		n, err := strconv.Atoi(x.in[s:x.pos])
+	case isDuration:
+		duration, err := time.ParseDuration(part)
+		if err != nil {
+			x.Error(fmt.Sprintf("bad duration %q", part))
+		}
+		yylval.dur = duration
+		return DURATION
+	case x.pos != s:
+		n, err := strconv.Atoi(part)
 		if err != nil { return -1 }
 		yylval.num = n
 		return NUM
-	} else if x.pos >= len(x.in) {
+	case x.pos >= len(x.in):
 		return 0
 	}
 	switch c := x.in[x.pos]; c {

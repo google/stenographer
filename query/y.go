@@ -24,21 +24,24 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 )
 
-//line parser.y:42
+//line parser.y:43
 type parserSymType struct {
 	yys   int
 	num   int
 	ip    net.IP
 	str   string
 	query Query
+	dur   time.Duration
+	time  time.Time
 }
 
 const HOST = 57346
 const PORT = 57347
-const PROTOCOL = 57348
+const PROTO = 57348
 const AND = 57349
 const OR = 57350
 const NET = 57351
@@ -46,13 +49,19 @@ const MASK = 57352
 const TCP = 57353
 const UDP = 57354
 const ICMP = 57355
-const IP = 57356
-const NUM = 57357
+const BEFORE = 57356
+const AFTER = 57357
+const IPP = 57358
+const AGO = 57359
+const IP = 57360
+const NUM = 57361
+const DURATION = 57362
+const TIME = 57363
 
 var parserToknames = []string{
 	"HOST",
 	"PORT",
-	"PROTOCOL",
+	"PROTO",
 	"AND",
 	"OR",
 	"NET",
@@ -60,8 +69,14 @@ var parserToknames = []string{
 	"TCP",
 	"UDP",
 	"ICMP",
+	"BEFORE",
+	"AFTER",
+	"IPP",
+	"AGO",
 	"IP",
 	"NUM",
+	"DURATION",
+	"TIME",
 }
 var parserStatenames = []string{}
 
@@ -69,7 +84,7 @@ const parserEofCode = 1
 const parserErrCode = 2
 const parserMaxDepth = 200
 
-//line parser.y:130
+//line parser.y:159
 func ipsFromNet(ip net.IP, mask net.IPMask) (from, to net.IP, _ error) {
 	if len(ip) != len(mask) || (len(ip) != 4 && len(ip) != 16) {
 		return nil, nil, fmt.Errorf("bad IP or mask: %v %v", ip, mask)
@@ -83,8 +98,9 @@ func ipsFromNet(ip net.IP, mask net.IPMask) (from, to net.IP, _ error) {
 	return
 }
 
-// The parser uses the type <prefix>Lex as a lexer.  It must provide
-// the methods Lex(*<prefix>SymType) int and Error(string).
+// parserLex is used by the parser as a lexer.
+// It must be named <prefix>Lex (where prefix is passed into go tool yacc with
+// the -p flag).
 type parserLex struct {
 	in  string
 	pos int
@@ -92,24 +108,32 @@ type parserLex struct {
 	err error
 }
 
+// tokens provides a simple map for adding new keywords and mapping them
+// to token types.
 var tokens = map[string]int{
-	"host":     HOST,
-	"port":     PORT,
-	"protocol": PROTOCOL,
-	"and":      AND,
-	"&&":       AND,
-	"or":       OR,
-	"||":       OR,
-	"net":      NET,
-	"mask":     MASK,
-	"tcp":      TCP,
-	"udp":      UDP,
-	"icmp":     ICMP,
+	"host":   HOST,
+	"port":   PORT,
+	"proto":  PROTO,
+	"and":    AND,
+	"&&":     AND,
+	"or":     OR,
+	"||":     OR,
+	"net":    NET,
+	"mask":   MASK,
+	"tcp":    TCP,
+	"udp":    UDP,
+	"icmp":   ICMP,
+	"before": BEFORE,
+	"after":  AFTER,
+	"ago":    AGO,
+	"ip":     IPP,
 }
 
 // Lex is called by the parser to get each new token.  This implementation
 // is currently quite simplistic, but it seems to work pretty well for our
 // needs.
+//
+// The type of the input argument must be *<prefix>SymType.
 func (x *parserLex) Lex(yylval *parserSymType) (ret int) {
 	for x.pos < len(x.in) && unicode.IsSpace(rune(x.in[x.pos])) {
 		x.pos++
@@ -121,7 +145,7 @@ func (x *parserLex) Lex(yylval *parserSymType) (ret int) {
 		}
 	}
 	s := x.pos
-	var isIP bool
+	var isIP, isDuration, isTime bool
 L:
 	for x.pos < len(x.in) {
 		switch c := x.in[x.pos]; c {
@@ -130,28 +154,51 @@ L:
 			x.pos++
 		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f':
 			x.pos++
+		case 'm', 'h':
+			x.pos++
+			isDuration = true
+			break L
+		case '-', 'T', '+', 'Z':
+			x.pos++
+			isTime = true
 		default:
 			break L
 		}
 	}
-	if isIP {
-		yylval.ip = net.ParseIP(x.in[s:x.pos])
+	part := x.in[s:x.pos]
+	switch {
+	case isTime:
+		t, err := time.Parse(time.RFC3339, part)
+		if err != nil {
+			x.Error(fmt.Sprintf("bad time %q", part))
+		}
+		yylval.time = t
+		return TIME
+	case isIP:
+		yylval.ip = net.ParseIP(part)
 		if yylval.ip == nil {
-			x.Error(fmt.Sprintf("bad IP %q", x.in[s:x.pos]))
+			x.Error(fmt.Sprintf("bad IP %q", part))
 			return -1
 		}
 		if ip4 := yylval.ip.To4(); ip4 != nil {
 			yylval.ip = ip4
 		}
 		return IP
-	} else if x.pos != s {
-		n, err := strconv.Atoi(x.in[s:x.pos])
+	case isDuration:
+		duration, err := time.ParseDuration(part)
+		if err != nil {
+			x.Error(fmt.Sprintf("bad duration %q", part))
+		}
+		yylval.dur = duration
+		return DURATION
+	case x.pos != s:
+		n, err := strconv.Atoi(part)
 		if err != nil {
 			return -1
 		}
 		yylval.num = n
 		return NUM
-	} else if x.pos >= len(x.in) {
+	case x.pos >= len(x.in):
 		return 0
 	}
 	switch c := x.in[x.pos]; c {
@@ -186,52 +233,56 @@ var parserExca = []int{
 	-2, 0,
 }
 
-const parserNprod = 14
+const parserNprod = 18
 const parserPrivate = 57344
 
 var parserTokenNames []string
 var parserStates []string
 
-const parserLast = 32
+const parserLast = 43
 
 var parserAct = []int{
 
-	4, 5, 6, 24, 16, 7, 15, 9, 10, 11,
-	12, 13, 22, 8, 3, 25, 12, 13, 21, 17,
-	14, 23, 2, 1, 0, 0, 0, 19, 20, 0,
-	0, 18,
+	4, 5, 33, 29, 27, 7, 17, 9, 10, 11,
+	12, 13, 6, 14, 15, 28, 34, 24, 23, 8,
+	22, 21, 19, 16, 32, 31, 3, 14, 15, 2,
+	30, 18, 1, 0, 0, 0, 0, 0, 20, 0,
+	0, 25, 26,
 }
 var parserPact = []int{
 
-	-4, -1000, 9, -1000, 6, -9, -11, 5, -4, -1000,
-	-1000, -1000, -4, -4, -1000, -1000, -1000, 2, 3, -1000,
-	-1000, -12, 1, -1000, -1000, -1000,
+	-4, -1000, 20, -1000, 5, -13, 25, 4, -4, -1000,
+	-1000, -1000, 0, -3, -4, -4, -1000, -1000, -15, -7,
+	6, -1000, 8, -1000, 7, -1000, -1000, -1000, -17, -2,
+	-1000, -1000, -1000, -1000, -1000,
 }
 var parserPgo = []int{
 
-	0, 23, 22, 14,
+	0, 32, 29, 26,
 }
 var parserR1 = []int{
 
 	0, 1, 2, 2, 2, 3, 3, 3, 3, 3,
-	3, 3, 3, 3,
+	3, 3, 3, 3, 3, 3, 3, 3,
 }
 var parserR2 = []int{
 
-	0, 1, 1, 3, 3, 2, 2, 2, 4, 4,
-	3, 1, 1, 1,
+	0, 1, 1, 3, 3, 2, 2, 3, 4, 4,
+	3, 1, 1, 1, 2, 2, 3, 3,
 }
 var parserChk = []int{
 
-	-1000, -1, -2, -3, 4, 5, 6, 9, 17, 11,
-	12, 13, 7, 8, 14, 15, 15, 14, -2, -3,
-	-3, 16, 10, 18, 15, 14,
+	-1000, -1, -2, -3, 4, 5, 16, 9, 23, 11,
+	12, 13, 14, 15, 7, 8, 18, 19, 6, 18,
+	-2, 21, 20, 21, 20, -3, -3, 19, 22, 10,
+	24, 17, 17, 19, 18,
 }
 var parserDef = []int{
 
 	0, -2, 1, 2, 0, 0, 0, 0, 0, 11,
-	12, 13, 0, 0, 5, 6, 7, 0, 0, 3,
-	4, 0, 0, 10, 8, 9,
+	12, 13, 0, 0, 0, 0, 5, 6, 0, 0,
+	0, 14, 0, 15, 0, 3, 4, 7, 0, 0,
+	10, 16, 17, 8, 9,
 }
 var parserTok1 = []int{
 
@@ -239,12 +290,12 @@ var parserTok1 = []int{
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	17, 18, 3, 3, 3, 3, 3, 16,
+	23, 24, 3, 3, 3, 3, 3, 22,
 }
 var parserTok2 = []int{
 
 	2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
-	12, 13, 14, 15,
+	12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
 }
 var parserTok3 = []int{
 	0,
@@ -476,29 +527,29 @@ parserdefault:
 	switch parsernt {
 
 	case 1:
-		//line parser.y:59
+		//line parser.y:64
 		{
 			parserlex.(*parserLex).out = parserS[parserpt-0].query
 		}
 	case 2:
 		parserVAL.query = parserS[parserpt-0].query
 	case 3:
-		//line parser.y:66
+		//line parser.y:71
 		{
 			parserVAL.query = intersectQuery{parserS[parserpt-2].query, parserS[parserpt-0].query}
 		}
 	case 4:
-		//line parser.y:70
+		//line parser.y:75
 		{
 			parserVAL.query = unionQuery{parserS[parserpt-2].query, parserS[parserpt-0].query}
 		}
 	case 5:
-		//line parser.y:76
+		//line parser.y:81
 		{
 			parserVAL.query = ipQuery{parserS[parserpt-0].ip, parserS[parserpt-0].ip}
 		}
 	case 6:
-		//line parser.y:80
+		//line parser.y:85
 		{
 			if parserS[parserpt-0].num < 0 || parserS[parserpt-0].num >= 65536 {
 				parserlex.Error(fmt.Sprintf("invalid port %v", parserS[parserpt-0].num))
@@ -506,15 +557,15 @@ parserdefault:
 			parserVAL.query = portQuery(parserS[parserpt-0].num)
 		}
 	case 7:
-		//line parser.y:87
+		//line parser.y:92
 		{
 			if parserS[parserpt-0].num < 0 || parserS[parserpt-0].num >= 256 {
-				parserlex.Error(fmt.Sprintf("invalid protocol %v", parserS[parserpt-0].num))
+				parserlex.Error(fmt.Sprintf("invalid proto %v", parserS[parserpt-0].num))
 			}
 			parserVAL.query = protocolQuery(parserS[parserpt-0].num)
 		}
 	case 8:
-		//line parser.y:94
+		//line parser.y:99
 		{
 			mask := net.CIDRMask(parserS[parserpt-0].num, len(parserS[parserpt-2].ip)*8)
 			if mask == nil {
@@ -527,7 +578,7 @@ parserdefault:
 			parserVAL.query = ipQuery{from, to}
 		}
 	case 9:
-		//line parser.y:106
+		//line parser.y:111
 		{
 			from, to, err := ipsFromNet(parserS[parserpt-2].ip, net.IPMask(parserS[parserpt-0].ip))
 			if err != nil {
@@ -536,24 +587,52 @@ parserdefault:
 			parserVAL.query = ipQuery{from, to}
 		}
 	case 10:
-		//line parser.y:114
+		//line parser.y:119
 		{
 			parserVAL.query = parserS[parserpt-1].query
 		}
 	case 11:
-		//line parser.y:118
+		//line parser.y:123
 		{
 			parserVAL.query = protocolQuery(6)
 		}
 	case 12:
-		//line parser.y:122
+		//line parser.y:127
 		{
 			parserVAL.query = protocolQuery(17)
 		}
 	case 13:
-		//line parser.y:126
+		//line parser.y:131
 		{
 			parserVAL.query = protocolQuery(1)
+		}
+	case 14:
+		//line parser.y:135
+		{
+			var t timeQuery
+			t[1] = parserS[parserpt-0].time
+			parserVAL.query = t
+		}
+	case 15:
+		//line parser.y:141
+		{
+			var t timeQuery
+			t[0] = parserS[parserpt-0].time
+			parserVAL.query = t
+		}
+	case 16:
+		//line parser.y:147
+		{
+			var t timeQuery
+			t[1] = time.Now().Add(-parserS[parserpt-1].dur)
+			parserVAL.query = t
+		}
+	case 17:
+		//line parser.y:153
+		{
+			var t timeQuery
+			t[0] = time.Now().Add(-parserS[parserpt-1].dur)
+			parserVAL.query = t
 		}
 	}
 	goto parserstack /* stack new state and value */

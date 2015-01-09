@@ -32,14 +32,12 @@ class SingleFile;
 class PWrite {
  public:
   PWrite(Block* b, SingleFile* f) {
-    LOG(V3) << "PWriteBlockConstructor b" << int64_t(b)
-            << " INTO b" << int64_t(&block);
+    LOG(V3) << "PWriteBlockConstructor b" << int64_t(b) << " INTO b"
+            << int64_t(&block);
     block.Swap(b);
     file = f;
   }
-  ~PWrite() {
-    LOG(V3) << "PWriteBLockDestructor b" << int64_t(&block);
-  }
+  ~PWrite() { LOG(V3) << "PWriteBLockDestructor b" << int64_t(&block); }
 
   Error Done(io_event* evt);
 

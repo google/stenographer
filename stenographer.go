@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"log/syslog"
 	"net/http"
 	"os"
 	"runtime"
@@ -35,13 +36,18 @@ import (
 	_ "net/http/pprof" // server debugging info in /debug/pprof/*
 )
 
-var configFilename = flag.String(
-	"config",
-	"/etc/stenographer/config",
-	"File location to read configuration from")
+var (
+	configFilename = flag.String(
+		"config",
+		"/etc/stenographer/config",
+		"File location to read configuration from")
 
-// Verbose logging.
-var v = base.V
+	logToSyslog = flag.Bool(
+		"syslog", true, "If true, log to syslog.  Otherwise, log to stderr")
+
+	// Verbose logging.
+	v = base.V
+)
 
 const minStenotypeRuntimeForRestart = time.Minute
 
@@ -78,7 +84,7 @@ func runStenotype(conf *config.Config, dir *config.Directory) {
 		start := time.Now()
 		err := runStenotypeOnce(conf, dir)
 		duration := time.Since(start)
-		log.Printf("Stenotype ran for %v: %v", duration, err)
+		log.Printf("Stenotype stopped after %v: %v", duration, err)
 		if duration < minStenotypeRuntimeForRestart {
 			log.Fatalf("Stenotype ran for too little time, crashing to avoid stenotype crash loop")
 		}
@@ -86,8 +92,17 @@ func runStenotype(conf *config.Config, dir *config.Directory) {
 }
 
 func main() {
+	// Set up syslog logging
+	if *logToSyslog {
+		logwriter, err := syslog.New(syslog.LOG_USER|syslog.LOG_INFO, "stenographer")
+		if err != nil {
+			log.Fatalf("could not set up syslog logging")
+		}
+		log.SetOutput(logwriter)
+	}
+
 	flag.Parse()
-	runtime.GOMAXPROCS(32)
+	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 	conf := ReadConfig()
 	v(1, "Using config:\n%v", conf)
 	dir, err := conf.Directory()

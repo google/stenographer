@@ -130,12 +130,8 @@ sudo cp -vf stenoread "$BINDIR/stenoread"
 sudo chown stenographer:stenographer "$BINDIR/stenoread"
 sudo chmod 0750 "$BINDIR/stenoread"
 
-LOG="$OUTDIR/log"
-Info "Starting stenographer, see logs in '$LOG'"
-# The weird sudo tee stuff is to correctly use sudo permissions when directing
-# output to a file.
-sudo -u stenographer -b "$BINDIR/stenographer" \
-    2>&1 | sudo -u stenographer -b tee "$LOG" > /dev/null &
+Info "Starting stenographer"
+sudo -u stenographer -b "$BINDIR/stenographer" &
 
 Info "Checking for running processes..."
 sleep 5
@@ -143,15 +139,11 @@ if Running stenographer; then
   Info "  * Stenographer up and running"
 else
   Error "  !!! Stenographer not running !!!"
-  sudo cat $LOG
   exit 1
 fi
 if Running stenotype; then
   Info "  * Stenotype up and running"
 else
   Error "  !!! Stenotype not running !!!"
-  sudo cat $LOG
   exit 1
 fi
-Info "Tailing output, Ctrl-C will stop tailing, but stenographer will still run"
-exec sudo tail -f $LOG

@@ -63,7 +63,7 @@ func newStenotypeRunner(cmd *exec.Cmd, dir *config.Directory) *stenotypeRunner {
 		dir:  dir,
 		stop: make(chan bool, 1),
 	}
-    // Stenotype is initially stopped.
+	// Stenotype is initially stopped.
 	sc.stop <- true
 	return sc
 }
@@ -126,7 +126,7 @@ func (sr *stenotypeRunner) runStenotypeOnce() error {
 	defer sr.cmd.Process.Signal(os.Interrupt)
 	if err := sr.cmd.Wait(); err != nil {
 		return fmt.Errorf("stenotype wait failed: %v", err)
-    }
+	}
 	return fmt.Errorf("stenotype stopped")
 }
 

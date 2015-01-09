@@ -243,9 +243,9 @@ func (st *stenotypeThread) untrackFile(filename string) error {
 }
 
 func (s *stenotypeThread) FileLastSeen() time.Time {
-    s.mu.RLock()
-    defer s.mu.RUnlock()
-    return s.fileLastSeen
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.fileLastSeen
 }
 
 func (st *stenotypeThread) lookup(ctx context.Context, q query.Query) *base.PacketChan {

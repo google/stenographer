@@ -13,15 +13,18 @@
 # limitations under the License.
 
 CC=g++
-CFLAGS=-I. -std=c++0x -g -O3 -rdynamic -Wall -lleveldb -lrt -laio -lpthread -lsnappy -lseccomp
+CFLAGS_SEC=-fPIE -pie -fstack-protector -D_FORTIFY_SOURCE=2
+CFLAGS=-std=c++0x -g -O2 -rdynamic -Wall $(CFLAGS_SEC)
+LDFLAGS_SEC=-Wl,-z,now -Wl,-z,relro
+LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp $(LDFLAGS_SEC)
 
 all: stenotype
 
 %.o: %.cc $(DEPS)
-	$(CC) -c -o $@ $< $(CFLAGS)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
 	rm -f *.o stenotype
 
 stenotype: util.o packets.o index.o aio.o stenotype.o
-	$(CC) -o stenotype *.o $(CFLAGS)
+	$(CC) $(CFLAGS) -o stenotype *.o $(LDFLAGS)

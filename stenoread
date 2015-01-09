@@ -41,6 +41,12 @@ EOF
 fi
 
 STENOGRAPHER_CONFIG="${STENOGRAPHER_CONFIG-/etc/stenographer/config}"
+
+if [ ! -r "$STENOGRAPHER_CONFIG" ]; then
+  echo "You do not have permission to access Stenographer packets"
+  exit 1
+fi
+
 PORT="$(cat "$STENOGRAPHER_CONFIG" | jq -r '.Port')"
 CERTPATH="$(cat "$STENOGRAPHER_CONFIG" | jq -r '.CertPath')"
 if [ -z "$PORT" -o -z "$CERTPATH" ]; then
@@ -50,8 +56,11 @@ fi
 SERVER="localhost:$PORT"
 STENOQUERY="$1"
 shift
-echo "PORT=$PORT"
-echo "CERTPATH=$CERTPATH"
+
+if [ ! -r "$CERTPATH/client_key.pem" ]; then
+  echo "You do not have permission to access Stenographer packets"
+  exit 1
+fi
 
 echo "Running stenotype query '$STENOQUERY' against '$SERVER'" 1>&2
 curl \

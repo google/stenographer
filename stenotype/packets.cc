@@ -374,8 +374,8 @@ Error PacketsV3::NextBlock(Block* b, bool poll_once) {
   }
   if (pos_.ReadyForUser()) {
     pos_.UpdateStats(&stats_);
-    LOG(V3) << "PacketsV3NextBlock b"
-            << int64_t(&pos_) << " INTO b" << int64_t(b);
+    LOG(V3) << "PacketsV3NextBlock b" << int64_t(&pos_) << " INTO b"
+            << int64_t(b);
     pos_.Swap(b);
   }
   return SUCCESS;

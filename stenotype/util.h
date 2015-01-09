@@ -116,8 +116,8 @@ class LogLine {
     FillTimeBuffer();
     uint32_t tid = uint32_t(pthread_self()) >> 8;  // first bits always 0.
     ss_ << setfill('0') << time_buffer_ << "." << setw(6) << tv_.tv_usec
-        << "Z T:" << std::hex << setw(6) << tid
-        << setw(0) << std::dec << " [" << file << ":" << line << "] ";
+        << "Z T:" << std::hex << setw(6) << tid << setw(0) << std::dec << " ["
+        << file << ":" << line << "] ";
   }
   ~LogLine() {
     ss_ << "\n";
@@ -172,11 +172,11 @@ extern int logging_verbose_level;
 
 #define LOGGING_FATAL_LOG true
 #define LOGGING_ERROR_LOG true
-#define LOGGING_INFO_LOG (logging_verbose_level >= 0)
-#define LOGGING_V1_LOG (logging_verbose_level > 0)
-#define LOGGING_V2_LOG (logging_verbose_level > 1)
-#define LOGGING_V3_LOG (logging_verbose_level > 2)
-#define LOGGING_V4_LOG (logging_verbose_level > 3)
+#define LOGGING_INFO_LOG (logging_verbose_level > 0)
+#define LOGGING_V1_LOG (logging_verbose_level > 1)
+#define LOGGING_V2_LOG (logging_verbose_level > 2)
+#define LOGGING_V3_LOG (logging_verbose_level > 3)
+#define LOGGING_V4_LOG (logging_verbose_level > 4)
 
 #ifndef LOG
 #define LOG(level)           \

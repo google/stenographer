@@ -94,6 +94,13 @@ if ! grep -q stenographer /etc/passwd; then
     stenographer
 fi
 
+if [ -d /etc/security/limits.d ]; then
+  if [ ! -f /etc/security/limits.d/stenographer.conf ]; then
+    Info "Setting up stenographer limits"
+    sudo cp limits.conf /etc/security/limits.d/stenographer.conf
+  fi
+fi
+
 if [ ! -d /etc/stenographer/certs ]; then
   Info "Setting up stenographer /etc directory"
   sudo mkdir -p /etc/stenographer/certs

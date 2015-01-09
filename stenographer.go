@@ -46,27 +46,26 @@ var configFilename = flag.String(
 var v = base.V
 
 const (
-    minStenotypeRuntimeForRestart = time.Minute
-    maxFileLastSeenDuration = time.Minute * 5
-    snapLen = 65536 //max packet size we return in pcap files to users
+	minStenotypeRuntimeForRestart = time.Minute
+	maxFileLastSeenDuration       = time.Minute * 5
+	snapLen                       = 65536 // Max packet size we return in pcap files to users.
 )
 
 type stenotypeRunner struct {
-    cmd           *exec.Cmd
-    dir           *config.Directory
-    run           chan bool
-    stop          chan bool
+	cmd  *exec.Cmd
+	dir  *config.Directory
+	stop chan bool
 }
 
 func newStenotypeRunner(cmd *exec.Cmd, dir *config.Directory) *stenotypeRunner {
-    sc := &stenotypeRunner {
-        cmd:             cmd,
-        dir:             dir,
-        run:             make(chan bool, 1),
-        stop:            make(chan bool, 1),
-    }
-    sc.stop <- true
-    return sc
+	sc := &stenotypeRunner{
+		cmd:  cmd,
+		dir:  dir,
+		stop: make(chan bool, 1),
+	}
+    // Stenotype is initially stopped.
+	sc.stop <- true
+	return sc
 }
 
 func ReadConfig() *config.Config {
@@ -98,73 +97,71 @@ func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 }
 
 func (sr *stenotypeRunner) runStaleFileCheck() {
-    ticker := time.NewTicker(maxFileLastSeenDuration)
-    defer ticker.Stop()
-    for t := range ticker.C {
-            log.Printf("Checking stenotype for stale files...")
-            threads := sr.dir.Threads
-            for i := range threads {
-                diff := time.Now().Sub(threads[i].FileLastSeen)
-                if diff > maxFileLastSeenDuration && !sr.cmd.ProcessState.Exited() {
-                    if err := sr.cmd.Process.Kill(); err != nil {
-                        log.Fatalf("Failed to kill stenotype,  stale file found: ", err)
-                    }
-                    log.Printf("Restarting stenotype due to stale file.  Age: %v: Checked: %v", diff, t)
-                    sr.stop <- true
-                } else {
-                    log.Printf("Stenotype up to date, last file update %v ago", diff)
-                }
-            }
-        }
+	ticker := time.NewTicker(maxFileLastSeenDuration)
+	defer ticker.Stop()
+	for t := range ticker.C {
+		log.Printf("Checking stenotype for stale files...")
+		for _, thread := range sr.dir.Threads {
+			diff := time.Now().Sub(thread.FileLastSeen())
+			if diff > maxFileLastSeenDuration && !sr.cmd.ProcessState.Exited() {
+				if err := sr.cmd.Process.Kill(); err != nil {
+					log.Fatalf("Failed to kill stenotype,  stale file found: ", err)
+				}
+				log.Printf("Restarting stenotype due to stale file.  Age: %v: Checked: %v", diff, t)
+				sr.stop <- true
+			} else {
+				log.Printf("Stenotype up to date, last file update %v ago", diff)
+			}
+		}
+	}
 }
 
 func (sr *stenotypeRunner) runStenotypeOnce() error {
-    // Start running stenotype.
-    sr.cmd.Stdout = os.Stdout
-    sr.cmd.Stderr = os.Stderr
-    if err := sr.cmd.Start(); err != nil {
-        return fmt.Errorf("cannot start stenotype: %v", err)
+	// Start running stenotype.
+	sr.cmd.Stdout = os.Stdout
+	sr.cmd.Stderr = os.Stderr
+	if err := sr.cmd.Start(); err != nil {
+		return fmt.Errorf("cannot start stenotype: %v", err)
+	}
+	defer sr.cmd.Process.Signal(os.Interrupt)
+	if err := sr.cmd.Wait(); err != nil {
+		return fmt.Errorf("stenotype wait failed: %v", err)
     }
-    sr.run <- true
-    defer sr.cmd.Process.Signal(os.Interrupt)
-    if err := sr.cmd.Wait(); err != nil {
-        return fmt.Errorf("stenotype wait failed: %v", err)
-    }
-    return fmt.Errorf("stenotype stopped")
+	return fmt.Errorf("stenotype stopped")
 }
 
 func (sr *stenotypeRunner) runStenotype() {
-    for {
-        select {
-        case <- sr.stop:
-            start := time.Now()
-            log.Printf("Running Stenotype...")
-            err := sr.runStenotypeOnce()
-            duration := time.Since(start)
-            log.Printf("Stenotype ran for %v: %v", duration, err)
-            if duration < minStenotypeRuntimeForRestart {
-                log.Fatalf("Stenotype ran for too little time, crashing to avoid stenotype crash loop")
-            }
-        default:
-        }
-    }
+	for {
+		select {
+		case <-sr.stop:
+			start := time.Now()
+			log.Printf("Running Stenotype...")
+			err := sr.runStenotypeOnce()
+			duration := time.Since(start)
+			log.Printf("Stenotype ran for %v: %v", duration, err)
+			if duration < minStenotypeRuntimeForRestart {
+				log.Fatalf("Stenotype ran for too little time, crashing to avoid stenotype crash loop")
+			}
+		default:
+		}
+	}
 }
 
 func main() {
-    flag.Parse()
-    runtime.GOMAXPROCS(32)
-    conf := ReadConfig()
-    v(1, "Using config:\n%v", conf)
-    dir, err := conf.Directory()
-    cmd := conf.Stenotype(dir)
-    if err != nil {
-        log.Fatalf("unable to set up stenographer directory: %v", err)
-    }
-    defer dir.Close()
+	flag.Parse()
+	runtime.GOMAXPROCS(32)
+	conf := ReadConfig()
+	v(1, "Using config:\n%v", conf)
+	dir, err := conf.Directory()
+	cmd := conf.Stenotype(dir)
+	if err != nil {
+		log.Fatalf("unable to set up stenographer directory: %v", err)
+	}
+	defer dir.Close()
 
-    sr := newStenotypeRunner(cmd, dir)
-    go sr.runStenotype()
-    go sr.runStaleFileCheck()
+	sr := newStenotypeRunner(cmd, dir)
+	go sr.runStenotype()
+	go sr.runStaleFileCheck()
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

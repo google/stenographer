@@ -20,6 +20,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"log/syslog"
@@ -60,13 +61,15 @@ func ReadConfig() *config.Config {
 	return c
 }
 
+var stenotypeOutput io.Writer = os.Stderr
+
 // runStenotypeOnce runs the stenotype binary a single time, returning any
 // errors associated with its running.
 func runStenotypeOnce(conf *config.Config, dir *config.Directory) error {
 	// Start running stenotype.
 	cmd := conf.Stenotype(dir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stenotypeOutput
+	cmd.Stderr = stenotypeOutput
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("cannot start stenotype: %v", err)
 	}
@@ -99,6 +102,7 @@ func main() {
 			log.Fatalf("could not set up syslog logging")
 		}
 		log.SetOutput(logwriter)
+		stenotypeOutput = logwriter // for stenotype
 	}
 
 	flag.Parse()

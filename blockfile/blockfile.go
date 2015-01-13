@@ -29,13 +29,18 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
+	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 )
 
 // #include <linux/if_packet.h>
 import "C"
 
-var v = base.V // Verbose logging.
+var (
+	v               = base.V // Verbose logging
+	packetReadNanos = stats.S.Get("packet_read_nanos")
+	packetScanNanos = stats.S.Get("packet_scan_nanos")
+)
 
 // BlockFile provides an interface to a single stenotype file on disk and its
 // associated index.
@@ -78,6 +83,10 @@ func (b *BlockFile) Name() string {
 func (b *BlockFile) readPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, error) {
 	// 28 bytes actually isn't the entire packet header, but it's all the fields
 	// that we care about.
+	start := time.Now()
+	defer func() {
+		packetReadNanos.IncrementBy(time.Since(start).Nanoseconds())
+	}()
 	var dataBuf [28]byte
 	base.StartRead()
 	defer base.FinishRead()
@@ -124,6 +133,10 @@ type allPacketsIter struct {
 }
 
 func (a *allPacketsIter) Next() bool {
+	start := time.Now()
+	defer func() {
+		packetScanNanos.IncrementBy(time.Since(start).Nanoseconds())
+	}()
 	if a.err != nil || a.done {
 		return false
 	}

@@ -38,10 +38,18 @@ import (
 	"github.com/google/stenographer/certs"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
+	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 )
 
-var v = base.V // verbose logging
+var (
+	v            = base.V // verbose logging
+	numThreads   = stats.S.Get("threads")
+	queries      = stats.S.Get("queries")
+	newFiles     = stats.S.Get("new_files")
+	deletedFiles = stats.S.Get("deleted_files")
+)
+
 const (
 	packetPrefix           = "PKT"
 	indexPrefix            = "IDX"
@@ -141,6 +149,7 @@ func (st *stenotypeThread) syncFilesWithDisk() {
 			continue
 		}
 		newFilesCnt++
+		newFiles.Increment()
 	}
 	if newFilesCnt > 0 {
 		v(0, "Thread %v found %d new blockfiles", st.id, newFilesCnt)
@@ -241,6 +250,7 @@ func (st *stenotypeThread) untrackFile(filename string) error {
 	v(1, "Thread %v old blockfile %q", st.id, b.Name())
 	b.Close()
 	delete(st.files, filename)
+	deletedFiles.Increment()
 	return nil
 }
 
@@ -347,6 +357,7 @@ func (c Config) Directory() (_ *Directory, returnedErr error) {
 		}
 		threads[i] = st
 	}
+	numThreads.Set(int64(len(c.Threads)))
 	return newDirectory(dirname, threads), nil
 }
 
@@ -418,6 +429,7 @@ func (d *Directory) Path() string {
 // Lookup looks up the given query in all blockfiles currently known in this
 // Directory.
 func (d *Directory) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
+	queries.Increment()
 	var inputs []*base.PacketChan
 	for _, thread := range d.threads {
 		inputs = append(inputs, thread.lookup(ctx, q))

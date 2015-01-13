@@ -25,10 +25,15 @@ import (
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/indexfile"
+	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 )
 
-var v = base.V // verbose logging.
+var (
+	v                = base.V // verbose logging
+	indexLookups     = stats.S.Get("index_lookups")
+	indexLookupNanos = stats.S.Get("index_lookup_nanos")
+)
 
 func parseIP(in string) net.IP {
 	ip := net.ParseIP(in)
@@ -55,7 +60,10 @@ type Query interface {
 func log(q Query, i *indexfile.IndexFile, bp *base.Positions, err *error) func() {
 	start := time.Now()
 	return func() {
-		v(3, "Query %q in %q took %v, found %d  %v", q, i.Name(), time.Since(start), len(*bp), *err)
+		duration := time.Since(start)
+		indexLookups.Increment()
+		indexLookupNanos.IncrementBy(duration.Nanoseconds())
+		v(3, "Query %q in %q took %v, found %d  %v", q, i.Name(), duration, len(*bp), *err)
 	}
 }
 

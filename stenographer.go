@@ -31,6 +31,7 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
 	"github.com/google/stenographer/query"
+	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 
 	_ "net/http/pprof" // server debugging info in /debug/pprof/*
@@ -115,6 +116,7 @@ func main() {
 	go runStenotype(conf, dir)
 	conf.ExportDebugHandlers(http.DefaultServeMux)
 	dir.ExportDebugHandlers(http.DefaultServeMux)
+	http.Handle("/debug/stats", stats.S)
 	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		queryBytes, err := ioutil.ReadAll(r.Body)

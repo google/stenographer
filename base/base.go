@@ -328,3 +328,36 @@ func ContextDone(ctx context.Context) bool {
 		return false
 	}
 }
+
+// maxOutstandingReads is the max number of concurrent file reads to request.
+// See outstandingReadThreshold comment for more details.
+const maxOutstandingReads = 100
+
+// outstandingReadThreshold acts as a semaphore on outstanding read operations.
+// See StartRead comment for more details.
+var outstandingReadThreshold = make(chan struct{}, maxOutstandingReads)
+
+// StartRead and FinishRead keep the number of concurrent file reads down
+// to base.maxOutstandingReads.  Code here which could issue a read (or set of
+// sequential reads) should write to this channel before starting the read,
+// then read from the channel after the read has finished.
+//
+// This is very important because stenographer reads potentially very many
+// blockfiles, and it does so by reading all files in parallel.  Go starts
+// a thread to watch each outstanding syscall, and it fails hard if it hits
+// 10,000 blocking threads.  It turns out that reading more than 100 files
+// at once doesn't really seem to help us anyway.
+//
+// Usage:
+//   base.StartRead()  // may block until a read slot opens up
+//   ... file operation ...
+//   base.FinishRead()  // open up read slot for use by other goroutines
+func StartRead() {
+	outstandingReadThreshold <- struct{}{}
+}
+
+// FinishRead finishes up a read and allows another to commence.  See
+// StartRead comment for more details.
+func FinishRead() {
+	<-outstandingReadThreshold
+}

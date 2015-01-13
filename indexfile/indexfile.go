@@ -53,6 +53,8 @@ func BlockfilePathFromIndexPath(p string) string {
 // NewIndexFile returns a new handle to the named index file.
 func NewIndexFile(filename string) (*IndexFile, error) {
 	v(1, "opening index %q", filename)
+	base.StartRead()
+	defer base.FinishRead()
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file %q: %v", filename, err)
@@ -136,6 +138,8 @@ func (i *IndexFile) Dump(out io.Writer, start, finish []byte) {
 
 func (i *IndexFile) positions(ctx context.Context, from, to []byte) (out base.Positions, _ error) {
 	v(4, "%q multi key iterator %v:%v start", i.name, from, to)
+	base.StartRead()
+	defer base.FinishRead()
 	iter := i.ss.Find(preceedingBytes(from), nil)
 	found := false
 	last := make([]byte, len(from))

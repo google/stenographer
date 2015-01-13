@@ -48,6 +48,9 @@ var (
 
 	// Verbose logging.
 	v = base.V
+
+	queries    = stats.S.Get("queries")
+	queryNanos = stats.S.Get("queryNanos")
 )
 
 const minStenotypeRuntimeForRestart = time.Minute
@@ -127,7 +130,10 @@ func main() {
 		queryStr := string(queryBytes)
 		log.Printf("Received query %q from %q", queryStr, r.RemoteAddr)
 		defer func() {
-			log.Printf("Handled query %q from %q in %v", queryStr, r.RemoteAddr, time.Since(start))
+			duration := time.Since(start)
+			queries.Increment()
+			queryNanos.IncrementBy(duration.Nanoseconds())
+			log.Printf("Handled query %q from %q in %v", queryStr, r.RemoteAddr, duration)
 		}()
 		q, err := query.NewQuery(queryStr)
 		if err != nil {

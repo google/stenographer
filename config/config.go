@@ -45,7 +45,6 @@ import (
 var (
 	v            = base.V // verbose logging
 	numThreads   = stats.S.Get("threads")
-	queries      = stats.S.Get("queries")
 	newFiles     = stats.S.Get("new_files")
 	deletedFiles = stats.S.Get("deleted_files")
 )
@@ -429,7 +428,6 @@ func (d *Directory) Path() string {
 // Lookup looks up the given query in all blockfiles currently known in this
 // Directory.
 func (d *Directory) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
-	queries.Increment()
 	var inputs []*base.PacketChan
 	for _, thread := range d.threads {
 		inputs = append(inputs, thread.lookup(ctx, q))

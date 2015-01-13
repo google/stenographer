@@ -37,9 +37,12 @@ import (
 import "C"
 
 var (
-	v               = base.V // Verbose logging
-	packetReadNanos = stats.S.Get("packet_read_nanos")
-	packetScanNanos = stats.S.Get("packet_scan_nanos")
+	v                = base.V // Verbose logging
+	packetReadNanos  = stats.S.Get("packet_read_nanos")
+	packetScanNanos  = stats.S.Get("packet_scan_nanos")
+	packetsRead      = stats.S.Get("packets_read")
+	packetsScanned   = stats.S.Get("packets_scanned")
+	packetBlocksRead = stats.S.Get("packets_blocks_read")
 )
 
 // BlockFile provides an interface to a single stenotype file on disk and its
@@ -83,6 +86,7 @@ func (b *BlockFile) Name() string {
 func (b *BlockFile) readPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, error) {
 	// 28 bytes actually isn't the entire packet header, but it's all the fields
 	// that we care about.
+	packetsRead.Increment()
 	start := time.Now()
 	defer func() {
 		packetReadNanos.IncrementBy(time.Since(start).Nanoseconds())
@@ -141,6 +145,7 @@ func (a *allPacketsIter) Next() bool {
 		return false
 	}
 	for a.block == nil || a.blockPacketsRead == int(a.block.num_pkts) {
+		packetBlocksRead.Increment()
 		base.StartRead()
 		_, err := a.f.ReadAt(a.blockData[:], a.blockOffset)
 		base.FinishRead()
@@ -167,6 +172,7 @@ func (a *allPacketsIter) Next() bool {
 		return false
 	}
 	a.pkt = (*C.struct_tpacket3_hdr)(unsafe.Pointer(&a.blockData[a.packetOffset]))
+	packetsScanned.Increment()
 	return true
 }
 

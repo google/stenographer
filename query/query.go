@@ -30,9 +30,13 @@ import (
 )
 
 var (
-	v                = base.V // verbose logging
-	indexLookups     = stats.S.Get("index_lookups")
-	indexLookupNanos = stats.S.Get("index_lookup_nanos")
+	v                        = base.V // verbose logging
+	indexBaseLookupsStarted  = stats.S.Get("index_base_lookups_started")
+	indexBaseLookupsFinished = stats.S.Get("index_base_lookups_finished")
+	indexBaseLookupNanos     = stats.S.Get("index_base_lookup_nanos")
+	indexSetLookupsStarted   = stats.S.Get("index_set_lookups_started")
+	indexSetLookupsFinished  = stats.S.Get("index_set_lookups_finished")
+	indexSetLookupNanos      = stats.S.Get("index_set_lookup_nanos")
 )
 
 func parseIP(in string) net.IP {
@@ -55,14 +59,27 @@ type Query interface {
 	LookupIn(context.Context, *indexfile.IndexFile) (base.Positions, error)
 	// String returns a human readable string for this query.
 	String() string
+	// base returns whether this is a base query, hitting an indexfile directly,
+	// or an intersect/union set operation.
+	base() bool
 }
 
 func log(q Query, i *indexfile.IndexFile, bp *base.Positions, err *error) func() {
 	start := time.Now()
+	if q.base() {
+		indexBaseLookupsStarted.Increment()
+	} else {
+		indexSetLookupsStarted.Increment()
+	}
 	return func() {
 		duration := time.Since(start)
-		indexLookups.Increment()
-		indexLookupNanos.IncrementBy(duration.Nanoseconds())
+		if q.base() {
+			indexBaseLookupsFinished.Increment()
+			indexBaseLookupNanos.IncrementBy(duration.Nanoseconds())
+		} else {
+			indexSetLookupsFinished.Increment()
+			indexSetLookupNanos.IncrementBy(duration.Nanoseconds())
+		}
 		v(3, "Query %q in %q took %v, found %d  %v", q, i.Name(), duration, len(*bp), *err)
 	}
 }
@@ -74,6 +91,7 @@ func (q portQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp
 	return index.PortPositions(ctx, uint16(q))
 }
 func (q portQuery) String() string { return fmt.Sprintf("port=%d", q) }
+func (q portQuery) base() bool     { return true }
 
 type protocolQuery byte
 
@@ -82,6 +100,7 @@ func (q protocolQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile)
 	return index.ProtoPositions(ctx, byte(q))
 }
 func (q protocolQuery) String() string { return fmt.Sprintf("protocol=%d", q) }
+func (q protocolQuery) base() bool     { return true }
 
 type ipQuery [2]net.IP
 
@@ -90,6 +109,7 @@ func (q ipQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp b
 	return index.IPPositions(ctx, q[0], q[1])
 }
 func (q ipQuery) String() string { return fmt.Sprintf("ip=%v-%v", q[0], q[1]) }
+func (q ipQuery) base() bool     { return true }
 
 type unionQuery []Query
 
@@ -112,6 +132,7 @@ func (q unionQuery) String() string {
 	}
 	return strings.Join(all, "|")
 }
+func (q unionQuery) base() bool { return false }
 
 type intersectQuery []Query
 
@@ -134,6 +155,7 @@ func (q intersectQuery) String() string {
 	}
 	return strings.Join(all, " ")
 }
+func (q intersectQuery) base() bool { return false }
 
 type sinceQuery time.Time
 
@@ -155,6 +177,7 @@ func (a sinceQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (b
 func (a sinceQuery) String() string {
 	return fmt.Sprintf("since=%v", time.Time(a))
 }
+func (q sinceQuery) base() bool { return true }
 
 func singleArgument(arg string) (Query, error) {
 	parts := strings.Split(arg, "=")

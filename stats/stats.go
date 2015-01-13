@@ -18,6 +18,7 @@ package stats
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"sync"
 	"sync/atomic"
 )
@@ -66,8 +67,13 @@ func (s *Stats) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for k, v := range s.vars {
-		fmt.Fprintf(w, "%v %v\n", k, v.get())
+	strs := make([]string, 0, len(s.vars))
+	for k := range s.vars {
+		strs = append(strs, k)
+	}
+	sort.Strings(strs)
+	for _, k := range strs {
+		fmt.Fprintf(w, "%v\t%v\n", k, s.vars[k].get())
 	}
 }
 

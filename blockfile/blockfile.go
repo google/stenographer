@@ -183,12 +183,18 @@ func (b *BlockFile) Positions(ctx context.Context, q query.Query) (base.Position
 	return q.LookupIn(ctx, b.i)
 }
 
+var blockfileReadThreshold = make(chan bool, 9000)
+
 // Lookup returns all packets in the blockfile matched by the passed-in query.
 func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
+	blockfileReadThreshold <- true
 	b.mu.RLock()
 	c := base.NewPacketChan(100)
 	go func() {
-		defer b.mu.RUnlock()
+		defer func() {
+			b.mu.RUnlock()
+			<-blockfileReadThreshold
+		}()
 		var ci gopacket.CaptureInfo
 		v(3, "Blockfile %q looking up query %q", q.String(), b.name)
 		start := time.Now()

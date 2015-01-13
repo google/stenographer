@@ -125,7 +125,6 @@ func (st *stenotypeThread) syncFilesWithDisk() {
 	newFilesCnt := 0
 	for _, filename := range st.listPacketFilesOnDisk() {
 		if st.files[filename] != nil {
-			st.fileLastSeen = time.Now()
 			continue
 		}
 		if err := st.trackNewFile(filename); err != nil {
@@ -133,6 +132,7 @@ func (st *stenotypeThread) syncFilesWithDisk() {
 			continue
 		}
 		newFilesCnt++
+		st.fileLastSeen = time.Now()
 	}
 	if newFilesCnt > 0 {
 		log.Printf("Thread %v found %d new blockfiles", st.id, newFilesCnt)
@@ -339,14 +339,14 @@ func (c Config) Stenotype(d *Directory) *exec.Cmd {
 
 type Directory struct {
 	name    string
-	Threads []*stenotypeThread
+	threads []*stenotypeThread
 	done    chan bool
 }
 
 func newDirectory(dirname string, threads []*stenotypeThread) *Directory {
 	d := &Directory{
 		name:    dirname,
-		Threads: threads,
+		threads: threads,
 		done:    make(chan bool),
 	}
 	go d.callEvery(d.syncFiles, fileSyncFrequency)
@@ -372,7 +372,7 @@ func (d *Directory) callEvery(cb func(), freq time.Duration) {
 }
 
 func (d *Directory) syncFiles() {
-	for _, t := range d.Threads {
+	for _, t := range d.threads {
 		t.syncFilesWithDisk()
 		t.cleanUpOnLowDiskSpace()
 	}
@@ -384,8 +384,19 @@ func (d *Directory) Path() string {
 
 func (d *Directory) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	var inputs []*base.PacketChan
-	for _, thread := range d.Threads {
+	for _, thread := range d.threads {
 		inputs = append(inputs, thread.lookup(ctx, q))
 	}
 	return base.MergePacketChans(ctx, inputs)
+}
+
+func (d *Directory) MinLastFileSeen() time.Time {
+	var t time.Time
+	for _, thread := range d.threads {
+		ls := thread.FileLastSeen()
+		if t.IsZero() || ls.Before(t) {
+			t = ls
+		}
+	}
+	return t
 }

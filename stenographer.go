@@ -97,21 +97,32 @@ func PacketsToFile(in *base.PacketChan, out io.Writer) error {
 }
 
 func (sr *stenotypeRunner) runStaleFileCheck() {
+	proc := sr.cmd.Process
 	ticker := time.NewTicker(maxFileLastSeenDuration)
+	done := make(chan bool)
 	defer ticker.Stop()
-	for t := range ticker.C {
-		log.Printf("Checking stenotype for stale files...")
-		for _, thread := range sr.dir.Threads {
-			diff := time.Now().Sub(thread.FileLastSeen())
-			if diff > maxFileLastSeenDuration && !sr.cmd.ProcessState.Exited() {
-				if err := sr.cmd.Process.Kill(); err != nil {
+
+	go func() {
+		sr.cmd.Wait()
+		done <- true
+	}()
+
+	for {
+		select {
+		case <-ticker.C:
+			v(1, "Checking stenotype for stale files...")
+			diff := time.Now().Sub(sr.dir.MinLastFileSeen())
+			if diff > maxFileLastSeenDuration {
+				if err := proc.Kill(); err != nil {
 					log.Fatalf("Failed to kill stenotype,  stale file found: ", err)
 				}
-				log.Printf("Restarting stenotype due to stale file.  Age: %v: Checked: %v", diff, t)
+				log.Printf("Restarting stenotype due to stale file.  Age: %v", diff)
 				sr.stop <- true
 			} else {
 				log.Printf("Stenotype up to date, last file update %v ago", diff)
 			}
+		case <-done:
+			return
 		}
 	}
 }
@@ -123,6 +134,7 @@ func (sr *stenotypeRunner) runStenotypeOnce() error {
 	if err := sr.cmd.Start(); err != nil {
 		return fmt.Errorf("cannot start stenotype: %v", err)
 	}
+	go sr.runStaleFileCheck()
 	defer sr.cmd.Process.Signal(os.Interrupt)
 	if err := sr.cmd.Wait(); err != nil {
 		return fmt.Errorf("stenotype wait failed: %v", err)
@@ -132,17 +144,13 @@ func (sr *stenotypeRunner) runStenotypeOnce() error {
 
 func (sr *stenotypeRunner) runStenotype() {
 	for {
-		select {
-		case <-sr.stop:
-			start := time.Now()
-			log.Printf("Running Stenotype...")
-			err := sr.runStenotypeOnce()
-			duration := time.Since(start)
-			log.Printf("Stenotype ran for %v: %v", duration, err)
-			if duration < minStenotypeRuntimeForRestart {
-				log.Fatalf("Stenotype ran for too little time, crashing to avoid stenotype crash loop")
-			}
-		default:
+		start := time.Now()
+		log.Printf("Running Stenotype...")
+		err := sr.runStenotypeOnce()
+		duration := time.Since(start)
+		log.Printf("Stenotype ran for %v: %v", duration, err)
+		if duration < minStenotypeRuntimeForRestart {
+			log.Fatalf("Stenotype ran for too little time, crashing to avoid stenotype crash loop")
 		}
 	}
 }

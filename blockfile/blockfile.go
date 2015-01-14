@@ -50,7 +50,9 @@ type BlockFile struct {
 // which can be used to look up packets.
 func NewBlockFile(filename string) (*BlockFile, error) {
 	v(1, "opening blockfile %q", filename)
+	base.StartRead()
 	f, err := os.Open(filename)
+	base.FinishRead()
 	if err != nil {
 		return nil, fmt.Errorf("could not open %q: %v", filename, err)
 	}
@@ -77,6 +79,8 @@ func (b *BlockFile) readPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, err
 	// 28 bytes actually isn't the entire packet header, but it's all the fields
 	// that we care about.
 	var dataBuf [28]byte
+	base.StartRead()
+	defer base.FinishRead()
 	_, err := b.f.ReadAt(dataBuf[:], pos)
 	if err != nil {
 		return nil, err
@@ -124,7 +128,9 @@ func (a *allPacketsIter) Next() bool {
 		return false
 	}
 	for a.block == nil || a.blockPacketsRead == int(a.block.num_pkts) {
+		base.StartRead()
 		_, err := a.f.ReadAt(a.blockData[:], a.blockOffset)
+		base.FinishRead()
 		if err == io.EOF {
 			a.done = true
 			return false
@@ -180,7 +186,8 @@ func (b *BlockFile) AllPackets() *base.PacketChan {
 // Positions returns the positions in the blockfile of all packets matched by
 // the passed-in query.
 func (b *BlockFile) Positions(ctx context.Context, q query.Query) (base.Positions, error) {
-	return q.LookupIn(ctx, b.i)
+	out, err := q.LookupIn(ctx, b.i)
+	return out, err
 }
 
 // Lookup returns all packets in the blockfile matched by the passed-in query.

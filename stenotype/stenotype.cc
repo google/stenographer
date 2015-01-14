@@ -83,9 +83,9 @@
 
 namespace {
 
-string flag_iface = "eth0";
-string flag_filter = "";
-string flag_dir = "";
+std::string flag_iface = "eth0";
+std::string flag_filter = "";
+std::string flag_dir = "";
 int64_t flag_count = -1;
 int32_t flag_blocks = 2048;
 int32_t flag_aiops = 128;
@@ -100,10 +100,10 @@ uint16_t flag_fanout_type =
     PACKET_FANOUT_LB;
 #endif
 uint16_t flag_fanout_id = 0;
-string flag_uid;
-string flag_gid;
+std::string flag_uid;
+std::string flag_gid;
 bool flag_index = true;
-string flag_seccomp = "kill";
+std::string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
@@ -193,7 +193,8 @@ void ParseOptions(int argc, char** argv) {
        "can be obtained from a human readable filter expression using the "
        "provided compile_bpf.sh script."},
       {"seccomp", 315, s, 0, "Seccomp style, one of 'none', 'trace', 'kill'."},
-      {0}, };
+      {0},
+  };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
 }
@@ -406,7 +407,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   }
   PacketsV3* v3;
   CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
-  unique_ptr<PacketsV3> cleanup(v3);
+  std::unique_ptr<PacketsV3> cleanup(v3);
 
   sockets_created->Block();
   privileges_dropped.WaitForNotification();
@@ -417,8 +418,8 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   Output output(flag_aiops, flag_filesize_mb << 20);
 
   // All dirnames are guaranteed to end with '/'.
-  string file_dirname = flag_dir + "PKT" + to_string(thread) + "/";
-  string index_dirname = flag_dir + "IDX" + to_string(thread) + "/";
+  std::string file_dirname = flag_dir + "PKT" + std::to_string(thread) + "/";
+  std::string index_dirname = flag_dir + "IDX" + std::to_string(thread) + "/";
 
   Packet p;
   int64_t micros = GetCurrentTimeMicros();
@@ -542,7 +543,7 @@ int Main(int argc, char** argv) {
   // To avoid blocking on index writes, each writer thread has a secondary
   // thread just for creating and writing the indexes.  We pass to-write
   // indexes through to the writing thread via the write_index FIFO queue.
-  vector<std::thread*> index_threads;
+  std::vector<std::thread*> index_threads;
   if (flag_index) {
     LOG(V1) << "Starting indexing threads";
     for (int i = 0; i < flag_threads; i++) {
@@ -552,7 +553,7 @@ int Main(int argc, char** argv) {
   }
 
   LOG(V1) << "Starting writing threads";
-  vector<std::thread*> threads;
+  std::vector<std::thread*> threads;
   for (int i = 0; i < flag_threads; i++) {
     LOG(V1) << "Starting thread " << i;
     threads.push_back(new std::thread(&RunThread, i, &write_index));

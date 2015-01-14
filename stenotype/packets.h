@@ -41,7 +41,7 @@ struct Packet {
 
 struct Stats {
   Stats() : packets(0), blocks(0), polls(0), drops(0) {}
-  string String() const;
+  std::string String() const;
   int64_t packets;
   int64_t blocks;
   int64_t polls;
@@ -78,7 +78,7 @@ class Block {
   friend class PacketsV3;
   void UpdateStats(Stats* stats);
   bool ReadyForUser();
-  void ResetTo(char* data, size_t sz, mutex* mu);
+  void ResetTo(char* data, size_t sz, std::mutex* mu);
   void Done();
   void ReturnToKernel();
   void MoveToNext();
@@ -93,7 +93,7 @@ class Block {
   struct tpacket_block_desc* block_;
   struct tpacket3_hdr* packet_;
   uint32_t pkts_in_use_;
-  mutex* mu_;
+  std::mutex* mu_;
 
   DISALLOW_COPY_AND_ASSIGN(Block);
 };
@@ -159,11 +159,11 @@ class PacketsV3 {
     Error SetFanout(uint16_t fanout_type, uint16_t fanout_id);
 
     // SetFilter sets a BPF filter on the socket.
-    Error SetFilter(const string& filter);
+    Error SetFilter(const std::string& filter);
 
     // Bind must be the final method called by Builder.  It binds the created
     // socket to the given interface and returns a PacketsV3 object to wrap it.
-    Error Bind(const string& iface, PacketsV3** out);
+    Error Bind(const std::string& iface, PacketsV3** out);
 
    private:
     Error BadState();
@@ -189,7 +189,7 @@ class PacketsV3 {
   // Locks, one per block.  Block objects hold a lock to their memory region
   // during their lifetime, and release it on destruction.  This allows us to
   // correctly use the circular queue without overrunning if it gets full.
-  mutex* block_mus_;
+  std::mutex* block_mus_;
 
   DISALLOW_COPY_AND_ASSIGN(PacketsV3);
 };

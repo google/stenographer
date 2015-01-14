@@ -132,10 +132,13 @@ sudo chown stenographer:root "$BINDIR/stenotype"
 sudo chmod 0700 "$BINDIR/stenotype"
 sudo setcap 'CAP_NET_RAW+ep CAP_NET_ADMIN+ep CAP_IPC_LOCK+ep' "$BINDIR/stenotype"
 
-Info "Copying stenoread"
+Info "Copying stenoread/stenocurl"
 sudo cp -vf stenoread "$BINDIR/stenoread"
 sudo chown stenographer:stenographer "$BINDIR/stenoread"
 sudo chmod 0750 "$BINDIR/stenoread"
+sudo cp -vf stenocurl "$BINDIR/stenocurl"
+sudo chown stenographer:stenographer "$BINDIR/stenocurl"
+sudo chmod 0750 "$BINDIR/stenocurl"
 
 Info "Starting stenographer"
 sudo -u stenographer -b "$BINDIR/stenographer" &

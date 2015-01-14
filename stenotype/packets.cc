@@ -47,7 +47,7 @@ const int kNoFanout = -1;
 
 namespace st {
 
-string Stats::String() const {
+std::string Stats::String() const {
   std::stringstream out;
   out << "packets=" << packets << " blocks=" << blocks << " polls=" << polls
       << " drops=" << drops
@@ -88,7 +88,7 @@ void Block::Reset() { ResetTo(NULL, 0, NULL); }
 
 bool Block::ReadyForUser() { return Status() & TP_STATUS_USER; }
 
-void Block::ResetTo(char* data, size_t sz, mutex* mu) {
+void Block::ResetTo(char* data, size_t sz, std::mutex* mu) {
   Done();
   LOG(V2) << "New block " << reinterpret_cast<uintptr_t>(data);
   start_ = data;
@@ -163,7 +163,7 @@ bool Block::Next(Packet* p) {
 PacketsV3::PacketsV3(PacketsV3::State* state) {
   state_.Swap(state);
   offset_ = state_.num_blocks - 1;
-  block_mus_ = new mutex[state_.num_blocks];
+  block_mus_ = new std::mutex[state_.num_blocks];
 }
 
 Error PacketsV3::GetStats(Stats* stats) {
@@ -177,7 +177,7 @@ Error PacketsV3::GetStats(Stats* stats) {
   return SUCCESS;
 }
 
-Error PacketsV3::Builder::Bind(const string& iface, PacketsV3** out) {
+Error PacketsV3::Builder::Bind(const std::string& iface, PacketsV3** out) {
   RETURN_IF_ERROR(BadState(), "Builder");
 
   unsigned int ifindex = if_nametoindex(iface.c_str());
@@ -202,7 +202,7 @@ Error PacketsV3::Builder::Bind(const string& iface, PacketsV3** out) {
   return SUCCESS;
 }
 
-Error PacketsV3::Builder::SetFilter(const string& filter) {
+Error PacketsV3::Builder::SetFilter(const std::string& filter) {
   RETURN_IF_ERROR(BadState(), "Builder");
 
   int filter_size = filter.size();

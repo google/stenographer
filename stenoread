@@ -13,13 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-if ! which jq >/dev/null; then
-  echo "Must install 'jq' for JSON parsing (apt-get install jq)"
-  exit 1
-fi
-
 if [ "$#" -lt 1 ]; then
-  cat 1>&2 <<EOF
+  cat >&2 <<EOF
 $0 provides a simple method for reading logs out of stenographer.
 Its first argument is the query to send to stenographer, all other arguments
 are passed to TCPDump.
@@ -40,35 +35,12 @@ EOF
   exit 1
 fi
 
-STENOGRAPHER_CONFIG="${STENOGRAPHER_CONFIG-/etc/stenographer/config}"
-
-if [ ! -r "$STENOGRAPHER_CONFIG" ]; then
-  echo "You do not have permission to access Stenographer packets"
-  exit 1
-fi
-
-PORT="$(cat "$STENOGRAPHER_CONFIG" | jq -r '.Port')"
-CERTPATH="$(cat "$STENOGRAPHER_CONFIG" | jq -r '.CertPath')"
-if [ -z "$PORT" -o -z "$CERTPATH" ]; then
-  echo "Unable to get port ($PORT) or certpath ($CERTPATH) from config ($STENOGRAPHER_CONFIG)" 1>&2
-  exit 1
-fi
-SERVER="localhost:$PORT"
 STENOQUERY="$1"
 shift
 
-if [ ! -r "$CERTPATH/client_key.pem" ]; then
-  echo "You do not have permission to access Stenographer packets"
-  exit 1
-fi
-
-echo "Running stenotype query '$STENOQUERY' against '$SERVER'" 1>&2
-curl \
+echo "Running stenographer query '$STENOQUERY', piping to 'tcpdump $@'" >&2
+$(dirname $0)/stenocurl /query \
     -d "$STENOQUERY" \
-    --cert "$CERTPATH/client_cert.pem" \
-    --key "$CERTPATH/client_key.pem" \
-    --cacert "$CERTPATH/server_cert.pem" \
     --silent \
-    --show-error \
-    "https://$SERVER/query" |
+    --show-error |
     tcpdump -r /dev/stdin -s 0 "$@"

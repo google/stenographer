@@ -20,6 +20,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"log/syslog"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
+	"github.com/google/stenographer/httplog"
 	"github.com/google/stenographer/query"
 	"golang.org/x/net/context"
 
@@ -60,13 +62,15 @@ func ReadConfig() *config.Config {
 	return c
 }
 
+var stenotypeOutput io.Writer = os.Stderr
+
 // runStenotypeOnce runs the stenotype binary a single time, returning any
 // errors associated with its running.
 func runStenotypeOnce(conf *config.Config, dir *config.Directory) error {
 	// Start running stenotype.
 	cmd := conf.Stenotype(dir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stenotypeOutput
+	cmd.Stderr = stenotypeOutput
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("cannot start stenotype: %v", err)
 	}
@@ -99,6 +103,7 @@ func main() {
 			log.Fatalf("could not set up syslog logging")
 		}
 		log.SetOutput(logwriter)
+		stenotypeOutput = logwriter // for stenotype
 	}
 
 	flag.Parse()
@@ -115,18 +120,14 @@ func main() {
 	conf.ExportDebugHandlers(http.DefaultServeMux)
 	dir.ExportDebugHandlers(http.DefaultServeMux)
 	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+		w = httplog.New(w, r, true)
+		defer log.Print(w)
 		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "could not read request body", http.StatusBadRequest)
 			return
 		}
-		queryStr := string(queryBytes)
-		log.Printf("Received query %q from %q", queryStr, r.RemoteAddr)
-		defer func() {
-			log.Printf("Handled query %q from %q in %v", queryStr, r.RemoteAddr, time.Since(start))
-		}()
-		q, err := query.NewQuery(queryStr)
+		q, err := query.NewQuery(string(queryBytes))
 		if err != nil {
 			http.Error(w, "could not parse query", http.StatusBadRequest)
 			return

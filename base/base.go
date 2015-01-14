@@ -129,13 +129,12 @@ func (p *packetHeap) Pop() (x interface{}) {
 }
 
 // ConcatPacketChans concatenates packet chans in order.
-func ConcatPacketChans(ctx context.Context, in []*PacketChan) *PacketChan {
+func ConcatPacketChans(ctx context.Context, in <-chan *PacketChan) *PacketChan {
 	out := NewPacketChan(100)
 	go func() {
-		for i := range in {
-			defer in[i].Discard()
-		}
-		for _, c := range in {
+		for c := range in {
+			c := c
+			defer c.Discard()
 			select {
 			case pkt := <-c.Receive():
 				if pkt != nil {

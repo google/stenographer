@@ -183,57 +183,48 @@ func (b *BlockFile) Positions(ctx context.Context, q query.Query) (base.Position
 	return q.LookupIn(ctx, b.i)
 }
 
-var blockfileReadThreshold = make(chan bool, 9000)
-
 // Lookup returns all packets in the blockfile matched by the passed-in query.
-func (b *BlockFile) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
-	blockfileReadThreshold <- true
+func (b *BlockFile) Lookup(ctx context.Context, q query.Query, out *base.PacketChan) {
 	b.mu.RLock()
-	c := base.NewPacketChan(100)
-	go func() {
-		defer func() {
-			b.mu.RUnlock()
-			<-blockfileReadThreshold
-		}()
-		var ci gopacket.CaptureInfo
-		v(3, "Blockfile %q looking up query %q", q.String(), b.name)
-		start := time.Now()
-		positions, err := b.Positions(ctx, q)
-		if err != nil {
-			c.Close(fmt.Errorf("index lookup failure: %v", err))
+	defer b.mu.RUnlock()
+
+	var ci gopacket.CaptureInfo
+	v(3, "Blockfile %q looking up query %q", q.String(), b.name)
+	start := time.Now()
+	positions, err := b.Positions(ctx, q)
+	if err != nil {
+		out.Close(fmt.Errorf("index lookup failure: %v", err))
+		return
+	}
+	if positions.IsAllPositions() {
+		v(2, "Blockfile %q reading all packets", b.name)
+		iter := &allPacketsIter{BlockFile: b}
+		for iter.Next() && !base.ContextDone(ctx) {
+			out.Send(iter.Packet())
+		}
+		if iter.Err() != nil {
+			out.Close(fmt.Errorf("error reading all packets from %q: %v", b.name, iter.Err()))
 			return
 		}
-		if positions.IsAllPositions() {
-			v(2, "Blockfile %q reading all packets", b.name)
-			iter := &allPacketsIter{BlockFile: b}
-			for iter.Next() && !base.ContextDone(ctx) {
-				c.Send(iter.Packet())
+	} else {
+		v(2, "Blockfile %q reading %v packets", b.name, len(positions))
+		for _, pos := range positions {
+			if base.ContextDone(ctx) {
+				break
 			}
-			if iter.Err() != nil {
-				c.Close(fmt.Errorf("error reading all packets from %q: %v", b.name, iter.Err()))
+			buffer, err := b.readPacket(pos, &ci)
+			if err != nil {
+				out.Close(fmt.Errorf("error reading packets from %q @ %v: %v", b.name, pos, err))
 				return
 			}
-		} else {
-			v(2, "Blockfile %q reading %v packets", b.name, len(positions))
-			for _, pos := range positions {
-				if base.ContextDone(ctx) {
-					break
-				}
-				buffer, err := b.readPacket(pos, &ci)
-				if err != nil {
-					c.Close(fmt.Errorf("error reading packets from %q @ %v: %v", b.name, pos, err))
-					return
-				}
-				c.Send(&base.Packet{
-					Data:        buffer,
-					CaptureInfo: ci,
-				})
-			}
+			out.Send(&base.Packet{
+				Data:        buffer,
+				CaptureInfo: ci,
+			})
 		}
-		c.Close(ctx.Err())
-		v(3, "Blockfile %q finished reading all packets in %v", b.name, time.Since(start))
-	}()
-	return c
+	}
+	out.Close(ctx.Err())
+	v(3, "Blockfile %q finished reading all packets in %v", b.name, time.Since(start))
 }
 
 func (b *BlockFile) DumpIndex(out io.Writer, start, finish []byte) {

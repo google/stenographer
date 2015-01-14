@@ -245,16 +245,27 @@ func (st *stenotypeThread) untrackFile(filename string) error {
 	return nil
 }
 
+const concurrentBlockfileReadsPerThread = 10
+
 func (st *stenotypeThread) lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	st.mu.RLock()
-	var inputs []*base.PacketChan
-	for _, file := range st.getSortedFiles() {
-		inputs = append(inputs, st.files[file].Lookup(ctx, q))
-	}
+	inputs := make(chan *base.PacketChan, concurrentBlockfileReadsPerThread)
 	out := base.ConcatPacketChans(ctx, inputs)
 	go func() {
-		<-out.Done()
-		st.mu.RUnlock()
+		defer func() {
+			close(inputs)
+			<-out.Done()
+			st.mu.RUnlock()
+		}()
+		for _, file := range st.getSortedFiles() {
+			packets := base.NewPacketChan(100)
+			select {
+			case inputs <- packets:
+				go st.files[file].Lookup(ctx, q, packets)
+			case <-ctx.Done():
+				break
+			}
+		}
 	}()
 	return out
 }

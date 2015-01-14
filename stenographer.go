@@ -31,6 +31,7 @@ import (
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
+	"github.com/google/stenographer/httplog"
 	"github.com/google/stenographer/query"
 	"golang.org/x/net/context"
 
@@ -120,18 +121,14 @@ func main() {
 	conf.ExportDebugHandlers(http.DefaultServeMux)
 	dir.ExportDebugHandlers(http.DefaultServeMux)
 	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+		w = httplog.New(w, r, true)
+		defer log.Print(w)
 		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "could not read request body", http.StatusBadRequest)
 			return
 		}
-		queryStr := string(queryBytes)
-		log.Printf("Received query %q from %q", queryStr, r.RemoteAddr)
-		defer func() {
-			log.Printf("Handled query %q from %q in %v", queryStr, r.RemoteAddr, time.Since(start))
-		}()
-		q, err := query.NewQuery(queryStr)
+		q, err := query.NewQuery(string(queryBytes))
 		if err != nil {
 			http.Error(w, "could not parse query", http.StatusBadRequest)
 			return

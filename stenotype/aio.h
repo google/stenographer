@@ -69,7 +69,7 @@ class Output {
   int max_ops_;
   int64_t initial_file_size_;
   io::SingleFile* current_;
-  set<io::SingleFile*> files_;
+  std::set<io::SingleFile*> files_;
 
   DISALLOW_COPY_AND_ASSIGN(Output);
 };

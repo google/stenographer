@@ -407,7 +407,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   }
   PacketsV3* v3;
   CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
-  unique_ptr<PacketsV3> cleanup(v3);
+  std::unique_ptr<PacketsV3> cleanup(v3);
 
   sockets_created->Block();
   privileges_dropped.WaitForNotification();
@@ -418,8 +418,8 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   Output output(flag_aiops, flag_filesize_mb << 20);
 
   // All dirnames are guaranteed to end with '/'.
-  std::string file_dirname = flag_dir + "PKT" + to_string(thread) + "/";
-  std::string index_dirname = flag_dir + "IDX" + to_string(thread) + "/";
+  std::string file_dirname = flag_dir + "PKT" + std::to_string(thread) + "/";
+  std::string index_dirname = flag_dir + "IDX" + std::to_string(thread) + "/";
 
   Packet p;
   int64_t micros = GetCurrentTimeMicros();
@@ -543,7 +543,7 @@ int Main(int argc, char** argv) {
   // To avoid blocking on index writes, each writer thread has a secondary
   // thread just for creating and writing the indexes.  We pass to-write
   // indexes through to the writing thread via the write_index FIFO queue.
-  vector<std::thread*> index_threads;
+  std::vector<std::thread*> index_threads;
   if (flag_index) {
     LOG(V1) << "Starting indexing threads";
     for (int i = 0; i < flag_threads; i++) {
@@ -553,7 +553,7 @@ int Main(int argc, char** argv) {
   }
 
   LOG(V1) << "Starting writing threads";
-  vector<std::thread*> threads;
+  std::vector<std::thread*> threads;
   for (int i = 0; i < flag_threads; i++) {
     LOG(V1) << "Starting thread " << i;
     threads.push_back(new std::thread(&RunThread, i, &write_index));

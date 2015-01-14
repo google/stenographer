@@ -119,10 +119,10 @@ class Index {
   int64_t micros_;
   int64_t packets_;
   SliceSet ip_pieces_;
-  map<leveldb::Slice, vector<int64_t>> ip4_;
-  map<leveldb::Slice, vector<int64_t>> ip6_;
-  map<uint8_t, vector<int64_t>> proto_;
-  map<uint16_t, vector<int64_t>> port_;
+  std::map<leveldb::Slice, std::vector<int64_t>> ip4_;
+  std::map<leveldb::Slice, std::vector<int64_t>> ip6_;
+  std::map<uint8_t, std::vector<int64_t>> proto_;
+  std::map<uint16_t, std::vector<int64_t>> port_;
 
   DISALLOW_COPY_AND_ASSIGN(Index);
 };

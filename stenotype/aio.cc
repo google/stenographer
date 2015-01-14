@@ -76,7 +76,7 @@ class SingleFile {
   int64_t truncate_;
   std::string hidden_name_;
   std::string unhidden_name_;
-  set<PWrite*> outstanding_;
+  std::set<PWrite*> outstanding_;
 
   DISALLOW_COPY_AND_ASSIGN(SingleFile);
 };

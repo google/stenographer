@@ -47,7 +47,7 @@ class Output {
   // Flush all files on exit.
   virtual ~Output();
   // Open a new file.  Will fail if a file is already open.
-  Error Rotate(const string& dirname, int64_t micros);
+  Error Rotate(const std::string& dirname, int64_t micros);
   // Close and flush all files.
   Error Flush();
   // Write the given Block out to the given offset in the current file,

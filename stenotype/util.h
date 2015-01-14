@@ -188,12 +188,12 @@ extern int logging_verbose_level;
   if (!(expr)) LOG(FATAL) << "CHECK(" #expr ") "
 #endif
 
-typedef unique_ptr<string> Error;
+typedef unique_ptr<std::string> Error;
 
 #define SUCCEEDED(x) ((x).get() == NULL)
 #define SUCCESS NULL
 
-#define ERROR(x) Error(new string(x))
+#define ERROR(x) Error(new std::string(x))
 
 #define RETURN_IF_ERROR(status, msg)              \
   do {                                            \
@@ -354,13 +354,13 @@ inline Error NegErrno(int ret) {
 ////////////////////////////////////////////////////////////////////////////////
 //// Filesystem helpers.
 
-string Basename(const string& filename);
-string Dirname(const string& filename);
-inline string HiddenFile(const string& dirname, int64_t micros) {
+std::string Basename(const std::string& filename);
+std::string Dirname(const std::string& filename);
+inline std::string HiddenFile(const std::string& dirname, int64_t micros) {
   CHECK(dirname[dirname.size() - 1] == '/');
   return dirname + "." + to_string(micros);
 }
-inline string UnhiddenFile(const string& dirname, int64_t micros) {
+inline std::string UnhiddenFile(const std::string& dirname, int64_t micros) {
   CHECK(dirname[dirname.size() - 1] == '/');
   return dirname + to_string(micros);
 }

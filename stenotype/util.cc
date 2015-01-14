@@ -27,18 +27,18 @@ int logging_verbose_level = 0;
 // extra safety, add an extra null byte onto the end of the filename, in case
 // for some very strange reason we're passed a filename without one.
 
-string Basename(const string& filename) {
+std::string Basename(const std::string& filename) {
   char copy[filename.size() + 1];
   memcpy(copy, filename.data(), filename.size());
   copy[filename.size()] = 0;
-  return string(basename(copy));
+  return std::string(basename(copy));
 }
 
-string Dirname(const string& filename) {
+std::string Dirname(const std::string& filename) {
   char copy[filename.size() + 1];
   memcpy(copy, filename.data(), filename.size());
   copy[filename.size()] = 0;
-  return string(dirname(copy));
+  return std::string(dirname(copy));
 }
 
 }  // namespace st

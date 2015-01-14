@@ -83,9 +83,9 @@
 
 namespace {
 
-string flag_iface = "eth0";
-string flag_filter = "";
-string flag_dir = "";
+std::string flag_iface = "eth0";
+std::string flag_filter = "";
+std::string flag_dir = "";
 int64_t flag_count = -1;
 int32_t flag_blocks = 2048;
 int32_t flag_aiops = 128;
@@ -100,10 +100,10 @@ uint16_t flag_fanout_type =
     PACKET_FANOUT_LB;
 #endif
 uint16_t flag_fanout_id = 0;
-string flag_uid;
-string flag_gid;
+std::string flag_uid;
+std::string flag_gid;
 bool flag_index = true;
-string flag_seccomp = "kill";
+std::string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
@@ -193,7 +193,8 @@ void ParseOptions(int argc, char** argv) {
        "can be obtained from a human readable filter expression using the "
        "provided compile_bpf.sh script."},
       {"seccomp", 315, s, 0, "Seccomp style, one of 'none', 'trace', 'kill'."},
-      {0}, };
+      {0},
+  };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
 }
@@ -417,8 +418,8 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   Output output(flag_aiops, flag_filesize_mb << 20);
 
   // All dirnames are guaranteed to end with '/'.
-  string file_dirname = flag_dir + "PKT" + to_string(thread) + "/";
-  string index_dirname = flag_dir + "IDX" + to_string(thread) + "/";
+  std::string file_dirname = flag_dir + "PKT" + to_string(thread) + "/";
+  std::string index_dirname = flag_dir + "IDX" + to_string(thread) + "/";
 
   Packet p;
   int64_t micros = GetCurrentTimeMicros();

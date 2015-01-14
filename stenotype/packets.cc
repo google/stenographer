@@ -47,7 +47,7 @@ const int kNoFanout = -1;
 
 namespace st {
 
-string Stats::String() const {
+std::string Stats::String() const {
   std::stringstream out;
   out << "packets=" << packets << " blocks=" << blocks << " polls=" << polls
       << " drops=" << drops
@@ -177,7 +177,7 @@ Error PacketsV3::GetStats(Stats* stats) {
   return SUCCESS;
 }
 
-Error PacketsV3::Builder::Bind(const string& iface, PacketsV3** out) {
+Error PacketsV3::Builder::Bind(const std::string& iface, PacketsV3** out) {
   RETURN_IF_ERROR(BadState(), "Builder");
 
   unsigned int ifindex = if_nametoindex(iface.c_str());
@@ -202,7 +202,7 @@ Error PacketsV3::Builder::Bind(const string& iface, PacketsV3** out) {
   return SUCCESS;
 }
 
-Error PacketsV3::Builder::SetFilter(const string& filter) {
+Error PacketsV3::Builder::SetFilter(const std::string& filter) {
   RETURN_IF_ERROR(BadState(), "Builder");
 
   int filter_size = filter.size();

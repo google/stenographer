@@ -41,7 +41,7 @@ struct Packet {
 
 struct Stats {
   Stats() : packets(0), blocks(0), polls(0), drops(0) {}
-  string String() const;
+  std::string String() const;
   int64_t packets;
   int64_t blocks;
   int64_t polls;
@@ -159,11 +159,11 @@ class PacketsV3 {
     Error SetFanout(uint16_t fanout_type, uint16_t fanout_id);
 
     // SetFilter sets a BPF filter on the socket.
-    Error SetFilter(const string& filter);
+    Error SetFilter(const std::string& filter);
 
     // Bind must be the final method called by Builder.  It binds the created
     // socket to the given interface and returns a PacketsV3 object to wrap it.
-    Error Bind(const string& iface, PacketsV3** out);
+    Error Bind(const std::string& iface, PacketsV3** out);
 
    private:
     Error BadState();

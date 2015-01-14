@@ -100,7 +100,7 @@ class SliceSet {
 // write to disk.
 class Index {
  public:
-  explicit Index(const string& dirname, int64_t micros)
+  explicit Index(const std::string& dirname, int64_t micros)
       : dirname_(dirname),
         micros_(micros),
         packets_(0),
@@ -115,7 +115,7 @@ class Index {
   void AddProtocol(uint8_t proto, int64_t pos);
   void AddPort(uint16_t port, int64_t pos);
 
-  string dirname_;
+  std::string dirname_;
   int64_t micros_;
   int64_t packets_;
   SliceSet ip_pieces_;

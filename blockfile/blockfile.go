@@ -29,13 +29,21 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
+	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 )
 
 // #include <linux/if_packet.h>
 import "C"
 
-var v = base.V // Verbose logging.
+var (
+	v                = base.V // Verbose logging
+	packetReadNanos  = stats.S.Get("packet_read_nanos")
+	packetScanNanos  = stats.S.Get("packet_scan_nanos")
+	packetsRead      = stats.S.Get("packets_read")
+	packetsScanned   = stats.S.Get("packets_scanned")
+	packetBlocksRead = stats.S.Get("packets_blocks_read")
+)
 
 // BlockFile provides an interface to a single stenotype file on disk and its
 // associated index.
@@ -50,7 +58,9 @@ type BlockFile struct {
 // which can be used to look up packets.
 func NewBlockFile(filename string) (*BlockFile, error) {
 	v(1, "opening blockfile %q", filename)
+	base.StartRead()
 	f, err := os.Open(filename)
+	base.FinishRead()
 	if err != nil {
 		return nil, fmt.Errorf("could not open %q: %v", filename, err)
 	}
@@ -76,7 +86,14 @@ func (b *BlockFile) Name() string {
 func (b *BlockFile) readPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, error) {
 	// 28 bytes actually isn't the entire packet header, but it's all the fields
 	// that we care about.
+	packetsRead.Increment()
+	start := time.Now()
+	defer func() {
+		packetReadNanos.IncrementBy(time.Since(start).Nanoseconds())
+	}()
 	var dataBuf [28]byte
+	base.StartRead()
+	defer base.FinishRead()
 	_, err := b.f.ReadAt(dataBuf[:], pos)
 	if err != nil {
 		return nil, err
@@ -120,11 +137,18 @@ type allPacketsIter struct {
 }
 
 func (a *allPacketsIter) Next() bool {
+	start := time.Now()
+	defer func() {
+		packetScanNanos.IncrementBy(time.Since(start).Nanoseconds())
+	}()
 	if a.err != nil || a.done {
 		return false
 	}
 	for a.block == nil || a.blockPacketsRead == int(a.block.num_pkts) {
+		packetBlocksRead.Increment()
+		base.StartRead()
 		_, err := a.f.ReadAt(a.blockData[:], a.blockOffset)
+		base.FinishRead()
 		if err == io.EOF {
 			a.done = true
 			return false
@@ -148,6 +172,7 @@ func (a *allPacketsIter) Next() bool {
 		return false
 	}
 	a.pkt = (*C.struct_tpacket3_hdr)(unsafe.Pointer(&a.blockData[a.packetOffset]))
+	packetsScanned.Increment()
 	return true
 }
 
@@ -180,7 +205,8 @@ func (b *BlockFile) AllPackets() *base.PacketChan {
 // Positions returns the positions in the blockfile of all packets matched by
 // the passed-in query.
 func (b *BlockFile) Positions(ctx context.Context, q query.Query) (base.Positions, error) {
-	return q.LookupIn(ctx, b.i)
+	out, err := q.LookupIn(ctx, b.i)
+	return out, err
 }
 
 // Lookup returns all packets in the blockfile matched by the passed-in query.

@@ -32,6 +32,7 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
 	"github.com/google/stenographer/query"
+	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 
 	_ "net/http/pprof" // server debugging info in /debug/pprof/*
@@ -48,6 +49,9 @@ var (
 
 	// Verbose logging.
 	v = base.V
+
+	queries    = stats.S.Get("queries")
+	queryNanos = stats.S.Get("queryNanos")
 )
 
 const minStenotypeRuntimeForRestart = time.Minute
@@ -107,6 +111,7 @@ func main() {
 
 	flag.Parse()
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
+	runtime.SetBlockProfileRate(1000)
 	conf := ReadConfig()
 	v(1, "Using config:\n%v", conf)
 	dir, err := conf.Directory()
@@ -118,6 +123,7 @@ func main() {
 	go runStenotype(conf, dir)
 	conf.ExportDebugHandlers(http.DefaultServeMux)
 	dir.ExportDebugHandlers(http.DefaultServeMux)
+	http.Handle("/debug/stats", stats.S)
 	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		queryBytes, err := ioutil.ReadAll(r.Body)
@@ -128,7 +134,10 @@ func main() {
 		queryStr := string(queryBytes)
 		log.Printf("Received query %q from %q", queryStr, r.RemoteAddr)
 		defer func() {
-			log.Printf("Handled query %q from %q in %v", queryStr, r.RemoteAddr, time.Since(start))
+			duration := time.Since(start)
+			queries.Increment()
+			queryNanos.IncrementBy(duration.Nanoseconds())
+			log.Printf("Handled query %q from %q in %v", queryStr, r.RemoteAddr, duration)
 		}()
 		q, err := query.NewQuery(queryStr)
 		if err != nil {

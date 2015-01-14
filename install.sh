@@ -70,8 +70,10 @@ function InstallPackage {
 
 cd "$(dirname $0)"
 
+set -e
 Info "Making sure we have sudo access"
 sudo cat /dev/null
+set +e
 
 Info "Killing aleady-running processes"
 ReallyKill stenographer

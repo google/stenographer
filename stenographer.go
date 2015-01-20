@@ -96,6 +96,8 @@ func runStenotype(conf *config.Config, dir *config.Directory) {
 }
 
 func main() {
+	flag.Parse()
+
 	// Set up syslog logging
 	if *logToSyslog {
 		logwriter, err := syslog.New(syslog.LOG_USER|syslog.LOG_INFO, "stenographer")
@@ -106,7 +108,6 @@ func main() {
 		stenotypeOutput = logwriter // for stenotype
 	}
 
-	flag.Parse()
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 	conf := ReadConfig()
 	v(1, "Using config:\n%v", conf)

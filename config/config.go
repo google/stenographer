@@ -263,7 +263,7 @@ func (st *stenotypeThread) lookup(ctx context.Context, q query.Query) *base.Pack
 			case inputs <- packets:
 				go st.files[file].Lookup(ctx, q, packets)
 			case <-ctx.Done():
-				break
+				return
 			}
 		}
 	}()

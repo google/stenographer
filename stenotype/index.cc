@@ -157,9 +157,9 @@ void Index::Process(const Packet& p, int64_t block_offset) {
 namespace {
 
 // Simple, horribly inefficient, and slow.  You've been warned.
-string Hex(const char* start, int size) {
+std::string Hex(const char* start, int size) {
   const char* vals = "0123456789ABCDEF";
-  string out;
+  std::string out;
   for (const char* limit = start + size; start < limit; start++) {
     unsigned char c = *start;
     out.append(1, vals[c >> 4]);
@@ -186,7 +186,7 @@ void WriteToIndex(char first, const char* start, int size, int64_t pos,
 
 Error Index::Flush() {
   leveldb::WritableFile* file;
-  string filename = HiddenFile(dirname_, micros_);
+  std::string filename = HiddenFile(dirname_, micros_);
   auto status = leveldb::Env::Default()->NewWritableFile(filename, &file);
   std::unique_ptr<leveldb::WritableFile> cleaner(file);
   if (!status.ok()) {
@@ -228,7 +228,7 @@ Error Index::Flush() {
     return ERROR("could not close index table '" + filename + "': " +
                  closed.ToString());
   }
-  string unhidden = UnhiddenFile(dirname_, micros_);
+  std::string unhidden = UnhiddenFile(dirname_, micros_);
   LOG(INFO) << "Wrote all index files for " << filename << ", moving to "
             << unhidden;
   RETURN_IF_ERROR(Errno(rename(filename.c_str(), unhidden.c_str())), "rename");

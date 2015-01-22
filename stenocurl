@@ -1,0 +1,74 @@
+#!/bin/bash
+# Copyright 2014 Google Inc. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# stenocurl is a simple wrapper around curl which:
+#   * finds where the server is based on the config
+#   * sets the correct flags to do client and server verification via SSL
+# To run stenocurl, one must have read access to the stenographer client
+# key, which generally means one must be in the 'stenographer' group.
+
+JQ="$(which jq)"
+if [ -z "$JQ" ]; then
+  echo "Must install 'jq' for JSON parsing (apt-get install jq)" >&2
+  exit 1
+fi
+
+if [ "$#" -lt 1 -o ${1:0:1} != "/" ]; then
+  /bin/cat >&2 <<EOF
+USAGE: $0 /<path> [curl args...]
+
+Runs 'curl' against https://stenographerserver/path, returning data on STDOUT.
+Any arguments after the first are passed directly to 'curl'.
+
+This script is mostly used to access /debug/XXX URLs for Stenographer... for
+accessing packets, it's probably better to use the 'stenoread' wrapper around
+this script, which correctly passes packet requests into steno, then passes
+the results through tcpdump for easier handling.
+EOF
+  exit 1
+fi
+PATH="$1"  # starts with '/'
+shift
+
+STENOGRAPHER_CONFIG="${STENOGRAPHER_CONFIG-/etc/stenographer/config}"
+
+if [ ! -r "$STENOGRAPHER_CONFIG" ]; then
+  /bin/cat >&2 <<EOF
+Unable to access stenographer config at '$STENOGRAPHER_CONFIG'.  You may need
+to set the STENOGRAPHER_CONFIG environmental variable to point to the correct
+location of your config, or you may need to request read access to that file.
+EOF
+  exit 1
+fi
+
+PORT="$(/bin/cat "$STENOGRAPHER_CONFIG" | $JQ -r '.Port')"
+CERTPATH="$(/bin/cat "$STENOGRAPHER_CONFIG" | $JQ -r '.CertPath')"
+if [ -z "$PORT" -o -z "$CERTPATH" ]; then
+  echo "Unable to get port ($PORT) or certpath ($CERTPATH) from config ($STENOGRAPHER_CONFIG)" >&2
+  exit 1
+fi
+URL="https://localhost:$PORT$PATH"  # PATH already starts with /
+
+if [ ! -r "$CERTPATH/client_key.pem" ]; then
+  echo "You do not have permission to access Stenographer data" >&2
+  exit 1
+fi
+
+/usr/bin/curl \
+    --cert "$CERTPATH/client_cert.pem" \
+    --key "$CERTPATH/client_key.pem" \
+    --cacert "$CERTPATH/server_cert.pem" \
+    "$@" \
+    "$URL"

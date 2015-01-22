@@ -83,9 +83,9 @@
 
 namespace {
 
-string flag_iface = "eth0";
-string flag_filter = "";
-string flag_dir = "";
+std::string flag_iface = "eth0";
+std::string flag_filter = "";
+std::string flag_dir = "";
 int64_t flag_count = -1;
 int32_t flag_blocks = 2048;
 int32_t flag_aiops = 128;
@@ -100,10 +100,10 @@ uint16_t flag_fanout_type =
     PACKET_FANOUT_LB;
 #endif
 uint16_t flag_fanout_id = 0;
-string flag_uid;
-string flag_gid;
+std::string flag_uid;
+std::string flag_gid;
 bool flag_index = true;
-string flag_seccomp = "kill";
+std::string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
@@ -209,6 +209,8 @@ Notification privileges_dropped;
 Notification main_complete;
 Barrier* sockets_created;
 
+void ThreadExittedUnexpectedly(void*) { LOG(FATAL) << "Thread exit"; }
+
 void DropPrivileges() {
   LOG(INFO) << "Dropping privileges";
   if (getgid() == 0 || flag_gid != "") {
@@ -218,7 +220,7 @@ void DropPrivileges() {
     LOG(INFO) << "Dropping priviledges from " << getgid() << " to GID "
               << flag_gid;
     auto group = getgrnam(flag_gid.c_str());
-    CHECK(group != NULL) << "Unable to get info for user " << flag_gid;
+    CHECK(group != NULL) << "Unable to get info for group " << flag_gid;
     CHECK_SUCCESS(Errno(setgid(group->gr_gid)));
   } else {
     LOG(V1) << "Staying with GID=" << getgid();
@@ -230,7 +232,7 @@ void DropPrivileges() {
     LOG(INFO) << "Dropping priviledges from " << getuid() << " to UID "
               << flag_uid;
     auto passwd = getpwnam(flag_uid.c_str());
-    CHECK(passwd != NULL) << "Unable to get info for user 'nobody'";
+    CHECK(passwd != NULL) << "Unable to get info for user " << flag_uid;
     flag_uid = passwd->pw_uid;
     CHECK_SUCCESS(Errno(initgroups(flag_uid.c_str(), getgid())));
     CHECK_SUCCESS(Errno(setuid(passwd->pw_uid)));
@@ -338,6 +340,7 @@ Error SetAffinity(int cpu) {
 }
 
 void WriteIndexes(st::ProducerConsumerQueue* write_index) {
+  pthread_cleanup_push(&ThreadExittedUnexpectedly, NULL);
   pid_t tid = syscall(SYS_gettid);
   LOG_IF_ERROR(Errno(setpriority(PRIO_PROCESS, tid, flag_index_nicelevel)),
                "setpriority");
@@ -348,12 +351,13 @@ void WriteIndexes(st::ProducerConsumerQueue* write_index) {
     Index* i = reinterpret_cast<Index*>(write_index->Get());
     LOG(INFO) << "Got index " << int64_t(i);
     if (i == NULL) {
-      LOG(V1) << "Exiting write index thread";
-      return;
+      break;
     }
     LOG_IF_ERROR(i->Flush(), "index flush");
     delete i;
   }
+  pthread_cleanup_pop(0);
+  LOG(V1) << "Exiting write index thread";
 }
 
 bool run_threads = true;
@@ -366,6 +370,7 @@ void HandleSignals(int sig) {
 }
 
 void HandleSignalsThread() {
+  pthread_cleanup_push(&ThreadExittedUnexpectedly, NULL);
   LOG(V1) << "Handling signals";
   struct sigaction handler;
   handler.sa_handler = &HandleSignals;
@@ -375,10 +380,12 @@ void HandleSignalsThread() {
   sigaction(SIGTERM, &handler, NULL);
   DropCommonThreadPrivileges();
   main_complete.WaitForNotification();
+  pthread_cleanup_pop(0);
   LOG(V1) << "Signal handling done";
 }
 
 void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
+  pthread_cleanup_push(&ThreadExittedUnexpectedly, NULL);
   if (flag_threads > 1) {
     LOG_IF_ERROR(SetAffinity(thread), "set affinity");
   }
@@ -406,7 +413,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   }
   PacketsV3* v3;
   CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
-  unique_ptr<PacketsV3> cleanup(v3);
+  std::unique_ptr<PacketsV3> cleanup(v3);
 
   sockets_created->Block();
   privileges_dropped.WaitForNotification();
@@ -417,8 +424,8 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   Output output(flag_aiops, flag_filesize_mb << 20);
 
   // All dirnames are guaranteed to end with '/'.
-  string file_dirname = flag_dir + "PKT" + to_string(thread) + "/";
-  string index_dirname = flag_dir + "IDX" + to_string(thread) + "/";
+  std::string file_dirname = flag_dir + "PKT" + std::to_string(thread) + "/";
+  std::string index_dirname = flag_dir + "IDX" + std::to_string(thread) + "/";
 
   Packet p;
   int64_t micros = GetCurrentTimeMicros();
@@ -506,6 +513,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   }
   // Close last open file.
   CHECK_SUCCESS(output.Flush());
+  pthread_cleanup_pop(0);
   LOG(INFO) << "Finished thread " << thread << " successfully";
 }
 
@@ -542,7 +550,7 @@ int Main(int argc, char** argv) {
   // To avoid blocking on index writes, each writer thread has a secondary
   // thread just for creating and writing the indexes.  We pass to-write
   // indexes through to the writing thread via the write_index FIFO queue.
-  vector<std::thread*> index_threads;
+  std::vector<std::thread*> index_threads;
   if (flag_index) {
     LOG(V1) << "Starting indexing threads";
     for (int i = 0; i < flag_threads; i++) {
@@ -552,7 +560,7 @@ int Main(int argc, char** argv) {
   }
 
   LOG(V1) << "Starting writing threads";
-  vector<std::thread*> threads;
+  std::vector<std::thread*> threads;
   for (int i = 0; i < flag_threads; i++) {
     LOG(V1) << "Starting thread " << i;
     threads.push_back(new std::thread(&RunThread, i, &write_index));

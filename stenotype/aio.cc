@@ -51,7 +51,7 @@ class PWrite {
 
 class SingleFile {
  public:
-  SingleFile(Output* file, const string& dirname, int64_t micros, int fd)
+  SingleFile(Output* file, const std::string& dirname, int64_t micros, int fd)
       : file_(file),
         fd_(fd),
         offset_(0),
@@ -74,9 +74,9 @@ class SingleFile {
   int fd_;
   int64_t offset_;
   int64_t truncate_;
-  string hidden_name_;
-  string unhidden_name_;
-  set<PWrite*> outstanding_;
+  std::string hidden_name_;
+  std::string unhidden_name_;
+  std::set<PWrite*> outstanding_;
 
   DISALLOW_COPY_AND_ASSIGN(SingleFile);
 };
@@ -177,12 +177,12 @@ Error Output::CheckForCompletedOps(bool block) {
   return result;
 }
 
-Error Output::Rotate(const string& dirname, int64_t micros) {
+Error Output::Rotate(const std::string& dirname, int64_t micros) {
   if (current_) {
     current_->RequestClose();
     current_ = NULL;
   }
-  string name = HiddenFile(dirname, micros);
+  std::string name = HiddenFile(dirname, micros);
   int fd = open(name.c_str(), O_CREAT | O_WRONLY | O_DSYNC | O_DIRECT, 0600);
   LOG(INFO) << "Opening packet file " << name << ": " << fd;
   RETURN_IF_ERROR(Errno(fd > 0), "open");

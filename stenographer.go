@@ -20,6 +20,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"log/syslog"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
+	"github.com/google/stenographer/httplog"
 	"github.com/google/stenographer/query"
 	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
@@ -64,13 +66,15 @@ func ReadConfig() *config.Config {
 	return c
 }
 
+var stenotypeOutput io.Writer = os.Stderr
+
 // runStenotypeOnce runs the stenotype binary a single time, returning any
 // errors associated with its running.
 func runStenotypeOnce(conf *config.Config, dir *config.Directory) error {
 	// Start running stenotype.
 	cmd := conf.Stenotype(dir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stenotypeOutput
+	cmd.Stderr = stenotypeOutput
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("cannot start stenotype: %v", err)
 	}
@@ -96,6 +100,8 @@ func runStenotype(conf *config.Config, dir *config.Directory) {
 }
 
 func main() {
+	flag.Parse()
+
 	// Set up syslog logging
 	if *logToSyslog {
 		logwriter, err := syslog.New(syslog.LOG_USER|syslog.LOG_INFO, "stenographer")
@@ -103,9 +109,9 @@ func main() {
 			log.Fatalf("could not set up syslog logging")
 		}
 		log.SetOutput(logwriter)
+		stenotypeOutput = logwriter // for stenotype
 	}
 
-	flag.Parse()
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 	runtime.SetBlockProfileRate(1000)
 	conf := ReadConfig()
@@ -121,21 +127,20 @@ func main() {
 	dir.ExportDebugHandlers(http.DefaultServeMux)
 	http.Handle("/debug/stats", stats.S)
 	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+		w = httplog.New(w, r, true)
+		defer log.Print(w)
 		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "could not read request body", http.StatusBadRequest)
 			return
 		}
-		queryStr := string(queryBytes)
-		log.Printf("Received query %q from %q", queryStr, r.RemoteAddr)
+		start := time.Now()
 		defer func() {
 			duration := time.Since(start)
 			queries.Increment()
 			queryNanos.IncrementBy(duration.Nanoseconds())
-			log.Printf("Handled query %q from %q in %v", queryStr, r.RemoteAddr, duration)
 		}()
-		q, err := query.NewQuery(queryStr)
+		q, err := query.NewQuery(string(queryBytes))
 		if err != nil {
 			http.Error(w, "could not parse query", http.StatusBadRequest)
 			return

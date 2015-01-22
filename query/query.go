@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:generate go tool yacc -p parser parser.y
+//go:generate go fmt y.go
+
 // Package query provides objects for specifying a query against stenographer.
 package query
 
@@ -38,17 +41,6 @@ var (
 	indexSetLookupsFinished  = stats.S.Get("index_set_lookups_finished")
 	indexSetLookupNanos      = stats.S.Get("index_set_lookup_nanos")
 )
-
-func parseIP(in string) net.IP {
-	ip := net.ParseIP(in)
-	if ip == nil {
-		return nil
-	}
-	if ip4 := ip.To4(); ip4 != nil {
-		ip = ip4
-	}
-	return ip
-}
 
 // Query encodes the set of packets a requester wants to get from stenographer.
 type Query interface {
@@ -90,7 +82,7 @@ func (q portQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp
 	defer log(q, index, &bp, &err)()
 	return index.PortPositions(ctx, uint16(q))
 }
-func (q portQuery) String() string { return fmt.Sprintf("port=%d", q) }
+func (q portQuery) String() string { return fmt.Sprintf("port %d", q) }
 func (q portQuery) base() bool     { return true }
 
 type protocolQuery byte
@@ -99,7 +91,7 @@ func (q protocolQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile)
 	defer log(q, index, &bp, &err)()
 	return index.ProtoPositions(ctx, byte(q))
 }
-func (q protocolQuery) String() string { return fmt.Sprintf("protocol=%d", q) }
+func (q protocolQuery) String() string { return fmt.Sprintf("ip proto %d", q) }
 func (q protocolQuery) base() bool     { return true }
 
 type ipQuery [2]net.IP
@@ -108,7 +100,7 @@ func (q ipQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp b
 	defer log(q, index, &bp, &err)()
 	return index.IPPositions(ctx, q[0], q[1])
 }
-func (q ipQuery) String() string { return fmt.Sprintf("ip=%v-%v", q[0], q[1]) }
+func (q ipQuery) String() string { return fmt.Sprintf("host %v-%v", q[0], q[1]) }
 func (q ipQuery) base() bool     { return true }
 
 type unionQuery []Query
@@ -130,7 +122,7 @@ func (q unionQuery) String() string {
 	for i, query := range q {
 		all[i] = query.String()
 	}
-	return strings.Join(all, "|")
+	return "(" + strings.Join(all, " or ") + ")"
 }
 func (q unionQuery) base() bool { return false }
 
@@ -153,13 +145,13 @@ func (q intersectQuery) String() string {
 	for i, query := range q {
 		all[i] = query.String()
 	}
-	return strings.Join(all, " ")
+	return "(" + strings.Join(all, " and ") + ")"
 }
 func (q intersectQuery) base() bool { return false }
 
-type sinceQuery time.Time
+type timeQuery [2]time.Time
 
-func (a sinceQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
+func (a timeQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
 	defer log(a, index, &bp, &err)()
 	last := filepath.Base(index.Name())
 	intval, err := strconv.ParseInt(last, 10, 64)
@@ -167,86 +159,27 @@ func (a sinceQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (b
 		return nil, fmt.Errorf("could not parse basename %q: %v", last, err)
 	}
 	t := time.Unix(0, intval*1000) // converts micros -> nanos
-	if t.After(time.Time(a)) {
-		v(2, "time query using %q", index.Name())
-		return base.AllPositions, nil
+	// Note, we add a minute when doing 'before' queries and subtract a minute
+	// when doing 'after' queries, to make sure we actually get the time
+	// specified.
+	if !a[0].IsZero() && t.Before(a[0].Add(time.Minute)) {
+		v(2, "time query skipping %q", index.Name())
+		return base.NoPositions, nil
 	}
-	v(2, "time query skipping %q", index.Name())
-	return base.NoPositions, nil
-}
-func (a sinceQuery) String() string {
-	return fmt.Sprintf("since=%v", time.Time(a))
-}
-func (q sinceQuery) base() bool { return true }
-
-func singleArgument(arg string) (Query, error) {
-	parts := strings.Split(arg, "=")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid arg: %q", arg)
+	if !a[1].IsZero() && t.After(a[1].Add(-time.Minute)) {
+		v(2, "time query skipping %q", index.Name())
+		return base.NoPositions, nil
 	}
-	switch parts[0] {
-	case "ip":
-		ips := strings.Split(parts[1], "-")
-		var from, to net.IP
-		switch len(ips) {
-		case 1:
-			from = parseIP(ips[0])
-			if from == nil {
-				return nil, fmt.Errorf("invalid IP %v", ips[0])
-			}
-			to = from
-		case 2:
-			from = parseIP(ips[0])
-			if from == nil {
-				return nil, fmt.Errorf("invalid IP %v", ips[0])
-			}
-			to = parseIP(ips[1])
-			if to == nil {
-				return nil, fmt.Errorf("invalid IP %v", ips[1])
-			}
-			if len(from) != len(to) {
-				return nil, fmt.Errorf("IP type mismatch: %v / %v", from, to)
-			}
-		default:
-			return nil, fmt.Errorf("invalid #IPs: %q", arg)
-		}
-		return ipQuery{from, to}, nil
-	case "port":
-		port, err := strconv.Atoi(parts[1])
-		if err != nil {
-			return nil, fmt.Errorf("invalid port %q: %v", parts[1], err)
-		}
-		return portQuery(port), nil
-	case "protocol":
-		proto, err := strconv.Atoi(parts[1])
-		if err != nil {
-			return nil, fmt.Errorf("invalid proto %q: %v", parts[1], err)
-		}
-		return protocolQuery(proto), nil
-	case "last":
-		dur, err := time.ParseDuration(parts[1])
-		if err != nil {
-			return nil, fmt.Errorf("invalid duration %q: %v", parts[1], err)
-		} else if dur%time.Minute != 0 {
-			return nil, fmt.Errorf("duration %q has high granularity, we support only 1m granularity", parts[1])
-		}
-		return sinceQuery(time.Now().Add(-dur)), nil
-	default:
-		return nil, fmt.Errorf("invalid query argument %q", arg)
-	}
+	v(2, "time query using %q", index.Name())
+	return base.AllPositions, nil
 }
-
-func unionArguments(arg string) (Query, error) {
-	var union unionQuery
-	for _, a := range strings.Split(arg, "|") {
-		query, err := singleArgument(a)
-		if err != nil {
-			return nil, fmt.Errorf("error with union arg %q: %v", a, err)
-		}
-		union = append(union, query)
+func (a timeQuery) String() string {
+	if a[0].IsZero() {
+		return fmt.Sprintf("before %v", a[1].Format(time.RFC3339))
 	}
-	return union, nil
+	return fmt.Sprintf("after %v", a[0].Format(time.RFC3339))
 }
+func (a timeQuery) base() bool { return true }
 
 // NewQuery parses the given query arg and returns a query object.
 // This query can then be passed into a blockfile to get out the set of packets
@@ -255,13 +188,5 @@ func unionArguments(arg string) (Query, error) {
 // Currently, we support one simple method of parsing a query, detailed in the
 // README.md file.  Returns an error if the query string is invalid.
 func NewQuery(query string) (Query, error) {
-	var intersect intersectQuery
-	for _, a := range strings.Fields(query) {
-		query, err := unionArguments(a)
-		if err != nil {
-			return nil, fmt.Errorf("error with intersection arg %q: %v", a, err)
-		}
-		intersect = append(intersect, query)
-	}
-	return intersect, nil
+	return parse(query)
 }

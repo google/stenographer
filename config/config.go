@@ -36,6 +36,7 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/blockfile"
 	"github.com/google/stenographer/certs"
+	"github.com/google/stenographer/httplog"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
 	"github.com/google/stenographer/stats"
@@ -371,6 +372,8 @@ func (c Config) Stenotype(d *Directory) *exec.Cmd {
 
 func (c Config) ExportDebugHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/config", func(w http.ResponseWriter, r *http.Request) {
+		w = httplog.New(w, r, false)
+		defer log.Print(w)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(c)
 	})
@@ -454,6 +457,8 @@ func (d *Directory) getHTTPBlockfile(r *http.Request) (*blockfile.BlockFile, fun
 // ExportDebugHandlers exports a few debugging handlers to an HTTP ServeMux.
 func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/files", func(w http.ResponseWriter, r *http.Request) {
+		w = httplog.New(w, r, false)
+		defer log.Print(w)
 		w.Header().Set("Content-Type", "text/plain")
 		for _, thread := range d.threads {
 			fmt.Fprintf(w, "Thread %d (IDX: %q, PKT: %q)\n", thread.id, thread.indexPath, thread.packetPath)
@@ -465,6 +470,8 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 		}
 	})
 	mux.HandleFunc("/debug/index", func(w http.ResponseWriter, r *http.Request) {
+		w = httplog.New(w, r, false)
+		defer log.Print(w)
 		file, cleanup, err := d.getHTTPBlockfile(r)
 		defer cleanup()
 		if err != nil {
@@ -491,6 +498,8 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 		file.DumpIndex(w, start, finish)
 	})
 	mux.HandleFunc("/debug/packets", func(w http.ResponseWriter, r *http.Request) {
+		w = httplog.New(w, r, false)
+		defer log.Print(w)
 		file, cleanup, err := d.getHTTPBlockfile(r)
 		defer cleanup()
 		if err != nil {
@@ -501,6 +510,8 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 		base.PacketsToFile(file.AllPackets(), w)
 	})
 	mux.HandleFunc("/debug/positions", func(w http.ResponseWriter, r *http.Request) {
+		w = httplog.New(w, r, true)
+		defer log.Print(w)
 		file, cleanup, err := d.getHTTPBlockfile(r)
 		defer cleanup()
 		if err != nil {

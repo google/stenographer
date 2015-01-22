@@ -172,15 +172,30 @@ void WriteToIndex(char first, const char* start, int size, int64_t pos,
                   leveldb::TableBuilder* ss) {
   LOG(V4) << "Writing index " << int(first) << ":*" << size << ")"
           << Hex(start, size) << "=" << pos;
-  char buf[17];
+  char buf[1 +   // First byte is type of index (ip4, ip6, proto, etc)
+           4 +   // Last 4 bytes are position in the blockfile
+           16];  // Middle 1-16 bytes are type-specific index values.
   CHECK(size <= 16);
   CHECK(pos < int64_t(1) << 32);
   buf[0] = first;
   memcpy(buf + 1, start, size);
   uint32_t pos32 = htonl(pos);
-  ss->Add(leveldb::Slice(buf, size + 1),
-          leveldb::Slice(reinterpret_cast<const char*>(&pos32), 4));
+  memcpy(buf + 1 + size, reinterpret_cast<const char*>(&pos32), 4);
+  ss->Add(leveldb::Slice(buf, size + 1 + 4), leveldb::Slice());
 }
+
+// Should be incremented for backwards-incompatible changes.
+const uint16_t kIndexVersionNumberMajor = 1;
+// Should be incremented for backwards-compatible changes.
+const uint16_t kIndexVersionNumberMinor = 0;
+const uint32_t kIndexVersionNumber =
+    (uint32_t(kIndexVersionNumberMajor) << 16) | kIndexVersionNumberMinor;
+
+const char kIndexVersion = 0;
+const char kIndexProtocol = 1;
+const char kIndexPort = 2;
+const char kIndexIPv4 = 4;
+const char kIndexIPv6 = 6;
 
 }  // namespace
 
@@ -193,29 +208,34 @@ Error Index::Flush() {
     return ERROR("could not open '" + filename + "': " + status.ToString());
   }
 
+  // The first entry we write is the version number that defines
+  // the format for this file.
+  WriteToIndex(kIndexVersion, NULL, 0, kIndexVersionNumber, &index_ss);
+
   leveldb::Options options;
   options.compression = leveldb::kNoCompression;
   leveldb::TableBuilder index_ss(options, file);
   for (auto iter : proto_) {
     for (auto pos : iter.second) {
-      WriteToIndex(1, reinterpret_cast<const char*>(&iter.first), 1, pos,
-                   &index_ss);
+      WriteToIndex(kIndexProtocol, reinterpret_cast<const char*>(&iter.first),
+                   1, pos, &index_ss);
     }
   }
   for (auto iter : port_) {
     uint16_t port = htons(iter.first);
     for (auto pos : iter.second) {
-      WriteToIndex(2, reinterpret_cast<const char*>(&port), 2, pos, &index_ss);
+      WriteToIndex(kIndexPort, reinterpret_cast<const char*>(&port), 2, pos,
+                   &index_ss);
     }
   }
   for (auto iter : ip4_) {
     for (auto pos : iter.second) {
-      WriteToIndex(4, iter.first.data(), 4, pos, &index_ss);
+      WriteToIndex(kIndexIPv4, iter.first.data(), 4, pos, &index_ss);
     }
   }
   for (auto iter : ip6_) {
     for (auto pos : iter.second) {
-      WriteToIndex(6, iter.first.data(), 16, pos, &index_ss);
+      WriteToIndex(kIndexIPv6, iter.first.data(), 16, pos, &index_ss);
     }
   }
   auto finished = index_ss.Finish();

@@ -26,14 +26,15 @@
 #include <string.h>
 #include <execinfo.h>  // backtrace(), backtrace_symbols()
 
-#include <iostream>  // cerr
-#include <string>    // string
-#include <sstream>   // stringstream
-#include <iomanip>   // setw, setfill
+#include <condition_variable>
 #include <deque>
+#include <iomanip>   // setw, setfill
+#include <iostream>  // cerr
 #include <memory>
 #include <mutex>
-#include <condition_variable>
+#include <sstream>  // stringstream
+#include <string>   // string
+#include <thread>
 
 namespace {
 
@@ -362,6 +363,46 @@ inline std::string UnhiddenFile(const std::string& dirname, int64_t micros) {
   CHECK(dirname[dirname.size() - 1] == '/');
   return dirname + std::to_string(micros);
 }
+
+class Watchdog {
+ public:
+  void Watch() {
+    auto last = ctr_;
+    while (true) {
+      auto now = GetCurrentTimeMicros();
+      auto recheck = now + kNumMicrosPerSecond * seconds_;
+      for (; last == ctr_ && !done_ && now < recheck;
+           now = GetCurrentTimeMicros()) {
+        SleepForSeconds(std::min(1.0, double(seconds_) / 10));
+      }
+      if (done_) {
+        return;
+      } else if (last != ctr_) {
+        LOG(V2) << "Fed watchdog: " << description_;
+        last = ctr_;
+        continue;
+      }
+      LOG(FATAL) << "WATCHDOG FAILURE: " << description_;
+    }
+  }
+  Watchdog(std::string description, int seconds)
+      : description_(description), seconds_(seconds), ctr_(0), done_(false) {
+    t_ = new std::thread(&Watchdog::Watch, this);
+  }
+  ~Watchdog() {
+    done_ = true;
+    t_->join();
+    delete t_;
+  }
+  void Feed() { ctr_++; }
+
+ private:
+  std::thread* t_;
+  std::string description_;
+  int seconds_;
+  uint64_t ctr_;
+  bool done_;
+};
 
 }  // namespace st
 

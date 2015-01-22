@@ -208,13 +208,14 @@ Error Index::Flush() {
     return ERROR("could not open '" + filename + "': " + status.ToString());
   }
 
+  leveldb::Options options;
+  options.compression = leveldb::kNoCompression;
+  leveldb::TableBuilder index_ss(options, file);
+
   // The first entry we write is the version number that defines
   // the format for this file.
   WriteToIndex(kIndexVersion, NULL, 0, kIndexVersionNumber, &index_ss);
 
-  leveldb::Options options;
-  options.compression = leveldb::kNoCompression;
-  leveldb::TableBuilder index_ss(options, file);
   for (auto iter : proto_) {
     for (auto pos : iter.second) {
       WriteToIndex(kIndexProtocol, reinterpret_cast<const char*>(&iter.first),

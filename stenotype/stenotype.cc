@@ -337,7 +337,9 @@ Error SetAffinity(int cpu) {
   return Errno(sched_setaffinity(0, sizeof(cpus), &cpus));
 }
 
-void WriteIndexes(st::ProducerConsumerQueue* write_index) {
+void WriteIndexes(int thread, st::ProducerConsumerQueue* write_index) {
+  Watchdog dog("WriteIndexes thread " + std::to_string(thread),
+               flag_fileage_sec * 3);
   pid_t tid = syscall(SYS_gettid);
   LOG_IF_ERROR(Errno(setpriority(PRIO_PROCESS, tid, flag_index_nicelevel)),
                "setpriority");
@@ -352,6 +354,7 @@ void WriteIndexes(st::ProducerConsumerQueue* write_index) {
     }
     LOG_IF_ERROR(i->Flush(), "index flush");
     delete i;
+    dog.Feed();
   }
   LOG(V1) << "Exiting write index thread";
 }
@@ -390,6 +393,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   options.tp_frame_size = 16 << 10;  // does not matter at all
   options.tp_frame_nr = 0;           // computed for us.
   options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
+  Watchdog dog("Thread " + std::to_string(thread), flag_fileage_sec * 2);
 
   // Set up AF_PACKET packet reading.
   PacketsV3::Builder builder;
@@ -498,6 +502,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
         LOG(ERROR) << "Unable to get stats: " << *stats_err;
       }
     }
+    dog.Feed();
   }
   LOG(V1) << "Finishing thread " << thread;
   // Write out the last index.
@@ -546,7 +551,7 @@ int Main(int argc, char** argv) {
   if (flag_index) {
     LOG(V1) << "Starting indexing threads";
     for (int i = 0; i < flag_threads; i++) {
-      std::thread* t = new std::thread(&WriteIndexes, &write_index);
+      std::thread* t = new std::thread(&WriteIndexes, i, &write_index);
       index_threads.push_back(t);
     }
   }

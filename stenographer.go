@@ -26,7 +26,9 @@ import (
 	"log/syslog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/google/stenographer/base"
@@ -84,6 +86,7 @@ func runStenotypeOnce(conf *config.Config, dir *config.Directory) error {
 // runStenotype keeps the stenotype binary running, restarting it if necessary
 // but trying not to allow crash loops.
 func runStenotype(conf *config.Config, dir *config.Directory) {
+	stenotypeCleanup(conf)
 	for {
 		start := time.Now()
 		err := runStenotypeOnce(conf, dir)
@@ -93,6 +96,26 @@ func runStenotype(conf *config.Config, dir *config.Directory) {
 			log.Fatalf("Stenotype ran for too little time, crashing to avoid stenotype crash loop")
 		}
 	}
+}
+
+func stenotypeCleanup(conf *config.Config) {
+	v(1, "Checking %v for stale pkt/idx files...", conf.StenotypeOutput)
+	err := filepath.Walk(conf.StenotypeOutput, removeHiddenFiles)
+	if err != nil {
+		log.Printf("Unable to clean stale stenotype output. %v", err)
+	}
+}
+
+func removeHiddenFiles(path string, fileInfo os.FileInfo, err error) (e error) {
+	if !fileInfo.IsDir() {
+		if strings.HasPrefix(fileInfo.Name(), ".") {
+			if err := os.Remove(path); err != nil {
+				return fmt.Errorf("Unable to remove file: %v", err)
+			}
+			v(1, "Deleted stale output file: %v", path)
+		}
+	}
+	return nil
 }
 
 func main() {

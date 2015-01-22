@@ -6,6 +6,7 @@
     }
   ]
   , "StenotypePath": "/usr/local/bin/stenotype"
+  , "StenotypeOutput": "/tmp/stenographer"
   , "Interface": "em1"
   , "Port": 1234
   , "Flags": []

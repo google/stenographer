@@ -209,8 +209,6 @@ Notification privileges_dropped;
 Notification main_complete;
 Barrier* sockets_created;
 
-void ThreadExittedUnexpectedly(void*) { LOG(FATAL) << "Thread exit"; }
-
 void DropPrivileges() {
   LOG(INFO) << "Dropping privileges";
   if (getgid() == 0 || flag_gid != "") {
@@ -340,7 +338,6 @@ Error SetAffinity(int cpu) {
 }
 
 void WriteIndexes(st::ProducerConsumerQueue* write_index) {
-  pthread_cleanup_push(&ThreadExittedUnexpectedly, NULL);
   pid_t tid = syscall(SYS_gettid);
   LOG_IF_ERROR(Errno(setpriority(PRIO_PROCESS, tid, flag_index_nicelevel)),
                "setpriority");
@@ -356,7 +353,6 @@ void WriteIndexes(st::ProducerConsumerQueue* write_index) {
     LOG_IF_ERROR(i->Flush(), "index flush");
     delete i;
   }
-  pthread_cleanup_pop(0);
   LOG(V1) << "Exiting write index thread";
 }
 
@@ -370,7 +366,6 @@ void HandleSignals(int sig) {
 }
 
 void HandleSignalsThread() {
-  pthread_cleanup_push(&ThreadExittedUnexpectedly, NULL);
   LOG(V1) << "Handling signals";
   struct sigaction handler;
   handler.sa_handler = &HandleSignals;
@@ -380,12 +375,10 @@ void HandleSignalsThread() {
   sigaction(SIGTERM, &handler, NULL);
   DropCommonThreadPrivileges();
   main_complete.WaitForNotification();
-  pthread_cleanup_pop(0);
   LOG(V1) << "Signal handling done";
 }
 
 void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
-  pthread_cleanup_push(&ThreadExittedUnexpectedly, NULL);
   if (flag_threads > 1) {
     LOG_IF_ERROR(SetAffinity(thread), "set affinity");
   }
@@ -513,7 +506,6 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   }
   // Close last open file.
   CHECK_SUCCESS(output.Flush());
-  pthread_cleanup_pop(0);
   LOG(INFO) << "Finished thread " << thread << " successfully";
 }
 

@@ -63,12 +63,13 @@ type ThreadConfig struct {
 }
 
 type Config struct {
-	StenotypePath string
-	Threads       []ThreadConfig
-	Interface     string
-	Flags         []string
-	Port          int
-	CertPath      string // Directory where client and server certs are stored.
+	StenotypePath   string
+	StenotypeOutput string
+	Threads         []ThreadConfig
+	Interface       string
+	Flags           []string
+	Port            int
+	CertPath        string // Directory where client and server certs are stored.
 }
 
 type stenotypeThread struct {

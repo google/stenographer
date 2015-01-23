@@ -62,7 +62,7 @@ func NewIndexFile(filename string) (*IndexFile, error) {
 		iter := ss.Find([]byte{}, nil)
 		v(4, "=== %q ===", filename)
 		for iter.Next() {
-			v(4, "  %v %v", iter.Key(), iter.Value())
+			v(4, "  %v", iter.Key())
 		}
 		v(4, "  ERR: %v", iter.Close())
 	}
@@ -113,47 +113,35 @@ func (i *IndexFile) PortPositions(ctx context.Context, port uint16) (base.Positi
 	return i.positionsSingleKey(ctx, buf[:])
 }
 
-func preceedingBytes(b []byte) (out []byte) {
-	out = make([]byte, len(b))
-	copy(out, b)
-	for i := len(b) - 1; i >= 0; i-- {
-		if out[i] == 0 {
-			out[i] = 0xff
-		} else {
-			out[i]--
-			return
-		}
-	}
-	return nil
-}
-
 // Dump writes out a debug version of the entire index to the given writer.
 func (i *IndexFile) Dump(out io.Writer, start, finish []byte) {
 	for iter := i.ss.Find(start, nil); iter.Next() && bytes.Compare(iter.Key(), finish) <= 0; {
-		fmt.Fprintf(out, "%v\t%v\n", hex.EncodeToString(iter.Key()), hex.EncodeToString(iter.Value()))
+		fmt.Fprintf(out, "%v\n", hex.EncodeToString(iter.Key()))
 	}
 }
 
 func (i *IndexFile) positions(ctx context.Context, from, to []byte) (out base.Positions, _ error) {
 	v(4, "%q multi key iterator %v:%v start", i.name, from, to)
-	iter := i.ss.Find(preceedingBytes(from), nil)
-	found := false
-	last := make([]byte, len(from))
+	if len(from) != len(to) {
+		return nil, fmt.Errorf("invalid from/to lengths don't match: %v %v", from, to)
+	}
+	iter := i.ss.Find(from, nil)
+	keyLen := len(from)
+	last := make([]byte, keyLen)
 	copy(last, from)
 	var current base.Positions
 	for iter.Next() && !base.ContextDone(ctx) {
-		if !found && bytes.Compare(iter.Key(), from) < 0 {
-			continue
-		}
+		// iter.Key() contains the concatenation of key and pos, where pos are the
+		// last 4 bytes.
 		if to != nil && bytes.Compare(iter.Key(), to) > 0 {
 			break
 		}
-		if bytes.Compare(iter.Key(), last) != 0 {
+		if bytes.Compare(iter.Key()[:keyLen], last) != 0 {
 			out = out.Union(current)
 			current = base.Positions{}
-			copy(last, iter.Key())
+			copy(last, iter.Key()[:keyLen])
 		}
-		pos := binary.BigEndian.Uint32(iter.Value())
+		pos := binary.BigEndian.Uint32(iter.Key()[keyLen:])
 		current = append(current, int64(pos))
 	}
 	if err := ctx.Err(); err != nil {

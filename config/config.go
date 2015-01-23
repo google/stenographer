@@ -129,9 +129,6 @@ func (st *stenotypeThread) getIndexFilePath(filename string) string {
 }
 
 func (st *stenotypeThread) syncFilesWithDisk() {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
 	newFilesCnt := 0
 	for _, filename := range st.listPacketFilesOnDisk() {
 		if st.files[filename] != nil {
@@ -190,7 +187,9 @@ func (st *stenotypeThread) cleanUpOnLowDiskSpace() {
 			return
 		}
 		v(0, "Thread %v disk usage is high (packet path=%q): %d%% free\n", st.id, st.packetPath, df)
-		if err := st.deleteOlderThreadFiles(); err != nil {
+		if len(st.files) == 0 {
+			log.Printf("Thread %v could not free up space:  no files available", st.id)
+		} else if err := st.deleteOldestThreadFile(); err != nil {
 			log.Printf("Thread %v could not free up space by deleting old files: %v", st.id, err)
 			return
 		}
@@ -201,14 +200,11 @@ func (st *stenotypeThread) cleanUpOnLowDiskSpace() {
 	}
 }
 
-func (st *stenotypeThread) deleteOlderThreadFiles() error {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
-	oldestFile := st.getOldestFile()
-	if oldestFile == "" {
-		return fmt.Errorf("Thread %v no files tracked", st.id)
-	}
+// deleteOldestThreadFile deletes the single oldest file held by this thread.
+// It should only be called if the thread has at least one file (should be
+// checked by the caller beforehand).
+func (st *stenotypeThread) deleteOldestThreadFile() error {
+	oldestFile := st.getSortedFiles()[0]
 	v(1, "Thread %v removing %q", st.id, oldestFile)
 	if err := os.Remove(st.getPacketFilePath(oldestFile)); err != nil {
 		return err
@@ -219,22 +215,17 @@ func (st *stenotypeThread) deleteOlderThreadFiles() error {
 	return st.untrackFile(oldestFile)
 }
 
-// getOldesFile returns the oldest known file for the given thread. Packet and
-// index files are named after the UNIX timestamp when they were created.
-// Because they are also rotated, we know that the file with the "smallest"
-// filename (as in first when lexicographically sorted) is the oldest one.
+// getSortedFiles returns files frm the thread in the order they were created,
+// and thus in the order their packets should appear.
 //
 // This method should only be called once the st.mu has been acquired!
-func (st *stenotypeThread) getOldestFile() string {
-	if len(st.files) == 0 {
-		return ""
-	}
+func (st *stenotypeThread) getSortedFiles() []string {
 	var sortedFiles []string
 	for name, _ := range st.files {
 		sortedFiles = append(sortedFiles, name)
 	}
 	sort.Strings(sortedFiles)
-	return sortedFiles[0]
+	return sortedFiles
 }
 
 // This method should only be called once the st.mu has been acquired!
@@ -251,17 +242,29 @@ func (st *stenotypeThread) untrackFile(filename string) error {
 	return nil
 }
 
+const concurrentBlockfileReadsPerThread = 10
+
 func (st *stenotypeThread) lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	st.mu.RLock()
-	defer st.mu.RUnlock()
-	var inputs []*base.PacketChan
-	for _, file := range st.files {
-		inputs = append(inputs, file.Lookup(ctx, q))
-	}
-	// BUG:  MergePacketChans returns asynchronously, so there's a chance
-	// that we'll lose our st.mu lock while still looking up packets, then
-	// close/delete files.  Figure out how to fix this.
-	return base.MergePacketChans(ctx, inputs)
+	inputs := make(chan *base.PacketChan, concurrentBlockfileReadsPerThread)
+	out := base.ConcatPacketChans(ctx, inputs)
+	go func() {
+		defer func() {
+			close(inputs)
+			<-out.Done()
+			st.mu.RUnlock()
+		}()
+		for _, file := range st.getSortedFiles() {
+			packets := base.NewPacketChan(100)
+			select {
+			case inputs <- packets:
+				go st.files[file].Lookup(ctx, q, packets)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out
 }
 
 // ReadConfigFile reads in the given JSON encoded configuration file and returns
@@ -413,8 +416,10 @@ func (d *Directory) callEvery(cb func(), freq time.Duration) {
 
 func (d *Directory) syncFiles() {
 	for _, t := range d.threads {
+		t.mu.Lock()
 		t.syncFilesWithDisk()
 		t.cleanUpOnLowDiskSpace()
+		t.mu.Unlock()
 	}
 }
 

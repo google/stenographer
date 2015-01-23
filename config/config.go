@@ -129,9 +129,6 @@ func (st *stenotypeThread) getIndexFilePath(filename string) string {
 }
 
 func (st *stenotypeThread) syncFilesWithDisk() {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
 	newFilesCnt := 0
 	for _, filename := range st.listPacketFilesOnDisk() {
 		if st.files[filename] != nil {
@@ -192,7 +189,7 @@ func (st *stenotypeThread) cleanUpOnLowDiskSpace() {
 		v(0, "Thread %v disk usage is high (packet path=%q): %d%% free\n", st.id, st.packetPath, df)
 		if len(st.files) == 0 {
 			log.Printf("Thread %v could not free up space:  no files available", st.id)
-		} else if err := st.deleteOlderThreadFiles(); err != nil {
+		} else if err := st.deleteOldestThreadFile(); err != nil {
 			log.Printf("Thread %v could not free up space by deleting old files: %v", st.id, err)
 			return
 		}
@@ -203,10 +200,10 @@ func (st *stenotypeThread) cleanUpOnLowDiskSpace() {
 	}
 }
 
-func (st *stenotypeThread) deleteOlderThreadFiles() error {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
+// deleteOldestThreadFile deletes the single oldest file held by this thread.
+// It should only be called if the thread has at least one file (should be
+// checked by the caller beforehand).
+func (st *stenotypeThread) deleteOldestThreadFile() error {
 	oldestFile := st.getSortedFiles()[0]
 	v(1, "Thread %v removing %q", st.id, oldestFile)
 	if err := os.Remove(st.getPacketFilePath(oldestFile)); err != nil {
@@ -419,8 +416,10 @@ func (d *Directory) callEvery(cb func(), freq time.Duration) {
 
 func (d *Directory) syncFiles() {
 	for _, t := range d.threads {
+		t.mu.Lock()
 		t.syncFilesWithDisk()
 		t.cleanUpOnLowDiskSpace()
+		t.mu.Unlock()
 	}
 }
 

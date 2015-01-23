@@ -193,8 +193,7 @@ void ParseOptions(int argc, char** argv) {
        "can be obtained from a human readable filter expression using the "
        "provided compile_bpf.sh script."},
       {"seccomp", 315, s, 0, "Seccomp style, one of 'none', 'trace', 'kill'."},
-      {0},
-  };
+      {0}, };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
 }

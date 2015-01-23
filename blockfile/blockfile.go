@@ -180,8 +180,7 @@ func (b *BlockFile) AllPackets() *base.PacketChan {
 // Positions returns the positions in the blockfile of all packets matched by
 // the passed-in query.
 func (b *BlockFile) Positions(ctx context.Context, q query.Query) (base.Positions, error) {
-	out, err := q.LookupIn(ctx, b.i)
-	return out, err
+	return q.LookupIn(ctx, b.i)
 }
 
 // Lookup returns all packets in the blockfile matched by the passed-in query.

@@ -364,8 +364,18 @@ inline std::string UnhiddenFile(const std::string& dirname, int64_t micros) {
   return dirname + std::to_string(micros);
 }
 
+// Watchdog is a simple thread which causes a process crash if certain code
+// paths aren't hit on a regular basis.
+//
+// Usage:
+//   Watchdog dog("description", 5 /*seconds*/);
+//   while (true) {
+//     dostuff();
+//     dog.Feed();  // If not called every 5 seconds, crashes.
+//   }
+//   // dog falls out of scope, its thread is canceled and it quietly goes away.
 class Watchdog {
- public:
+ private:
   void Watch() {
     auto last = ctr_;
     while (true) {
@@ -385,6 +395,7 @@ class Watchdog {
       LOG(FATAL) << "WATCHDOG FAILURE: " << description_;
     }
   }
+ public:
   Watchdog(std::string description, int seconds)
       : description_(description), seconds_(seconds), ctr_(0), done_(false) {
     t_ = new std::thread(&Watchdog::Watch, this);

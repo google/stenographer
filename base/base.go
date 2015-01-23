@@ -135,17 +135,19 @@ func ConcatPacketChans(ctx context.Context, in <-chan *PacketChan) *PacketChan {
 		for c := range in {
 			c := c
 			defer c.Discard()
-			select {
-			case pkt := <-c.Receive():
-				if pkt != nil {
-					out.Send(pkt)
-				}
-				if err := c.Err(); err != nil {
-					out.Close(err)
+			for c.Err() == nil {
+				select {
+				case pkt := <-c.Receive():
+					if pkt != nil {
+						out.Send(pkt)
+					}
+				case <-ctx.Done():
+					out.Close(ctx.Err())
 					return
 				}
-			case <-ctx.Done():
-				out.Close(ctx.Err())
+			}
+			if err := c.Err(); err != nil {
+				out.Close(err)
 				return
 			}
 		}

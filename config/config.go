@@ -72,20 +72,22 @@ type Config struct {
 }
 
 type stenotypeThread struct {
-	id          int
-	indexPath   string
-	packetPath  string
-	minDiskFree int
-	files       map[string]*blockfile.BlockFile
-	mu          sync.RWMutex
+	id           int
+	indexPath    string
+	packetPath   string
+	minDiskFree  int
+	files        map[string]*blockfile.BlockFile
+	mu           sync.RWMutex
+	fileLastSeen time.Time
 }
 
 func newStenotypeThread(i int, baseDir string) *stenotypeThread {
 	return &stenotypeThread{
-		id:         i,
-		indexPath:  filepath.Join(baseDir, indexPrefix+strconv.Itoa(i)),
-		packetPath: filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
-		files:      map[string]*blockfile.BlockFile{},
+		id:           i,
+		indexPath:    filepath.Join(baseDir, indexPrefix+strconv.Itoa(i)),
+		packetPath:   filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
+		files:        map[string]*blockfile.BlockFile{},
+		fileLastSeen: time.Now(),
 	}
 }
 
@@ -142,6 +144,7 @@ func (st *stenotypeThread) syncFilesWithDisk() {
 			continue
 		}
 		newFilesCnt++
+		st.fileLastSeen = time.Now()
 	}
 	if newFilesCnt > 0 {
 		v(0, "Thread %v found %d new blockfiles", st.id, newFilesCnt)
@@ -249,6 +252,12 @@ func (st *stenotypeThread) untrackFile(filename string) error {
 	b.Close()
 	delete(st.files, filename)
 	return nil
+}
+
+func (s *stenotypeThread) FileLastSeen() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.fileLastSeen
 }
 
 func (st *stenotypeThread) lookup(ctx context.Context, q query.Query) *base.PacketChan {
@@ -541,4 +550,15 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 			}
 		}
 	})
+}
+
+func (d *Directory) MinLastFileSeen() time.Time {
+	var t time.Time
+	for _, thread := range d.threads {
+		ls := thread.FileLastSeen()
+		if t.IsZero() || ls.Before(t) {
+			t = ls
+		}
+	}
+	return t
 }

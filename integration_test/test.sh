@@ -125,8 +125,6 @@ fi
 
 Info "Sending packets to $DUMMY"
 sudo tcpreplay -i $DUMMY --topspeed /tmp/steno_integration_test.pcap
-
-Info "Waiting for steno to write out packets/index"
 Sleep 100
 
 Info "Looking for packets"
@@ -134,5 +132,15 @@ TestCountPackets "port 21582" 1018
 TestCountPackets "host 0.100.194.86" 2
 TestCountPackets "net 0.0.0.0/8" 580
 TestCountPackets "net 172.0.0.0/8 and port 23" 292041
+
+Info "Sending packets to $DUMMY a second time"
+sudo tcpreplay -i $DUMMY --topspeed /tmp/steno_integration_test.pcap
+Sleep 100
+
+Info "Looking for packets a second time"
+TestCountPackets "port 21582" 2036
+TestCountPackets "host 0.100.194.86" 4
+TestCountPackets "net 0.0.0.0/8" 1160
+TestCountPackets "net 172.0.0.0/8 and port 23" 584082
 
 Info "Done"

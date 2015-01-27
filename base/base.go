@@ -49,9 +49,10 @@ type Packet struct {
 // PacketChan provides an async method for passing multiple ordered packets
 // between goroutines.
 type PacketChan struct {
-	mu  sync.Mutex
-	c   chan *Packet
-	err error
+	mu   sync.Mutex
+	c    chan *Packet
+	err  error
+	done chan struct{}
 }
 
 // Receive provides the channel from which to read packets.  It always
@@ -68,12 +69,19 @@ func (p *PacketChan) Close(err error) {
 	p.err = err
 	p.mu.Unlock()
 	close(p.c)
+	close(p.done)
+}
+
+// Done returns a channel that is closed when this packet channel is complete.
+func (p *PacketChan) Done() <-chan struct{} {
+	return p.done
 }
 
 // NewPacketChan returns a new PacketChan channel for passing packets around.
 func NewPacketChan(buffer int) *PacketChan {
 	return &PacketChan{
-		c: make(chan *Packet, buffer),
+		c:    make(chan *Packet, buffer),
+		done: make(chan struct{}),
 	}
 }
 
@@ -118,6 +126,34 @@ func (p *packetHeap) Pop() (x interface{}) {
 	index := len(*p) - 1
 	*p, x = (*p)[:index], (*p)[index]
 	return
+}
+
+// ConcatPacketChans concatenates packet chans in order.
+func ConcatPacketChans(ctx context.Context, in <-chan *PacketChan) *PacketChan {
+	out := NewPacketChan(100)
+	go func() {
+		for c := range in {
+			c := c
+			defer c.Discard()
+			for c.Err() == nil {
+				select {
+				case pkt := <-c.Receive():
+					if pkt != nil {
+						out.Send(pkt)
+					}
+				case <-ctx.Done():
+					out.Close(ctx.Err())
+					return
+				}
+			}
+			if err := c.Err(); err != nil {
+				out.Close(err)
+				return
+			}
+		}
+		out.Close(nil)
+	}()
+	return out
 }
 
 // MergePacketChans merges an incoming set of packet chans, each sorted by

@@ -209,8 +209,6 @@ Notification privileges_dropped;
 Notification main_complete;
 Barrier* sockets_created;
 
-void ThreadExittedUnexpectedly(void*) { LOG(FATAL) << "Thread exit"; }
-
 void DropPrivileges() {
   LOG(INFO) << "Dropping privileges";
   if (getgid() == 0 || flag_gid != "") {
@@ -339,8 +337,9 @@ Error SetAffinity(int cpu) {
   return Errno(sched_setaffinity(0, sizeof(cpus), &cpus));
 }
 
-void WriteIndexes(st::ProducerConsumerQueue* write_index) {
-  pthread_cleanup_push(&ThreadExittedUnexpectedly, NULL);
+void WriteIndexes(int thread, st::ProducerConsumerQueue* write_index) {
+  Watchdog dog("WriteIndexes thread " + std::to_string(thread),
+               flag_fileage_sec * 3);
   pid_t tid = syscall(SYS_gettid);
   LOG_IF_ERROR(Errno(setpriority(PRIO_PROCESS, tid, flag_index_nicelevel)),
                "setpriority");
@@ -355,8 +354,8 @@ void WriteIndexes(st::ProducerConsumerQueue* write_index) {
     }
     LOG_IF_ERROR(i->Flush(), "index flush");
     delete i;
+    dog.Feed();
   }
-  pthread_cleanup_pop(0);
   LOG(V1) << "Exiting write index thread";
 }
 
@@ -370,7 +369,6 @@ void HandleSignals(int sig) {
 }
 
 void HandleSignalsThread() {
-  pthread_cleanup_push(&ThreadExittedUnexpectedly, NULL);
   LOG(V1) << "Handling signals";
   struct sigaction handler;
   handler.sa_handler = &HandleSignals;
@@ -380,12 +378,10 @@ void HandleSignalsThread() {
   sigaction(SIGTERM, &handler, NULL);
   DropCommonThreadPrivileges();
   main_complete.WaitForNotification();
-  pthread_cleanup_pop(0);
   LOG(V1) << "Signal handling done";
 }
 
 void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
-  pthread_cleanup_push(&ThreadExittedUnexpectedly, NULL);
   if (flag_threads > 1) {
     LOG_IF_ERROR(SetAffinity(thread), "set affinity");
   }
@@ -397,6 +393,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   options.tp_frame_size = 16 << 10;  // does not matter at all
   options.tp_frame_nr = 0;           // computed for us.
   options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
+  Watchdog dog("Thread " + std::to_string(thread), flag_fileage_sec * 2);
 
   // Set up AF_PACKET packet reading.
   PacketsV3::Builder builder;
@@ -505,6 +502,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
         LOG(ERROR) << "Unable to get stats: " << *stats_err;
       }
     }
+    dog.Feed();
   }
   LOG(V1) << "Finishing thread " << thread;
   // Write out the last index.
@@ -513,7 +511,6 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   }
   // Close last open file.
   CHECK_SUCCESS(output.Flush());
-  pthread_cleanup_pop(0);
   LOG(INFO) << "Finished thread " << thread << " successfully";
 }
 
@@ -554,7 +551,7 @@ int Main(int argc, char** argv) {
   if (flag_index) {
     LOG(V1) << "Starting indexing threads";
     for (int i = 0; i < flag_threads; i++) {
-      std::thread* t = new std::thread(&WriteIndexes, &write_index);
+      std::thread* t = new std::thread(&WriteIndexes, i, &write_index);
       index_threads.push_back(t);
     }
   }

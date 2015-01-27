@@ -76,6 +76,10 @@ func (h *httpLog) WriteHeader(code int) {
 
 // String implements fmt.Stringer.
 func (h *httpLog) String() string {
+	var errstr string
+	if h.err != nil {
+		errstr = h.err.Error()
+	}
 	return fmt.Sprintf("Requester:%q Request:\"%v %v %v\" Time:%v Bytes:%v Code:%q Err:%q%v",
 		h.r.RemoteAddr,
 		h.r.Method,
@@ -84,6 +88,6 @@ func (h *httpLog) String() string {
 		time.Since(h.start),
 		h.nBytes,
 		http.StatusText(h.code),
-		h.err.Error(),
+		errstr,
 		h.body)
 }

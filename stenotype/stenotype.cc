@@ -443,7 +443,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
     LOG_IF_ERROR(output.CheckForCompletedOps(false), "check for completed");
     // Read in a new block from AF_PACKET.
     Block b;
-    CHECK_SUCCESS(v3->NextBlock(&b, true));
+    CHECK_SUCCESS(v3->NextBlock(&b, kNumMillisPerSecond));
     if (b.Empty()) {
       continue;
     }

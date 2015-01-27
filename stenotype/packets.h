@@ -125,10 +125,8 @@ class PacketsV3 {
   // blocks in each PacketsV3... if you grab all of them without releasing any,
   // you'll deadlock your system.
   //
-  // If 'block' is true, blocks until a new block is available.  Otherwise, may
-  // return immediately without a new block.  In that case, will not change *b
-  // but will return SUCCESS.
-  Error NextBlock(Block* b, bool block);
+  // This will block at least kMinPollMillis and at most poll_millis.
+  Error NextBlock(Block* b, int poll_millis);
   // Get all currently available statistics about operation so far.
   Error GetStats(Stats* stats);
 
@@ -180,7 +178,8 @@ class PacketsV3 {
 
  private:
   PacketsV3(State* state);
-  Error PollForPacket();
+  // This will block at least kMinPollMillis and at most poll_millis.
+  Error PollForPacket(int poll_millis);
 
   State state_;
   int offset_;   // next block number to be processed.

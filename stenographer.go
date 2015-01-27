@@ -117,6 +117,8 @@ func (sr *stenotypeRunner) runStaleFileCheck() {
 
 var stenotypeOutput io.Writer = os.Stderr
 
+// runStenotypeOnce runs the stenotype binary a single time, returning any
+// errors associated with its running.
 func (sr *stenotypeRunner) runStenotypeOnce() error {
 	// Start running stenotype.
 	sr.cmd.Stdout = os.Stdout

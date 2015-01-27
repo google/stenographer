@@ -135,12 +135,14 @@ func ConcatPacketChans(ctx context.Context, in <-chan *PacketChan) *PacketChan {
 		for c := range in {
 			c := c
 			defer c.Discard()
+		L:
 			for c.Err() == nil {
 				select {
 				case pkt := <-c.Receive():
-					if pkt != nil {
-						out.Send(pkt)
+					if pkt == nil {
+						break L
 					}
+					out.Send(pkt)
 				case <-ctx.Done():
 					out.Close(ctx.Err())
 					return

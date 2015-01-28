@@ -22,53 +22,8 @@
 BINDIR="${BINDIR-/usr/local/bin}"
 OUTDIR="${OUTDIR-/tmp/stenographer}"
 
-function Info {
-  echo -e -n '\e[7m'
-  echo "$@"
-  echo -e -n '\e[0m'
-}
-
-function Error {
-  echo -e -n '\e[41m'
-  echo "$@"
-  echo -e -n '\e[0m'
-}
-
-function Kill {
-  sudo killall "$1" "$@" 2>/dev/null >/dev/null
-}
-
-function Running {
-  Kill -0 "$1"
-}
-
-function ReallyKill {
-  if Running "$1"; then
-    Info "Killing '$1'"
-    Kill "$1"
-    sleep 5
-  fi
-  if Running "$1"; then
-    Info "Killing '$1' again"
-    Kill "$1"
-    sleep 5
-  fi
-  if Running "$1"; then
-    Error "Killing '$1' with fire"
-    Kill -9 "$1"
-    sleep 1
-  fi
-}
-
-function InstallPackage {
-  Info "Checking for package '$1'"
-  if ! dpkg -s $1 >/dev/null 2>/dev/null; then
-    Info "Have to install package $1"
-    sudo apt-get install $1
-  fi
-}
-
 cd "$(dirname $0)"
+source lib.sh
 
 Info "Making sure we have sudo access"
 sudo cat /dev/null
@@ -130,7 +85,7 @@ popd
 sudo cp -vf stenotype/stenotype "$BINDIR/stenotype"
 sudo chown stenographer:root "$BINDIR/stenotype"
 sudo chmod 0700 "$BINDIR/stenotype"
-sudo setcap 'CAP_NET_RAW+ep CAP_NET_ADMIN+ep CAP_IPC_LOCK+ep' "$BINDIR/stenotype"
+SetCapabilities "$BINDIR/stenotype"
 
 Info "Copying stenoread/stenocurl"
 sudo cp -vf stenoread "$BINDIR/stenoread"

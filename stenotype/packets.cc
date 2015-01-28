@@ -287,13 +287,13 @@ Error PacketsV3::Builder::CreateSocket(int socktype) {
   return Errno(state_.fd);
 }
 
-Error PacketsV3::PollForPacket() {
+Error PacketsV3::PollForPacket(int poll_millis) {
   struct pollfd pfd;
   pfd.fd = state_.fd;
   pfd.events = POLLIN;
   pfd.revents = 0;
   int64_t duration_micros = -GetCurrentTimeMicros();
-  int ret = poll(&pfd, 1, -1);
+  int ret = poll(&pfd, 1, poll_millis);
   Error out = Errno(ret);
   duration_micros += GetCurrentTimeMicros();
   SleepForMicroseconds(kMinPollMillis * kNumMicrosPerMilli - duration_micros);
@@ -356,7 +356,7 @@ Error PacketsV3::Builder::SetUp(int socktype, struct tpacket_req3 tp) {
   return SUCCESS;
 }
 
-Error PacketsV3::NextBlock(Block* b, bool poll_once) {
+Error PacketsV3::NextBlock(Block* b, int poll_millis) {
   if (pos_.Empty()) {
     // If we're finished with the current block, move to the next block.
     offset_ = (offset_ + 1) % state_.num_blocks;
@@ -365,12 +365,9 @@ Error PacketsV3::NextBlock(Block* b, bool poll_once) {
     pos_.ResetTo(state_.ring + offset_ * state_.block_size, state_.block_size,
                  &block_mus_[offset_]);
   }
-  while (!pos_.ReadyForUser()) {
+  if (!pos_.ReadyForUser()) {
     stats_.polls++;
-    RETURN_IF_ERROR(PollForPacket(), "polling for packet");
-    if (poll_once) {
-      break;
-    }
+    RETURN_IF_ERROR(PollForPacket(poll_millis), "polling for packet");
   }
   if (pos_.ReadyForUser()) {
     pos_.UpdateStats(&stats_);

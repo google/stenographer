@@ -16,18 +16,19 @@
 
 DUMMY="${DUMMY-dummy0}"
 PORT="${PORT-9123}"
+BASEDIR="${BASEDIR-/tmp}"
 
 set -e
 cd $(dirname $0)
 source ../lib.sh
 
 function PullDownTestData {
-  if [ ! -f /tmp/steno_integration_test.pcap ]; then
+  if [ ! -f $BASEDIR/steno_integration_test.pcap ]; then
     Info "Pulling down pcap data"
     # Test data pulled from
     # http://www.ll.mit.edu/mission/communications/cyber/CSTcorpora/ideval/data/2000/LLS_DDOS_1.0.html
-    curl 'http://www.ll.mit.edu/mission/communications/cyber/CSTcorpora/ideval/data/2000/LLS_DDOS_1.0/data_and_labeling/tcpdump_inside/LLS_DDOS_1.0-inside.dump.gz' > /tmp/steno_integration_test.pcap.gz
-    gunzip /tmp/steno_integration_test.pcap.gz
+    curl 'http://www.ll.mit.edu/mission/communications/cyber/CSTcorpora/ideval/data/2000/LLS_DDOS_1.0/data_and_labeling/tcpdump_inside/LLS_DDOS_1.0-inside.dump.gz' > $BASEDIR/steno_integration_test.pcap.gz
+    gunzip $BASEDIR/steno_integration_test.pcap.gz
   fi
 }
 
@@ -37,8 +38,10 @@ function TestCountPackets {
   Info "Looking $WANT packets from filter '$FILTER'"
   GOT="$(STENOGRAPHER_CONFIG="$OUTDIR/config" ../stenoread "$FILTER" -n | wc -l)"
   if [ "$GOT" != "$WANT" ]; then
-    Error "FAILED: Want: $WANT  Got: $GOT"
+    Error " - FAILED for filter '$FILTER': Want: $WANT  Got: $GOT"
     exit 1
+  else
+    Info " - SUCCESS: Got $GOT packets from filter '$FILTER'"
   fi
 }
 
@@ -60,7 +63,7 @@ popd
 popd
 
 Info "Setting up output directory"
-OUTDIR="$(mktemp -d /tmp/steno.XXXXXXXXXX)"
+OUTDIR="$(mktemp -d $BASEDIR/steno.XXXXXXXXXX)"
 Info "Writing output to directory '$OUTDIR'"
 
 mkdir $OUTDIR/{pkt,idx,certs}
@@ -84,7 +87,7 @@ function CleanUp {
   fi
   Info "Deleting $DUMMY interface"
   Info "Removing $OUTDIR"
-  rm -rf $OUTDIR
+  rm -rfv $OUTDIR
   sudo ifconfig $DUMMY down
   sudo ip link del dummy0
 }
@@ -124,7 +127,7 @@ if [ -z "$STENOTYPE_PID" ]; then
 fi
 
 Info "Sending packets to $DUMMY"
-sudo tcpreplay -i $DUMMY --topspeed /tmp/steno_integration_test.pcap
+sudo tcpreplay -i $DUMMY --topspeed $BASEDIR/steno_integration_test.pcap
 Sleep 100
 
 Info "Looking for packets"
@@ -134,13 +137,19 @@ TestCountPackets "net 0.0.0.0/8" 580
 TestCountPackets "net 172.0.0.0/8 and port 23" 292041
 
 Info "Sending packets to $DUMMY a second time"
-sudo tcpreplay -i $DUMMY --topspeed /tmp/steno_integration_test.pcap
+sudo tcpreplay -i $DUMMY --topspeed $BASEDIR/steno_integration_test.pcap
 Sleep 100
 
-Info "Looking for packets a second time"
-TestCountPackets "port 21582" 2036
-TestCountPackets "host 0.100.194.86" 4
-TestCountPackets "net 0.0.0.0/8" 1160
-TestCountPackets "net 172.0.0.0/8 and port 23" 584082
+Info "Looking for packets a second time, in parallel"
+TESTPIDS=""
+TestCountPackets "port 21582" 2036 &
+TESTPIDS="$TESTPIDS $!"
+TestCountPackets "host 0.100.194.86" 4 &
+TESTPIDS="$TESTPIDS $!"
+TestCountPackets "net 0.0.0.0/8" 1160 &
+TESTPIDS="$TESTPIDS $!"
+TestCountPackets "net 172.0.0.0/8 and port 23" 584082 &
+TESTPIDS="$TESTPIDS $!"
+wait $TESTPIDS
 
 Info "Done"

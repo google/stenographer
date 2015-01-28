@@ -395,6 +395,7 @@ class Watchdog {
       LOG(FATAL) << "WATCHDOG FAILURE: " << description_;
     }
   }
+
  public:
   Watchdog(std::string description, int seconds)
       : description_(description), seconds_(seconds), ctr_(0), done_(false) {

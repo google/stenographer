@@ -543,7 +543,7 @@ int Main(int argc, char** argv) {
   sigaddset(&sigset, SIGTERM);
   CHECK_SUCCESS(Errno(pthread_sigmask(SIG_BLOCK, &sigset, NULL)));
 
-  st::ProducerConsumerQueue write_index;
+  auto write_indexes = new st::ProducerConsumerQueue[flag_threads];
   // To avoid blocking on index writes, each writer thread has a secondary
   // thread just for creating and writing the indexes.  We pass to-write
   // indexes through to the writing thread via the write_index FIFO queue.
@@ -551,7 +551,7 @@ int Main(int argc, char** argv) {
   if (flag_index) {
     LOG(V1) << "Starting indexing threads";
     for (int i = 0; i < flag_threads; i++) {
-      std::thread* t = new std::thread(&WriteIndexes, i, &write_index);
+      std::thread* t = new std::thread(&WriteIndexes, i, &write_indexes[i]);
       index_threads.push_back(t);
     }
   }
@@ -560,7 +560,7 @@ int Main(int argc, char** argv) {
   std::vector<std::thread*> threads;
   for (int i = 0; i < flag_threads; i++) {
     LOG(V1) << "Starting thread " << i;
-    threads.push_back(new std::thread(&RunThread, i, &write_index));
+    threads.push_back(new std::thread(&RunThread, i, &write_indexes[i]));
   }
   sockets_created->Block();
   DropPrivileges();
@@ -576,15 +576,16 @@ int Main(int argc, char** argv) {
   }
   LOG(V1) << "Finished all threads";
   if (flag_index) {
-    write_index.Close();
-    LOG(V1) << "Waiting for last index to write";
-    for (auto thread : index_threads) {
-      CHECK(thread->joinable());
-      thread->join();
+    for (int i = 0; i < flag_threads; i++) {
+      LOG(V1) << "Closing write index queue " << i << ", waiting for thread";
+      write_indexes[i].Close();
+      CHECK(index_threads[i]->joinable());
+      index_threads[i]->join();
       LOG(V1) << "Index thread finished";
-      delete thread;
+      delete index_threads[i];
     }
   }
+  delete[] write_indexes;
   LOG(INFO) << "Process exiting successfully";
   main_complete.Notify();
   return 0;

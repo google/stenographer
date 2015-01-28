@@ -435,6 +435,7 @@ func (d *Directory) removeHiddenFiles(dirs []string) {
 		files, err := ioutil.ReadDir(dir)
 		if err != nil {
 			v(1, "Hidden file cleanup failed, could not read directory: %v", err)
+			continue
 		}
 		for _, file := range files {
 			if !file.IsDir() {

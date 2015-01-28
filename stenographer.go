@@ -90,7 +90,11 @@ func main() {
 
 	// Start stenotype with period run check
 	// TODO: refactor to stop passing around stenotype output directories
-	go dir.RunStenotype([]string{conf.Threads[0].PacketsDirectory, conf.Threads[0].IndexDirectory})
+	var dirs []string
+	for _, thread := range conf.Threads {
+		dirs = append(dirs, thread.PacketsDirectory, thread.IndexDirectory)
+	}
+	go dir.RunStenotype(dirs)
 
 	// HTTP handling
 	conf.ExportDebugHandlers(http.DefaultServeMux)

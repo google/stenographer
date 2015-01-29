@@ -90,13 +90,13 @@ bool Block::ReadyForUser() { return Status() & TP_STATUS_USER; }
 
 void Block::ResetTo(char* data, size_t sz, std::mutex* mu) {
   Done();
-  LOG(V2) << "New block " << reinterpret_cast<uintptr_t>(data);
+  VLOG(2) << "New block " << reinterpret_cast<uintptr_t>(data);
   start_ = data;
   size_ = sz;
   mu_ = mu;
   pkts_in_use_ = 0;
   if (mu_) {
-    LOG(V3) << "BlockReset m" << int64_t(mu_) << " IN b" << int64_t(this);
+    VLOG(3) << "BlockReset m" << int64_t(mu_) << " IN b" << int64_t(this);
     mu_->lock();
   }
   if (!start_) {
@@ -113,14 +113,14 @@ void Block::Done() {
     start_ = NULL;
   }
   if (mu_ != NULL) {
-    LOG(V3) << "BlockDone m" << int64_t(mu_) << " IN b" << int64_t(this);
+    VLOG(3) << "BlockDone m" << int64_t(mu_) << " IN b" << int64_t(this);
     mu_->unlock();
     mu_ = NULL;
   }
 }
 
 void Block::ReturnToKernel() {
-  LOG(V2) << "Returning to kernel: " << reinterpret_cast<uintptr_t>(block_);
+  VLOG(2) << "Returning to kernel: " << reinterpret_cast<uintptr_t>(block_);
   block_->hdr.bh1.block_status = TP_STATUS_KERNEL;
 }
 
@@ -259,7 +259,7 @@ Error PacketsV3::Builder::SetVersion() {
 Error PacketsV3::Builder::SetFanout(uint16_t fanout_type, uint16_t fanout_id) {
   RETURN_IF_ERROR(BadState(), "Builder");
   // We can't actually set fanout until we bind, so just save it instead.
-  LOG(V1) << "Setting fanout to type " << fanout_type << " ID " << fanout_id;
+  VLOG(1) << "Setting fanout to type " << fanout_type << " ID " << fanout_id;
   fanout_ = fanout_type;
   fanout_ <<= 16;
   fanout_ |= fanout_id;
@@ -288,6 +288,7 @@ Error PacketsV3::Builder::CreateSocket(int socktype) {
 }
 
 Error PacketsV3::PollForPacket(int poll_millis) {
+  VLOG(4) << "Polling for packets";
   struct pollfd pfd;
   pfd.fd = state_.fd;
   pfd.events = POLLIN;
@@ -320,10 +321,10 @@ PacketsV3::~PacketsV3() {
   pos_.Done();
   for (size_t i = 0; i < state_.num_blocks; i++) {
     // Wait for all blocks to be returned to kernel.
-    LOG(V3) << "PacketsV3Destructor lock m" << int64_t(&block_mus_[i]);
+    VLOG(3) << "PacketsV3Destructor lock m" << int64_t(&block_mus_[i]);
     block_mus_[i].lock();
     block_mus_[i].unlock();
-    LOG(V3) << "PacketsV3Destructor unlock m" << int64_t(&block_mus_[i]);
+    VLOG(3) << "PacketsV3Destructor unlock m" << int64_t(&block_mus_[i]);
   }
   delete[] block_mus_;
 }
@@ -371,7 +372,7 @@ Error PacketsV3::NextBlock(Block* b, int poll_millis) {
   }
   if (pos_.ReadyForUser()) {
     pos_.UpdateStats(&stats_);
-    LOG(V3) << "PacketsV3NextBlock b" << int64_t(&pos_) << " INTO b"
+    VLOG(3) << "PacketsV3NextBlock b" << int64_t(&pos_) << " INTO b"
             << int64_t(b);
     pos_.Swap(b);
   }

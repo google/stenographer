@@ -14,9 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+BASEDIR="${BASEDIR-/tmp}"
 DUMMY="${DUMMY-dummy0}"
 PORT="${PORT-9123}"
-BASEDIR="${BASEDIR-/tmp}"
+STRACE="$STRACE"  # Override to strace stenotype and stenographer
+KEEPFILES="$KEEPFILES"  # Override to not delete files
 
 set -e
 cd $(dirname $0)
@@ -29,19 +31,6 @@ function PullDownTestData {
     # http://www.ll.mit.edu/mission/communications/cyber/CSTcorpora/ideval/data/2000/LLS_DDOS_1.0.html
     curl 'http://www.ll.mit.edu/mission/communications/cyber/CSTcorpora/ideval/data/2000/LLS_DDOS_1.0/data_and_labeling/tcpdump_inside/LLS_DDOS_1.0-inside.dump.gz' > $BASEDIR/steno_integration_test.pcap.gz
     gunzip $BASEDIR/steno_integration_test.pcap.gz
-  fi
-}
-
-function TestCountPackets {
-  FILTER="$1"
-  WANT="$2"
-  Info "Looking $WANT packets from filter '$FILTER'"
-  GOT="$(STENOGRAPHER_CONFIG="$OUTDIR/config" ../stenoread "$FILTER" -n | wc -l)"
-  if [ "$GOT" != "$WANT" ]; then
-    Error " - FAILED for filter '$FILTER': Want: $WANT  Got: $GOT"
-    exit 1
-  else
-    Info " - SUCCESS: Got $GOT packets from filter '$FILTER'"
   fi
 }
 
@@ -65,13 +54,31 @@ popd
 Info "Setting up output directory"
 OUTDIR="$(mktemp -d $BASEDIR/steno.XXXXXXXXXX)"
 Info "Writing output to directory '$OUTDIR'"
+LOG="${LOG-$OUTDIR/log}"
+Info "Writing log to $LOG"
 
-mkdir $OUTDIR/{pkt,idx,certs}
+mkdir $OUTDIR/{pkt0,idx0,pkt1,idx1,pkt2,idx2,pkt3,idx3,certs}
 Info "Setting up $DUMMY interface"
 sudo /sbin/modprobe dummy
 sudo ip link add dummy0 type dummy || Error "$DUMMY may already exist"
 sudo ifconfig $DUMMY promisc up
 set +e
+
+function FailTest {
+  Error "--- TEST FAILURE ---"
+  Error "$@"
+  exit 1
+}
+
+function TestCountPackets {
+  FILTER="$1"
+  WANT="$2"
+  Info "Looking $WANT packets from filter '$FILTER'"
+  GOT="$(STENOGRAPHER_CONFIG="$OUTDIR/config" ../stenoread "$FILTER" -n | wc -l)"
+  if [ "$GOT" != "$WANT" ]; then
+    FailTest "FAILED: Want: $WANT  Got: $GOT"
+  fi
+}
 
 STENOGRAPHER_PID=""
 STENOTYPE_PID=""
@@ -86,8 +93,10 @@ function CleanUp {
     KILLCMD=kill ReallyKill $STENOTYPE_PID
   fi
   Info "Deleting $DUMMY interface"
-  Info "Removing $OUTDIR"
-  rm -rfv $OUTDIR
+  if [ -z "$KEEPFILES" ]; then
+    Info "Removing $OUTDIR"
+    rm -rfv $OUTDIR
+  fi
   sudo ifconfig $DUMMY down
   sudo ip link del dummy0
 }
@@ -96,39 +105,50 @@ trap CleanUp EXIT
 cat > $OUTDIR/config << EOF
 {
   "Threads": [
-    { "PacketsDirectory": "$OUTDIR/pkt"
-    , "IndexDirectory": "$OUTDIR/idx"
-    , "DiskFreePercentage": 1
-    }
+    { "PacketsDirectory": "$OUTDIR/pkt0" , "IndexDirectory": "$OUTDIR/idx0", "DiskFreePercentage": 1 }
+  , { "PacketsDirectory": "$OUTDIR/pkt1" , "IndexDirectory": "$OUTDIR/idx1", "DiskFreePercentage": 1 }
+  , { "PacketsDirectory": "$OUTDIR/pkt2" , "IndexDirectory": "$OUTDIR/idx2", "DiskFreePercentage": 1 }
+  , { "PacketsDirectory": "$OUTDIR/pkt3" , "IndexDirectory": "$OUTDIR/idx3", "DiskFreePercentage": 1 }
   ]
   , "StenotypePath": "$STENOTYPE_BIN"
   , "Interface": "$DUMMY"
   , "Port": $PORT
-  , "Flags": ["-v", "-v", "-v"]
+  , "Flags": ["--v=8"]
   , "CertPath": "$OUTDIR/certs"
 }
 EOF
 Info "Starting stenographer"
-../stenographer --config=$OUTDIR/config --syslog=false --v=4 >$OUTDIR/log 2>&1 &
+../stenographer --config=$OUTDIR/config --syslog=false --v=4 >$LOG 2>&1 &
 STENOGRAPHER_PID="$!"
-
-xterm -e "tail -f $OUTDIR/log" &
+if [ ! -z "$STRACE" ]; then
+  sudo -b strace -f -o $STRACE -p $STENOGRAPHER_PID &
+fi
 
 Info "Waiting for stenographer to start up"
-Sleep 15
+Sleep 5
+
 STENOTYPE_PID="$(ps axww |
     grep -v grep |
     grep -v Z |
     grep $STENOTYPE_BIN |
     awk '{print $1}')"
 if [ -z "$STENOTYPE_PID" ]; then
-  Error "Stenotype not running"
-  exit 1
+  FailTest "Stenotype not running"
 fi
+function CheckStillRunning {
+  if ! kill -0 $STENOTYPE_PID; then
+    FailTest "stenotype has stopped!"
+  fi
+  if ! kill -0 $STENOGRAPHER_PID; then
+    FailTest "stenographer has stopped!"
+  fi
+  Info "All processes still running"
+}
 
 Info "Sending packets to $DUMMY"
 sudo tcpreplay -i $DUMMY --topspeed $BASEDIR/steno_integration_test.pcap
-Sleep 100
+Sleep 80
+CheckStillRunning
 
 Info "Looking for packets"
 TestCountPackets "port 21582" 1018
@@ -138,7 +158,8 @@ TestCountPackets "net 172.0.0.0/8 and port 23" 292041
 
 Info "Sending packets to $DUMMY a second time"
 sudo tcpreplay -i $DUMMY --topspeed $BASEDIR/steno_integration_test.pcap
-Sleep 100
+Sleep 80
+CheckStillRunning
 
 Info "Looking for packets a second time, in parallel"
 TESTPIDS=""

@@ -108,9 +108,6 @@ int flag_index_nicelevel = 0;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
   switch (key) {
-    case 'v':
-      st::logging_verbose_level++;
-      break;
     case 'q':
       st::logging_verbose_level--;
       break;
@@ -162,6 +159,9 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
     case 315:
       flag_seccomp = arg;
       break;
+    case 316:
+      st::logging_verbose_level = atoi(arg);
+      break;
   }
   return 0;
 }
@@ -170,7 +170,6 @@ void ParseOptions(int argc, char** argv) {
   const char* s = "STRING";
   const char* n = "NUM";
   struct argp_option options[] = {
-      {0, 'v', 0, 0, "Verbose logging, may be given multiple times"},
       {0, 'q', 0, 0, "Quiet logging.  Each -q counteracts one -v"},
       {"iface", 300, s, 0, "Interface to read packets from"},
       {"dir", 301, s, 0, "Directory to store packet files in"},
@@ -193,6 +192,7 @@ void ParseOptions(int argc, char** argv) {
        "can be obtained from a human readable filter expression using the "
        "provided compile_bpf.sh script."},
       {"seccomp", 315, s, 0, "Seccomp style, one of 'none', 'trace', 'kill'."},
+      {"v", 316, n, 0, "Verbose logging"},
       {0}, };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
@@ -221,7 +221,7 @@ void DropPrivileges() {
     CHECK(group != NULL) << "Unable to get info for group " << flag_gid;
     CHECK_SUCCESS(Errno(setgid(group->gr_gid)));
   } else {
-    LOG(V1) << "Staying with GID=" << getgid();
+    VLOG(1) << "Staying with GID=" << getgid();
   }
   if (getuid() == 0 || flag_uid != "") {
     if (flag_uid == "") {
@@ -235,7 +235,7 @@ void DropPrivileges() {
     CHECK_SUCCESS(Errno(initgroups(flag_uid.c_str(), getgid())));
     CHECK_SUCCESS(Errno(setuid(passwd->pw_uid)));
   } else {
-    LOG(V1) << "Staying with UID=" << getuid();
+    VLOG(1) << "Staying with UID=" << getuid();
   }
 }
 
@@ -346,17 +346,17 @@ void WriteIndexes(int thread, st::ProducerConsumerQueue* write_index) {
   privileges_dropped.WaitForNotification();
   DropIndexThreadPrivileges();
   while (true) {
-    LOG(V1) << "Waiting for index";
+    VLOG(1) << "Waiting for index";
     Index* i = reinterpret_cast<Index*>(write_index->Get());
     LOG(INFO) << "Got index " << int64_t(i);
     if (i == NULL) {
       break;
     }
-    LOG_IF_ERROR(i->Flush(), "index flush");
+    CHECK_SUCCESS(i->Flush());
     delete i;
     dog.Feed();
   }
-  LOG(V1) << "Exiting write index thread";
+  VLOG(1) << "Exiting write index thread";
 }
 
 bool run_threads = true;
@@ -369,7 +369,7 @@ void HandleSignals(int sig) {
 }
 
 void HandleSignalsThread() {
-  LOG(V1) << "Handling signals";
+  VLOG(1) << "Handling signals";
   struct sigaction handler;
   handler.sa_handler = &HandleSignals;
   sigemptyset(&handler.sa_mask);
@@ -378,7 +378,7 @@ void HandleSignalsThread() {
   sigaction(SIGTERM, &handler, NULL);
   DropCommonThreadPrivileges();
   main_complete.WaitForNotification();
-  LOG(V1) << "Signal handling done";
+  VLOG(1) << "Signal handling done";
 }
 
 void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
@@ -504,7 +504,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
     }
     dog.Feed();
   }
-  LOG(V1) << "Finishing thread " << thread;
+  VLOG(1) << "Finishing thread " << thread;
   // Write out the last index.
   if (flag_index) {
     write_index->Put(index);
@@ -549,17 +549,17 @@ int Main(int argc, char** argv) {
   // indexes through to the writing thread via the write_index FIFO queue.
   std::vector<std::thread*> index_threads;
   if (flag_index) {
-    LOG(V1) << "Starting indexing threads";
+    VLOG(1) << "Starting indexing threads";
     for (int i = 0; i < flag_threads; i++) {
       std::thread* t = new std::thread(&WriteIndexes, i, &write_indexes[i]);
       index_threads.push_back(t);
     }
   }
 
-  LOG(V1) << "Starting writing threads";
+  VLOG(1) << "Starting writing threads";
   std::vector<std::thread*> threads;
   for (int i = 0; i < flag_threads; i++) {
-    LOG(V1) << "Starting thread " << i;
+    VLOG(1) << "Starting thread " << i;
     threads.push_back(new std::thread(&RunThread, i, &write_indexes[i]));
   }
   sockets_created->Block();
@@ -568,20 +568,20 @@ int Main(int argc, char** argv) {
   DropCommonThreadPrivileges();
 
   for (auto thread : threads) {
-    LOG(V1) << "===============Waiting for thread==============";
+    VLOG(1) << "===============Waiting for thread==============";
     CHECK(thread->joinable());
     thread->join();
-    LOG(V1) << "Thread finished";
+    VLOG(1) << "Thread finished";
     delete thread;
   }
-  LOG(V1) << "Finished all threads";
+  VLOG(1) << "Finished all threads";
   if (flag_index) {
     for (int i = 0; i < flag_threads; i++) {
-      LOG(V1) << "Closing write index queue " << i << ", waiting for thread";
+      VLOG(1) << "Closing write index queue " << i << ", waiting for thread";
       write_indexes[i].Close();
       CHECK(index_threads[i]->joinable());
       index_threads[i]->join();
-      LOG(V1) << "Index thread finished";
+      VLOG(1) << "Index thread finished";
       delete index_threads[i];
     }
   }

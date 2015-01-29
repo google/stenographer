@@ -430,7 +430,7 @@ func (d *Directory) callEvery(cb func(), freq time.Duration) {
 }
 
 func (d *Directory) removeHiddenFiles(dirs []string) {
-	log.Printf("Checking %v for stale pkt/idx files...", d.name)
+	v(1, "Checking %v for stale pkt/idx files...", d.name)
 	for _, dir := range dirs {
 		files, err := ioutil.ReadDir(dir)
 		if err != nil {
@@ -629,7 +629,11 @@ const (
 
 // runStenotypeOnce runs the stenotype binary a single time, returning any
 // errors associated with its running.
-func (d *Directory) runStenotypeOnce(outputDirectories []string) error {
+func (d *Directory) runStenotypeOnce() error {
+	outputDirectories := make([]string, 0, len(d.conf.Threads)*2)
+	for _, thread := range d.conf.Threads {
+		outputDirectories = append(outputDirectories, thread.PacketsDirectory, thread.IndexDirectory)
+	}
 	d.removeHiddenFiles(outputDirectories)
 	cmd := d.Stenotype()
 	done := make(chan struct{})
@@ -649,11 +653,11 @@ func (d *Directory) runStenotypeOnce(outputDirectories []string) error {
 
 // RunStenotype keeps the stenotype binary running, restarting it if necessary
 // but trying not to allow crash loops.
-func (d *Directory) RunStenotype(outputDirectories []string) {
+func (d *Directory) RunStenotype() {
 	for {
 		start := time.Now()
 		v(1, "Running Stenotype")
-		err := d.runStenotypeOnce(outputDirectories)
+		err := d.runStenotypeOnce()
 		duration := time.Since(start)
 		log.Printf("Stenotype stopped after %v: %v", duration, err)
 		if duration < minStenotypeRuntimeForRestart {

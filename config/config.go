@@ -429,22 +429,72 @@ func (d *Directory) callEvery(cb func(), freq time.Duration) {
 	}
 }
 
-func (d *Directory) removeHiddenFiles(dirs []string) {
-	v(1, "Checking %v for stale pkt/idx files...", d.name)
-	for _, dir := range dirs {
-		files, err := ioutil.ReadDir(dir)
+func removeHiddenFilesFrom(dir string) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		log.Printf("Hidden file cleanup failed, could not read directory: %v", err)
+		return
+	}
+	for _, file := range files {
+		if file.Mode().IsRegular() && strings.HasPrefix(file.Name(), ".") {
+			filename := filepath.Join(dir, file.Name())
+			if err := os.Remove(filename); err != nil {
+				log.Printf("Unable to remove hidden file %q: %v", filename, err)
+			} else {
+				log.Printf("Deleted stale output file %q", filename)
+			}
+		}
+	}
+}
+
+func filesIn(dir string) (map[string]os.FileInfo, error) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]os.FileInfo{}
+	for _, file := range files {
+		if file.Mode().IsRegular() {
+			out[file.Name()] = file
+		}
+	}
+	return out, nil
+}
+
+// removeOldFiles removes hidden files from previous runs, as well as packet
+// files without indexes and vice versa.
+func (d *Directory) removeOldFiles() {
+	for _, thread := range d.conf.Threads {
+		v(1, "Checking %q/%q for stale pkt/idx files...", thread.PacketsDirectory, thread.IndexDirectory)
+		removeHiddenFilesFrom(thread.PacketsDirectory)
+		removeHiddenFilesFrom(thread.IndexDirectory)
+		packetFiles, err := filesIn(thread.PacketsDirectory)
 		if err != nil {
-			v(1, "Hidden file cleanup failed, could not read directory: %v", err)
+			log.Printf("could not get files from %q: %v", thread.PacketsDirectory, err)
 			continue
 		}
-		for _, file := range files {
-			if !file.IsDir() {
-				if strings.HasPrefix(file.Name(), ".") {
-					if err := os.Remove(dir + "/" + file.Name()); err != nil {
-						v(1, "Unable to remove hidden file: %v", err)
-					}
-					log.Printf("Deleted stale output file: %v", file.Name())
-				}
+		indexFiles, err := filesIn(thread.IndexDirectory)
+		if err != nil {
+			log.Printf("could not get files from %q: %v", thread.IndexDirectory, err)
+			continue
+		}
+		var mismatchedFilesToRemove []string
+		for file := range packetFiles {
+			if indexFiles[file] == nil {
+				mismatchedFilesToRemove = append(mismatchedFilesToRemove, filepath.Join(thread.PacketsDirectory, file))
+				log.Printf("Removing packet file %q without index found in %q", file, thread.PacketsDirectory)
+			}
+		}
+		for file := range indexFiles {
+			if packetFiles[file] == nil {
+				mismatchedFilesToRemove = append(mismatchedFilesToRemove, filepath.Join(thread.IndexDirectory, file))
+				log.Printf("Removing index file %q without packets found in %q", file, thread.IndexDirectory)
+			}
+		}
+		for _, file := range mismatchedFilesToRemove {
+			v(2, "Removing file %q", file)
+			if err := os.Remove(file); err != nil {
+				log.Printf("Unable to remove mismatched file %q", file)
 			}
 		}
 	}
@@ -630,11 +680,7 @@ const (
 // runStenotypeOnce runs the stenotype binary a single time, returning any
 // errors associated with its running.
 func (d *Directory) runStenotypeOnce() error {
-	outputDirectories := make([]string, 0, len(d.conf.Threads)*2)
-	for _, thread := range d.conf.Threads {
-		outputDirectories = append(outputDirectories, thread.PacketsDirectory, thread.IndexDirectory)
-	}
-	d.removeHiddenFiles(outputDirectories)
+	d.removeOldFiles()
 	cmd := d.Stenotype()
 	done := make(chan struct{})
 	defer close(done)

@@ -217,26 +217,42 @@ Error Index::Flush() {
   WriteToIndex(kIndexVersion, NULL, 0, kIndexVersionNumber, &index_ss);
 
   for (auto iter : proto_) {
-    for (auto pos : iter.second) {
-      WriteToIndex(kIndexProtocol, reinterpret_cast<const char*>(&iter.first),
-                   1, pos, &index_ss);
+    int64_t last_pos = 0;
+    for (int64_t pos : iter.second) {
+      if (pos > last_pos) {
+        WriteToIndex(kIndexProtocol, reinterpret_cast<const char*>(&iter.first),
+                     1, pos, &index_ss);
+      }
+      last_pos = pos;
     }
   }
   for (auto iter : port_) {
     uint16_t port = htons(iter.first);
-    for (auto pos : iter.second) {
-      WriteToIndex(kIndexPort, reinterpret_cast<const char*>(&port), 2, pos,
-                   &index_ss);
+    int64_t last_pos = 0;
+    for (int64_t pos : iter.second) {
+      if (pos > last_pos) {
+        WriteToIndex(kIndexPort, reinterpret_cast<const char*>(&port), 2, pos,
+                     &index_ss);
+      }
+      last_pos = pos;
     }
   }
   for (auto iter : ip4_) {
-    for (auto pos : iter.second) {
-      WriteToIndex(kIndexIPv4, iter.first.data(), 4, pos, &index_ss);
+    int64_t last_pos = 0;
+    for (int64_t pos : iter.second) {
+      if (pos > last_pos) {
+        WriteToIndex(kIndexIPv4, iter.first.data(), 4, pos, &index_ss);
+      }
+      last_pos = pos;
     }
   }
   for (auto iter : ip6_) {
-    for (auto pos : iter.second) {
-      WriteToIndex(kIndexIPv6, iter.first.data(), 16, pos, &index_ss);
+    int64_t last_pos = 0;
+    for (int64_t pos : iter.second) {
+      if (pos > last_pos) {
+        WriteToIndex(kIndexIPv6, iter.first.data(), 16, pos, &index_ss);
+      }
+      last_pos = pos;
     }
   }
   auto finished = index_ss.Finish();

@@ -64,6 +64,7 @@ class Output {
  private:
   Error SetUp();
   int Outstanding();
+  Error MaybeCloseFile(io::SingleFile* file);
 
   io_context_t ctx_;
   int max_ops_;

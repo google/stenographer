@@ -460,22 +460,6 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
         index = new Index(index_dirname, micros);
       }
     }
-    // Log stats every 100MB or at least 1/minute.
-    if (blocks % 100 == 0 ||
-        lastlog < current_micros - 60 * kNumMicrosPerSecond) {
-      lastlog = current_micros;
-      double duration = (current_micros - start) * 1.0 / kNumMicrosPerSecond;
-      Stats stats;
-      Error stats_err = v3->GetStats(&stats);
-      if (SUCCEEDED(stats_err)) {
-        LOG(INFO) << "Thread " << thread << " stats: MB=" << blocks
-                  << " secs=" << duration << " MBps=" << (blocks / duration)
-                  << " " << stats.String();
-      } else {
-        LOG(ERROR) << "Unable to get stats: " << *stats_err;
-      }
-    }
-
     // Read in a new block from AF_PACKET.
     Block b;
     CHECK_SUCCESS(v3->NextBlock(&b, kNumMillisPerSecond));
@@ -491,6 +475,22 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
     }
     blocks++;
     block_offset++;
+
+    // Log stats every 100MB or at least 1/minute.
+    if (blocks % 100 == 0 ||
+        lastlog < current_micros - 60 * kNumMicrosPerSecond) {
+      lastlog = current_micros;
+      double duration = (current_micros - start) * 1.0 / kNumMicrosPerSecond;
+      Stats stats;
+      Error stats_err = v3->GetStats(&stats);
+      if (SUCCEEDED(stats_err)) {
+        LOG(INFO) << "Thread " << thread << " stats: MB=" << blocks
+                  << " secs=" << duration << " MBps=" << (blocks / duration)
+                  << " " << stats.String();
+      } else {
+        LOG(ERROR) << "Unable to get stats: " << *stats_err;
+      }
+    }
 
     // Start an async write of the current block.  Could block
     // waiting for the write 'aiops' writes ago.

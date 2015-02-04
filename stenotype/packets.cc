@@ -47,7 +47,7 @@ const int kNoFanout = -1;
 
 namespace st {
 
-string Stats::String() const {
+std::string Stats::String() const {
   std::stringstream out;
   out << "packets=" << packets << " blocks=" << blocks << " polls=" << polls
       << " drops=" << drops
@@ -88,7 +88,7 @@ void Block::Reset() { ResetTo(NULL, 0, NULL); }
 
 bool Block::ReadyForUser() { return Status() & TP_STATUS_USER; }
 
-void Block::ResetTo(char* data, size_t sz, mutex* mu) {
+void Block::ResetTo(char* data, size_t sz, std::mutex* mu) {
   Done();
   LOG(V2) << "New block " << reinterpret_cast<uintptr_t>(data);
   start_ = data;
@@ -163,7 +163,7 @@ bool Block::Next(Packet* p) {
 PacketsV3::PacketsV3(PacketsV3::State* state) {
   state_.Swap(state);
   offset_ = state_.num_blocks - 1;
-  block_mus_ = new mutex[state_.num_blocks];
+  block_mus_ = new std::mutex[state_.num_blocks];
 }
 
 Error PacketsV3::GetStats(Stats* stats) {
@@ -177,7 +177,7 @@ Error PacketsV3::GetStats(Stats* stats) {
   return SUCCESS;
 }
 
-Error PacketsV3::Builder::Bind(const string& iface, PacketsV3** out) {
+Error PacketsV3::Builder::Bind(const std::string& iface, PacketsV3** out) {
   RETURN_IF_ERROR(BadState(), "Builder");
 
   unsigned int ifindex = if_nametoindex(iface.c_str());
@@ -202,7 +202,7 @@ Error PacketsV3::Builder::Bind(const string& iface, PacketsV3** out) {
   return SUCCESS;
 }
 
-Error PacketsV3::Builder::SetFilter(const string& filter) {
+Error PacketsV3::Builder::SetFilter(const std::string& filter) {
   RETURN_IF_ERROR(BadState(), "Builder");
 
   int filter_size = filter.size();
@@ -287,13 +287,13 @@ Error PacketsV3::Builder::CreateSocket(int socktype) {
   return Errno(state_.fd);
 }
 
-Error PacketsV3::PollForPacket() {
+Error PacketsV3::PollForPacket(int poll_millis) {
   struct pollfd pfd;
   pfd.fd = state_.fd;
   pfd.events = POLLIN;
   pfd.revents = 0;
   int64_t duration_micros = -GetCurrentTimeMicros();
-  int ret = poll(&pfd, 1, -1);
+  int ret = poll(&pfd, 1, poll_millis);
   Error out = Errno(ret);
   duration_micros += GetCurrentTimeMicros();
   SleepForMicroseconds(kMinPollMillis * kNumMicrosPerMilli - duration_micros);
@@ -356,7 +356,7 @@ Error PacketsV3::Builder::SetUp(int socktype, struct tpacket_req3 tp) {
   return SUCCESS;
 }
 
-Error PacketsV3::NextBlock(Block* b, bool poll_once) {
+Error PacketsV3::NextBlock(Block* b, int poll_millis) {
   if (pos_.Empty()) {
     // If we're finished with the current block, move to the next block.
     offset_ = (offset_ + 1) % state_.num_blocks;
@@ -365,12 +365,9 @@ Error PacketsV3::NextBlock(Block* b, bool poll_once) {
     pos_.ResetTo(state_.ring + offset_ * state_.block_size, state_.block_size,
                  &block_mus_[offset_]);
   }
-  while (!pos_.ReadyForUser()) {
+  if (!pos_.ReadyForUser()) {
     stats_.polls++;
-    RETURN_IF_ERROR(PollForPacket(), "polling for packet");
-    if (poll_once) {
-      break;
-    }
+    RETURN_IF_ERROR(PollForPacket(poll_millis), "polling for packet");
   }
   if (pos_.ReadyForUser()) {
     pos_.UpdateStats(&stats_);

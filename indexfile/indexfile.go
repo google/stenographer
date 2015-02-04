@@ -53,18 +53,16 @@ func BlockfilePathFromIndexPath(p string) string {
 // NewIndexFile returns a new handle to the named index file.
 func NewIndexFile(filename string) (*IndexFile, error) {
 	v(1, "opening index %q", filename)
-	base.StartRead()
-	defer base.FinishRead()
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file %q: %v", filename, err)
 	}
 	ss := table.NewReader(f, nil)
-	if *base.VerboseLogging >= 4 {
+	if *base.VerboseLogging >= 10 {
 		iter := ss.Find([]byte{}, nil)
 		v(4, "=== %q ===", filename)
 		for iter.Next() {
-			v(4, "  %v %v", iter.Key(), iter.Value())
+			v(4, "  %v", iter.Key())
 		}
 		v(4, "  ERR: %v", iter.Close())
 	}
@@ -115,49 +113,45 @@ func (i *IndexFile) PortPositions(ctx context.Context, port uint16) (base.Positi
 	return i.positionsSingleKey(ctx, buf[:])
 }
 
-func preceedingBytes(b []byte) (out []byte) {
-	out = make([]byte, len(b))
-	copy(out, b)
-	for i := len(b) - 1; i >= 0; i-- {
-		if out[i] == 0 {
-			out[i] = 0xff
-		} else {
-			out[i]--
-			return
-		}
-	}
-	return nil
-}
-
 // Dump writes out a debug version of the entire index to the given writer.
 func (i *IndexFile) Dump(out io.Writer, start, finish []byte) {
 	for iter := i.ss.Find(start, nil); iter.Next() && bytes.Compare(iter.Key(), finish) <= 0; {
-		fmt.Fprintf(out, "%v\t%v\n", hex.EncodeToString(iter.Key()), hex.EncodeToString(iter.Value()))
+		fmt.Fprintf(out, "%v\n", hex.EncodeToString(iter.Key()))
 	}
 }
 
+// positions returns a set of positions to look for packets, based on a
+// lookup of all blockfile positions stored between (inclusively) index
+// keys 'from' and 'to'.
 func (i *IndexFile) positions(ctx context.Context, from, to []byte) (out base.Positions, _ error) {
 	v(4, "%q multi key iterator %v:%v start", i.name, from, to)
-	base.StartRead()
-	defer base.FinishRead()
-	iter := i.ss.Find(preceedingBytes(from), nil)
-	found := false
-	last := make([]byte, len(from))
+	if len(from) != len(to) {
+		return nil, fmt.Errorf("invalid from/to lengths don't match: %v %v", from, to)
+	}
+	iter := i.ss.Find(from, nil)
+	keyLen := len(from)
+	last := make([]byte, keyLen)
 	copy(last, from)
 	var current base.Positions
 	for iter.Next() && !base.ContextDone(ctx) {
-		if !found && bytes.Compare(iter.Key(), from) < 0 {
-			continue
+		// iter.Key() contains the concatenation of key and pos, where pos are the
+		// last 4 bytes.
+		if len(iter.Key()) < 4 {
+			return nil, fmt.Errorf("invalid index file %q has key %v", i.name, iter.Key())
 		}
-		if to != nil && bytes.Compare(iter.Key(), to) > 0 {
+		separator := len(iter.Key()) - 4
+		keypart, pospart := iter.Key()[:separator], iter.Key()[separator:]
+		if to != nil && bytes.Compare(keypart, to) > 0 || len(keypart) != len(last) {
+			v(4, "%q multi key iterator %v:%v hit limit with %v", i.name, from, to, iter.Key())
 			break
 		}
-		if bytes.Compare(iter.Key(), last) != 0 {
+		if bytes.Compare(keypart, last) != 0 {
+			v(4, "%q multi key iterator got in-iter union of length %d for %v", i.name, len(current), last)
 			out = out.Union(current)
 			current = base.Positions{}
-			copy(last, iter.Key())
+			copy(last, keypart)
 		}
-		pos := binary.BigEndian.Uint32(iter.Value())
+		pos := binary.BigEndian.Uint32(pospart)
 		current = append(current, int64(pos))
 	}
 	if err := ctx.Err(); err != nil {

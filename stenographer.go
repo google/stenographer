@@ -19,7 +19,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -27,10 +26,10 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
+	"github.com/google/stenographer/httplog"
 	"github.com/google/stenographer/query"
 	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
@@ -54,7 +53,9 @@ var (
 	queryNanos = stats.S.Get("queryNanos")
 )
 
-const minStenotypeRuntimeForRestart = time.Minute
+const (
+	snapLen = 65536 // Max packet size we return in pcap files to users.
+)
 
 // ReadConfig reads in the config specified by the --config flag.
 func ReadConfig() *config.Config {
@@ -65,40 +66,11 @@ func ReadConfig() *config.Config {
 	return c
 }
 
-var stenotypeOutput io.Writer = os.Stderr
-
-// runStenotypeOnce runs the stenotype binary a single time, returning any
-// errors associated with its running.
-func runStenotypeOnce(conf *config.Config, dir *config.Directory) error {
-	// Start running stenotype.
-	cmd := conf.Stenotype(dir)
-	cmd.Stdout = stenotypeOutput
-	cmd.Stderr = stenotypeOutput
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("cannot start stenotype: %v", err)
-	}
-	defer cmd.Process.Signal(os.Interrupt)
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("stenotype wait failed: %v", err)
-	}
-	return fmt.Errorf("stenotype stopped")
-}
-
-// runStenotype keeps the stenotype binary running, restarting it if necessary
-// but trying not to allow crash loops.
-func runStenotype(conf *config.Config, dir *config.Directory) {
-	for {
-		start := time.Now()
-		err := runStenotypeOnce(conf, dir)
-		duration := time.Since(start)
-		log.Printf("Stenotype stopped after %v: %v", duration, err)
-		if duration < minStenotypeRuntimeForRestart {
-			log.Fatalf("Stenotype ran for too little time, crashing to avoid stenotype crash loop")
-		}
-	}
-}
-
 func main() {
+	flag.Parse()
+
+	stenotypeOutput := io.Writer(os.Stderr)
+
 	// Set up syslog logging
 	if *logToSyslog {
 		logwriter, err := syslog.New(syslog.LOG_USER|syslog.LOG_INFO, "stenographer")
@@ -109,37 +81,37 @@ func main() {
 		stenotypeOutput = logwriter // for stenotype
 	}
 
-	flag.Parse()
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 	runtime.SetBlockProfileRate(1000)
 	conf := ReadConfig()
 	v(1, "Using config:\n%v", conf)
 	dir, err := conf.Directory()
+	dir.StenotypeOutput = stenotypeOutput
 	if err != nil {
 		log.Fatalf("unable to set up stenographer directory: %v", err)
 	}
 	defer dir.Close()
 
-	go runStenotype(conf, dir)
+	go dir.RunStenotype()
+
+	// HTTP handling
 	conf.ExportDebugHandlers(http.DefaultServeMux)
 	dir.ExportDebugHandlers(http.DefaultServeMux)
 	http.Handle("/debug/stats", stats.S)
 	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+		w = httplog.New(w, r, true)
+    start := time.Now()
+		defer func() {
+			queries.Increment()
+			queryNanos.IncrementBy(time.Since(start).Nanoseconds())
+      log.Print(w)
+    }()
 		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "could not read request body", http.StatusBadRequest)
 			return
 		}
-		queryStr := string(queryBytes)
-		log.Printf("Received query %q from %q", queryStr, r.RemoteAddr)
-		defer func() {
-			duration := time.Since(start)
-			queries.Increment()
-			queryNanos.IncrementBy(duration.Nanoseconds())
-			log.Printf("Handled query %q from %q in %v", queryStr, r.RemoteAddr, duration)
-		}()
-		q, err := query.NewQuery(queryStr)
+		q, err := query.NewQuery(string(queryBytes))
 		if err != nil {
 			http.Error(w, "could not parse query", http.StatusBadRequest)
 			return

@@ -100,7 +100,7 @@ class SliceSet {
 // write to disk.
 class Index {
  public:
-  explicit Index(const string& dirname, int64_t micros)
+  explicit Index(const std::string& dirname, int64_t micros)
       : dirname_(dirname),
         micros_(micros),
         packets_(0),
@@ -115,14 +115,14 @@ class Index {
   void AddProtocol(uint8_t proto, int64_t pos);
   void AddPort(uint16_t port, int64_t pos);
 
-  string dirname_;
+  std::string dirname_;
   int64_t micros_;
   int64_t packets_;
   SliceSet ip_pieces_;
-  map<leveldb::Slice, vector<int64_t>> ip4_;
-  map<leveldb::Slice, vector<int64_t>> ip6_;
-  map<uint8_t, vector<int64_t>> proto_;
-  map<uint16_t, vector<int64_t>> port_;
+  std::map<leveldb::Slice, std::vector<int64_t>> ip4_;
+  std::map<leveldb::Slice, std::vector<int64_t>> ip6_;
+  std::map<uint8_t, std::vector<int64_t>> proto_;
+  std::map<uint16_t, std::vector<int64_t>> port_;
 
   DISALLOW_COPY_AND_ASSIGN(Index);
 };

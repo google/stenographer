@@ -83,9 +83,9 @@
 
 namespace {
 
-string flag_iface = "eth0";
-string flag_filter = "";
-string flag_dir = "";
+std::string flag_iface = "eth0";
+std::string flag_filter = "";
+std::string flag_dir = "";
 int64_t flag_count = -1;
 int32_t flag_blocks = 2048;
 int32_t flag_aiops = 128;
@@ -100,10 +100,10 @@ uint16_t flag_fanout_type =
     PACKET_FANOUT_LB;
 #endif
 uint16_t flag_fanout_id = 0;
-string flag_uid;
-string flag_gid;
+std::string flag_uid;
+std::string flag_gid;
 bool flag_index = true;
-string flag_seccomp = "kill";
+std::string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
@@ -218,7 +218,7 @@ void DropPrivileges() {
     LOG(INFO) << "Dropping priviledges from " << getgid() << " to GID "
               << flag_gid;
     auto group = getgrnam(flag_gid.c_str());
-    CHECK(group != NULL) << "Unable to get info for user " << flag_gid;
+    CHECK(group != NULL) << "Unable to get info for group " << flag_gid;
     CHECK_SUCCESS(Errno(setgid(group->gr_gid)));
   } else {
     LOG(V1) << "Staying with GID=" << getgid();
@@ -230,7 +230,7 @@ void DropPrivileges() {
     LOG(INFO) << "Dropping priviledges from " << getuid() << " to UID "
               << flag_uid;
     auto passwd = getpwnam(flag_uid.c_str());
-    CHECK(passwd != NULL) << "Unable to get info for user 'nobody'";
+    CHECK(passwd != NULL) << "Unable to get info for user " << flag_uid;
     flag_uid = passwd->pw_uid;
     CHECK_SUCCESS(Errno(initgroups(flag_uid.c_str(), getgid())));
     CHECK_SUCCESS(Errno(setuid(passwd->pw_uid)));
@@ -337,7 +337,10 @@ Error SetAffinity(int cpu) {
   return Errno(sched_setaffinity(0, sizeof(cpus), &cpus));
 }
 
-void WriteIndexes(st::ProducerConsumerQueue* write_index) {
+void WriteIndexes(int thread, st::ProducerConsumerQueue* write_index) {
+  LOG(V1) << "Starting WriteIndexes thread " << thread;
+  Watchdog dog("WriteIndexes thread " + std::to_string(thread),
+               flag_fileage_sec * 3);
   pid_t tid = syscall(SYS_gettid);
   LOG_IF_ERROR(Errno(setpriority(PRIO_PROCESS, tid, flag_index_nicelevel)),
                "setpriority");
@@ -346,14 +349,16 @@ void WriteIndexes(st::ProducerConsumerQueue* write_index) {
   while (true) {
     LOG(V1) << "Waiting for index";
     Index* i = reinterpret_cast<Index*>(write_index->Get());
-    LOG(INFO) << "Got index " << int64_t(i);
+    LOG(V1) << "Got index " << int64_t(i);
     if (i == NULL) {
-      LOG(V1) << "Exiting write index thread";
-      return;
+      break;
     }
     LOG_IF_ERROR(i->Flush(), "index flush");
+    LOG(V1) << "Wrote index " << int64_t(i);
     delete i;
+    dog.Feed();
   }
+  LOG(V1) << "Exiting write index thread";
 }
 
 bool run_threads = true;
@@ -390,6 +395,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   options.tp_frame_size = 16 << 10;  // does not matter at all
   options.tp_frame_nr = 0;           // computed for us.
   options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
+  Watchdog dog("Thread " + std::to_string(thread), flag_fileage_sec * 2);
 
   // Set up AF_PACKET packet reading.
   PacketsV3::Builder builder;
@@ -406,7 +412,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   }
   PacketsV3* v3;
   CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
-  unique_ptr<PacketsV3> cleanup(v3);
+  std::unique_ptr<PacketsV3> cleanup(v3);
 
   sockets_created->Block();
   privileges_dropped.WaitForNotification();
@@ -417,8 +423,8 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   Output output(flag_aiops, flag_filesize_mb << 20);
 
   // All dirnames are guaranteed to end with '/'.
-  string file_dirname = flag_dir + "PKT" + to_string(thread) + "/";
-  string index_dirname = flag_dir + "IDX" + to_string(thread) + "/";
+  std::string file_dirname = flag_dir + "PKT" + std::to_string(thread) + "/";
+  std::string index_dirname = flag_dir + "IDX" + std::to_string(thread) + "/";
 
   Packet p;
   int64_t micros = GetCurrentTimeMicros();
@@ -434,12 +440,29 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   int64_t lastlog = 0;
   int64_t blocks = 0;
   int64_t block_offset = 0;
-  int64_t errors = 0;  // allows us to ignore spurious errors.
   for (int64_t remaining = flag_count; remaining != 0 && run_threads;) {
     LOG_IF_ERROR(output.CheckForCompletedOps(false), "check for completed");
+    int64_t current_micros = GetCurrentTimeMicros();
+
+    // Rotate file if necessary.
+    int64_t current_file_age_secs =
+        (current_micros - micros) / kNumMicrosPerSecond;
+    if (block_offset == flag_filesize_mb ||
+        current_file_age_secs > flag_fileage_sec) {
+      LOG(V1) << "Rotating file " << micros << " with " << block_offset
+              << " blocks";
+      // File size got too big, rotate file.
+      micros = current_micros;
+      block_offset = 0;
+      CHECK_SUCCESS(output.Rotate(file_dirname, micros));
+      if (flag_index) {
+        write_index->Put(index);
+        index = new Index(index_dirname, micros);
+      }
+    }
     // Read in a new block from AF_PACKET.
     Block b;
-    CHECK_SUCCESS(v3->NextBlock(&b, true));
+    CHECK_SUCCESS(v3->NextBlock(&b, kNumMillisPerSecond));
     if (b.Empty()) {
       continue;
     }
@@ -450,38 +473,8 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
         index->Process(p, block_offset << 20);
       }
     }
-
-    // Iterate over all packets in the block.  Currently unused, but
-    // eventually packet indexing will go here.
     blocks++;
     block_offset++;
-
-    // Start an async write of the current block.  Could block
-    // waiting for the write 'aiops' writes ago.
-    Error write_err = output.Write(&b);
-    if (!SUCCEEDED(write_err)) {
-      LOG(ERROR) << "output write error: " << *write_err;
-      errors++;
-      CHECK(errors < 5) << "Too many errors in close proximity";
-    } else if (errors > 0) {
-      errors--;
-    }
-
-    int64_t current_micros = GetCurrentTimeMicros();
-    // Rotate file if necessary.
-    int64_t current_file_age_secs =
-        (current_micros - micros) / kNumMicrosPerSecond;
-    if (block_offset == flag_filesize_mb ||
-        current_file_age_secs > flag_fileage_sec) {
-      // File size got too big, rotate file.
-      micros = current_micros;
-      block_offset = 0;
-      CHECK_SUCCESS(output.Rotate(file_dirname, micros));
-      if (flag_index) {
-        write_index->Put(index);
-        index = new Index(index_dirname, micros);
-      }
-    }
 
     // Log stats every 100MB or at least 1/minute.
     if (blocks % 100 == 0 ||
@@ -498,6 +491,11 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
         LOG(ERROR) << "Unable to get stats: " << *stats_err;
       }
     }
+
+    // Start an async write of the current block.  Could block
+    // waiting for the write 'aiops' writes ago.
+    CHECK_SUCCESS(output.Write(&b));
+    dog.Feed();
   }
   LOG(V1) << "Finishing thread " << thread;
   // Write out the last index.
@@ -538,24 +536,24 @@ int Main(int argc, char** argv) {
   sigaddset(&sigset, SIGTERM);
   CHECK_SUCCESS(Errno(pthread_sigmask(SIG_BLOCK, &sigset, NULL)));
 
-  st::ProducerConsumerQueue write_index;
+  auto write_indexes = new st::ProducerConsumerQueue[flag_threads];
   // To avoid blocking on index writes, each writer thread has a secondary
   // thread just for creating and writing the indexes.  We pass to-write
   // indexes through to the writing thread via the write_index FIFO queue.
-  vector<std::thread*> index_threads;
+  std::vector<std::thread*> index_threads;
   if (flag_index) {
     LOG(V1) << "Starting indexing threads";
     for (int i = 0; i < flag_threads; i++) {
-      std::thread* t = new std::thread(&WriteIndexes, &write_index);
+      std::thread* t = new std::thread(&WriteIndexes, i, &write_indexes[i]);
       index_threads.push_back(t);
     }
   }
 
   LOG(V1) << "Starting writing threads";
-  vector<std::thread*> threads;
+  std::vector<std::thread*> threads;
   for (int i = 0; i < flag_threads; i++) {
     LOG(V1) << "Starting thread " << i;
-    threads.push_back(new std::thread(&RunThread, i, &write_index));
+    threads.push_back(new std::thread(&RunThread, i, &write_indexes[i]));
   }
   sockets_created->Block();
   DropPrivileges();
@@ -571,15 +569,16 @@ int Main(int argc, char** argv) {
   }
   LOG(V1) << "Finished all threads";
   if (flag_index) {
-    write_index.Close();
-    LOG(V1) << "Waiting for last index to write";
-    for (auto thread : index_threads) {
-      CHECK(thread->joinable());
-      thread->join();
+    for (int i = 0; i < flag_threads; i++) {
+      LOG(V1) << "Closing write index queue " << i << ", waiting for thread";
+      write_indexes[i].Close();
+      CHECK(index_threads[i]->joinable());
+      index_threads[i]->join();
       LOG(V1) << "Index thread finished";
-      delete thread;
+      delete index_threads[i];
     }
   }
+  delete[] write_indexes;
   LOG(INFO) << "Process exiting successfully";
   main_complete.Notify();
   return 0;

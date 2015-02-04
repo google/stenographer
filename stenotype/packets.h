@@ -41,7 +41,7 @@ struct Packet {
 
 struct Stats {
   Stats() : packets(0), blocks(0), polls(0), drops(0) {}
-  string String() const;
+  std::string String() const;
   int64_t packets;
   int64_t blocks;
   int64_t polls;
@@ -78,7 +78,7 @@ class Block {
   friend class PacketsV3;
   void UpdateStats(Stats* stats);
   bool ReadyForUser();
-  void ResetTo(char* data, size_t sz, mutex* mu);
+  void ResetTo(char* data, size_t sz, std::mutex* mu);
   void Done();
   void ReturnToKernel();
   void MoveToNext();
@@ -93,7 +93,7 @@ class Block {
   struct tpacket_block_desc* block_;
   struct tpacket3_hdr* packet_;
   uint32_t pkts_in_use_;
-  mutex* mu_;
+  std::mutex* mu_;
 
   DISALLOW_COPY_AND_ASSIGN(Block);
 };
@@ -125,10 +125,8 @@ class PacketsV3 {
   // blocks in each PacketsV3... if you grab all of them without releasing any,
   // you'll deadlock your system.
   //
-  // If 'block' is true, blocks until a new block is available.  Otherwise, may
-  // return immediately without a new block.  In that case, will not change *b
-  // but will return SUCCESS.
-  Error NextBlock(Block* b, bool block);
+  // This will block at least kMinPollMillis and at most poll_millis.
+  Error NextBlock(Block* b, int poll_millis);
   // Get all currently available statistics about operation so far.
   Error GetStats(Stats* stats);
 
@@ -159,11 +157,11 @@ class PacketsV3 {
     Error SetFanout(uint16_t fanout_type, uint16_t fanout_id);
 
     // SetFilter sets a BPF filter on the socket.
-    Error SetFilter(const string& filter);
+    Error SetFilter(const std::string& filter);
 
     // Bind must be the final method called by Builder.  It binds the created
     // socket to the given interface and returns a PacketsV3 object to wrap it.
-    Error Bind(const string& iface, PacketsV3** out);
+    Error Bind(const std::string& iface, PacketsV3** out);
 
    private:
     Error BadState();
@@ -180,7 +178,8 @@ class PacketsV3 {
 
  private:
   PacketsV3(State* state);
-  Error PollForPacket();
+  // This will block at least kMinPollMillis and at most poll_millis.
+  Error PollForPacket(int poll_millis);
 
   State state_;
   int offset_;   // next block number to be processed.
@@ -189,7 +188,7 @@ class PacketsV3 {
   // Locks, one per block.  Block objects hold a lock to their memory region
   // during their lifetime, and release it on destruction.  This allows us to
   // correctly use the circular queue without overrunning if it gets full.
-  mutex* block_mus_;
+  std::mutex* block_mus_;
 
   DISALLOW_COPY_AND_ASSIGN(PacketsV3);
 };

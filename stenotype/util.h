@@ -26,16 +26,15 @@
 #include <string.h>
 #include <execinfo.h>  // backtrace(), backtrace_symbols()
 
-#include <iostream>  // cerr
-#include <string>    // string
-#include <sstream>   // stringstream
-#include <iomanip>   // setw, setfill
+#include <condition_variable>
 #include <deque>
+#include <iomanip>   // setw, setfill
+#include <iostream>  // cerr
 #include <memory>
 #include <mutex>
-#include <condition_variable>
-
-using namespace std;
+#include <sstream>  // stringstream
+#include <string>   // string
+#include <thread>
 
 namespace {
 
@@ -115,20 +114,20 @@ class LogLine {
   LogLine(bool crash, const char* file, int line) : crash_(crash) {
     FillTimeBuffer();
     uint32_t tid = uint32_t(pthread_self()) >> 8;  // first bits always 0.
-    ss_ << setfill('0') << time_buffer_ << "." << setw(6) << tv_.tv_usec
-        << "Z T:" << std::hex << setw(6) << tid << setw(0) << std::dec << " ["
-        << file << ":" << line << "] ";
+    ss_ << std::setfill('0') << time_buffer_ << "." << std::setw(6)
+        << tv_.tv_usec << "Z T:" << std::hex << std::setw(6) << tid
+        << std::setw(0) << std::dec << " [" << file << ":" << line << "] ";
   }
   ~LogLine() {
     ss_ << "\n";
-    cerr << ss_.str() << flush;
+    std::cerr << ss_.str() << std::flush;
     if (crash_) {
-      cerr << "ABORTABORTABORT" << endl;
+      std::cerr << "ABORTABORTABORT" << std::endl;
       void* backtraces[32];
       int size = backtrace(backtraces, 32);
       char** symbols = backtrace_symbols(backtraces, size);
       for (int i = 0; i < size; i++) {
-        cerr << symbols[i] << endl;
+        std::cerr << symbols[i] << std::endl;
       }
       free(symbols);
       abort();
@@ -151,7 +150,7 @@ class LogLine {
     }
   }
 
-  stringstream ss_;
+  std::stringstream ss_;
   struct timeval tv_;
   char time_buffer_[kTimeBufferSize];
   bool crash_;
@@ -188,21 +187,21 @@ extern int logging_verbose_level;
   if (!(expr)) LOG(FATAL) << "CHECK(" #expr ") "
 #endif
 
-typedef unique_ptr<string> Error;
+typedef std::unique_ptr<std::string> Error;
 
 #define SUCCEEDED(x) ((x).get() == NULL)
 #define SUCCESS NULL
 
-#define ERROR(x) Error(new string(x))
+#define ERROR(x) Error(new std::string(x))
 
-#define RETURN_IF_ERROR(status, msg)              \
-  do {                                            \
-    Error __return_if_error_status__ = (status);  \
-    if (!SUCCEEDED(__return_if_error_status__)) { \
-      __return_if_error_status__->append(" <- "); \
-      __return_if_error_status__->append(msg);    \
-      return move(__return_if_error_status__);    \
-    }                                             \
+#define RETURN_IF_ERROR(status, msg)                \
+  do {                                              \
+    Error __return_if_error_status__ = (status);    \
+    if (!SUCCEEDED(__return_if_error_status__)) {   \
+      __return_if_error_status__->append(" <- ");   \
+      __return_if_error_status__->append(msg);      \
+      return std::move(__return_if_error_status__); \
+    }                                               \
   } while (false)
 
 #define LOG_IF_ERROR(status, msg)                            \
@@ -227,7 +226,7 @@ typedef unique_ptr<string> Error;
       if (!SUCCEEDED(initial)) {                       \
         LOG(ERROR) << "replacing error: " << *initial; \
       }                                                \
-      initial = move(__replacement_error__);           \
+      initial = std::move(__replacement_error__);      \
     }                                                  \
   } while (false)
 
@@ -243,7 +242,7 @@ class Barrier {
   explicit Barrier(int threads) : threads_(threads), count_(0) {}
   ~Barrier() {}
   void Block() {
-    unique_lock<mutex> lock(mu_);
+    std::unique_lock<std::mutex> lock(mu_);
     if (++count_ >= threads_) {
       lock.unlock();
       cond_.notify_all();
@@ -257,8 +256,8 @@ class Barrier {
  private:
   int threads_;
   int count_;
-  mutex mu_;
-  condition_variable cond_;
+  std::mutex mu_;
+  std::condition_variable cond_;
 
   DISALLOW_COPY_AND_ASSIGN(Barrier);
 };
@@ -269,7 +268,7 @@ class Notification {
   Notification() : waiting_(true) {}
   ~Notification() {}
   void WaitForNotification() {
-    unique_lock<mutex> lock(mu_);
+    std::unique_lock<std::mutex> lock(mu_);
     while (waiting_) {
       cond_.wait(lock);
     }
@@ -284,8 +283,8 @@ class Notification {
 
  private:
   bool waiting_;
-  mutex mu_;
-  condition_variable cond_;
+  std::mutex mu_;
+  std::condition_variable cond_;
 
   DISALLOW_COPY_AND_ASSIGN(Notification);
 };
@@ -298,13 +297,13 @@ class ProducerConsumerQueue {
 
   void Put(void* val) {
     CHECK(!closed_);
-    unique_lock<mutex> lock(mu_);
+    std::unique_lock<std::mutex> lock(mu_);
     d_.push_back(val);
     lock.unlock();
     cond_.notify_one();
   }
   void* Get() {
-    unique_lock<mutex> lock(mu_);
+    std::unique_lock<std::mutex> lock(mu_);
     while (d_.empty() && !closed_) {
       cond_.wait(lock);
     }
@@ -316,17 +315,17 @@ class ProducerConsumerQueue {
     return ret;
   }
   void Close() {
-    unique_lock<mutex> lock(mu_);
+    std::unique_lock<std::mutex> lock(mu_);
     closed_ = true;
     lock.unlock();
     cond_.notify_all();
   }
 
  private:
-  mutex mu_;
-  condition_variable cond_;
+  std::mutex mu_;
+  std::condition_variable cond_;
   bool closed_;
-  deque<void*> d_;
+  std::deque<void*> d_;
   DISALLOW_COPY_AND_ASSIGN(ProducerConsumerQueue);
 };
 
@@ -354,16 +353,68 @@ inline Error NegErrno(int ret) {
 ////////////////////////////////////////////////////////////////////////////////
 //// Filesystem helpers.
 
-string Basename(const string& filename);
-string Dirname(const string& filename);
-inline string HiddenFile(const string& dirname, int64_t micros) {
+std::string Basename(const std::string& filename);
+std::string Dirname(const std::string& filename);
+inline std::string HiddenFile(const std::string& dirname, int64_t micros) {
   CHECK(dirname[dirname.size() - 1] == '/');
-  return dirname + "." + to_string(micros);
+  return dirname + "." + std::to_string(micros);
 }
-inline string UnhiddenFile(const string& dirname, int64_t micros) {
+inline std::string UnhiddenFile(const std::string& dirname, int64_t micros) {
   CHECK(dirname[dirname.size() - 1] == '/');
-  return dirname + to_string(micros);
+  return dirname + std::to_string(micros);
 }
+
+// Watchdog is a simple thread which causes a process crash if certain code
+// paths aren't hit on a regular basis.
+//
+// Usage:
+//   Watchdog dog("description", 5 /*seconds*/);
+//   while (true) {
+//     dostuff();
+//     dog.Feed();  // If not called every 5 seconds, crashes.
+//   }
+//   // dog falls out of scope, its thread is canceled and it quietly goes away.
+class Watchdog {
+ private:
+  void Watch() {
+    auto last = ctr_;
+    while (true) {
+      auto now = GetCurrentTimeMicros();
+      auto recheck = now + kNumMicrosPerSecond * seconds_;
+      for (; last == ctr_ && !done_ && now < recheck;
+           now = GetCurrentTimeMicros()) {
+        SleepForSeconds(std::min(1.0, double(seconds_) / 10));
+      }
+      if (done_) {
+        return;
+      } else if (last != ctr_) {
+        LOG(V2) << "Fed watchdog: " << description_;
+        last = ctr_;
+        continue;
+      }
+      LOG(FATAL) << "WATCHDOG FAILURE: " << description_;
+    }
+  }
+
+ public:
+  Watchdog(std::string description, int seconds)
+      : description_(description), seconds_(seconds), ctr_(0), done_(false) {
+    t_ = new std::thread(&Watchdog::Watch, this);
+  }
+  ~Watchdog() {
+    done_ = true;
+    t_->join();
+    delete t_;
+  }
+  void Feed() { ctr_++; }
+
+ private:
+  std::thread* t_;
+  std::string description_;
+  int seconds_;
+  uint64_t ctr_;
+  bool done_;
+};
 
 }  // namespace st
 

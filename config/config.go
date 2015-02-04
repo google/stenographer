@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -30,12 +31,14 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/blockfile"
 	"github.com/google/stenographer/certs"
+	"github.com/google/stenographer/httplog"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
 	"github.com/google/stenographer/stats"
@@ -62,6 +65,9 @@ const (
 	serverKeyFilename  = "server_key.pem"
 )
 
+// ThreadConfig is a json-decoded configuration for each stenotype thread,
+// detailing where it should store data and how much disk space it should keep
+// available on each disk.
 type ThreadConfig struct {
 	PacketsDirectory   string
 	IndexDirectory     string
@@ -78,20 +84,22 @@ type Config struct {
 }
 
 type stenotypeThread struct {
-	id          int
-	indexPath   string
-	packetPath  string
-	minDiskFree int
-	files       map[string]*blockfile.BlockFile
-	mu          sync.RWMutex
+	id           int
+	indexPath    string
+	packetPath   string
+	minDiskFree  int
+	files        map[string]*blockfile.BlockFile
+	mu           sync.RWMutex
+	fileLastSeen time.Time
 }
 
 func newStenotypeThread(i int, baseDir string) *stenotypeThread {
 	return &stenotypeThread{
-		id:         i,
-		indexPath:  filepath.Join(baseDir, indexPrefix+strconv.Itoa(i)),
-		packetPath: filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
-		files:      map[string]*blockfile.BlockFile{},
+		id:           i,
+		indexPath:    filepath.Join(baseDir, indexPrefix+strconv.Itoa(i)),
+		packetPath:   filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
+		files:        map[string]*blockfile.BlockFile{},
+		fileLastSeen: time.Now(),
 	}
 }
 
@@ -135,9 +143,6 @@ func (st *stenotypeThread) getIndexFilePath(filename string) string {
 }
 
 func (st *stenotypeThread) syncFilesWithDisk() {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
 	newFilesCnt := 0
 	for _, filename := range st.listPacketFilesOnDisk() {
 		if st.files[filename] != nil {
@@ -149,6 +154,7 @@ func (st *stenotypeThread) syncFilesWithDisk() {
 		}
 		newFilesCnt++
 		newFiles.Increment()
+		st.fileLastSeen = time.Now()
 	}
 	if newFilesCnt > 0 {
 		v(0, "Thread %v found %d new blockfiles", st.id, newFilesCnt)
@@ -199,7 +205,7 @@ func (st *stenotypeThread) cleanUpOnLowDiskSpace() {
 		v(0, "Thread %v disk usage is high (packet path=%q): %d%% free\n", st.id, st.packetPath, df)
 		if len(st.files) == 0 {
 			log.Printf("Thread %v could not free up space:  no files available", st.id)
-		} else if err := st.deleteOlderThreadFiles(); err != nil {
+		} else if err := st.deleteOldestThreadFile(); err != nil {
 			log.Printf("Thread %v could not free up space by deleting old files: %v", st.id, err)
 			return
 		}
@@ -210,10 +216,10 @@ func (st *stenotypeThread) cleanUpOnLowDiskSpace() {
 	}
 }
 
-func (st *stenotypeThread) deleteOlderThreadFiles() error {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
+// deleteOldestThreadFile deletes the single oldest file held by this thread.
+// It should only be called if the thread has at least one file (should be
+// checked by the caller beforehand).
+func (st *stenotypeThread) deleteOldestThreadFile() error {
 	oldestFile := st.getSortedFiles()[0]
 	v(1, "Thread %v removing %q", st.id, oldestFile)
 	if err := os.Remove(st.getPacketFilePath(oldestFile)); err != nil {
@@ -253,16 +259,33 @@ func (st *stenotypeThread) untrackFile(filename string) error {
 	return nil
 }
 
+func (s *stenotypeThread) FileLastSeen() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.fileLastSeen
+}
+
+const concurrentBlockfileReadsPerThread = 10
+
 func (st *stenotypeThread) lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	st.mu.RLock()
-	var inputs []*base.PacketChan
-	for _, file := range st.getSortedFiles() {
-		inputs = append(inputs, st.files[file].Lookup(ctx, q))
-	}
+	inputs := make(chan *base.PacketChan, concurrentBlockfileReadsPerThread)
 	out := base.ConcatPacketChans(ctx, inputs)
 	go func() {
-		<-out.Done()
-		st.mu.RUnlock()
+		defer func() {
+			close(inputs)
+			<-out.Done()
+			st.mu.RUnlock()
+		}()
+		for _, file := range st.getSortedFiles() {
+			packets := base.NewPacketChan(100)
+			select {
+			case inputs <- packets:
+				go st.files[file].Lookup(ctx, q, packets)
+			case <-ctx.Done():
+				return
+			}
+		}
 	}()
 	return out
 }
@@ -357,20 +380,29 @@ func (c Config) Directory() (_ *Directory, returnedErr error) {
 		threads[i] = st
 	}
 	numThreads.Set(int64(len(c.Threads)))
-	return newDirectory(dirname, threads), nil
+	d := &Directory{
+		conf:    c,
+		name:    dirname,
+		threads: threads,
+		done:    make(chan bool),
+	}
+	go d.callEvery(d.syncFiles, fileSyncFrequency)
+	return d, nil
 }
 
 // Stenotype returns a exec.Cmd which runs the stenotype binary with all of
 // the appropriate flags.
-func (c Config) Stenotype(d *Directory) *exec.Cmd {
+func (d *Directory) Stenotype() *exec.Cmd {
 	v(0, "Starting stenotype")
-	args := append(c.args(), fmt.Sprintf("--dir=%s", d.Path()))
-	v(1, "Starting as %q with args %q", c.StenotypePath, args)
-	return exec.Command(c.StenotypePath, args...)
+	args := append(d.conf.args(), fmt.Sprintf("--dir=%s", d.Path()))
+	v(1, "Starting as %q with args %q", d.conf.StenotypePath, args)
+	return exec.Command(d.conf.StenotypePath, args...)
 }
 
 func (c Config) ExportDebugHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/config", func(w http.ResponseWriter, r *http.Request) {
+		w = httplog.New(w, r, false)
+		defer log.Print(w)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(c)
 	})
@@ -378,19 +410,13 @@ func (c Config) ExportDebugHandlers(mux *http.ServeMux) {
 
 // Directory contains information necessary to run Stenotype.
 type Directory struct {
+	conf    Config
 	name    string
 	threads []*stenotypeThread
 	done    chan bool
-}
-
-func newDirectory(dirname string, threads []*stenotypeThread) *Directory {
-	d := &Directory{
-		name:    dirname,
-		threads: threads,
-		done:    make(chan bool),
-	}
-	go d.callEvery(d.syncFiles, fileSyncFrequency)
-	return d
+	// StenotypeOutput is the writer that stenotype STDOUT/STDERR will be
+	// redirected to.
+	StenotypeOutput io.Writer
 }
 
 // Close closes the directory.  This should only be done when stenotype has
@@ -413,10 +439,83 @@ func (d *Directory) callEvery(cb func(), freq time.Duration) {
 	}
 }
 
+func removeHiddenFilesFrom(dir string) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		log.Printf("Hidden file cleanup failed, could not read directory: %v", err)
+		return
+	}
+	for _, file := range files {
+		if file.Mode().IsRegular() && strings.HasPrefix(file.Name(), ".") {
+			filename := filepath.Join(dir, file.Name())
+			if err := os.Remove(filename); err != nil {
+				log.Printf("Unable to remove hidden file %q: %v", filename, err)
+			} else {
+				log.Printf("Deleted stale output file %q", filename)
+			}
+		}
+	}
+}
+
+func filesIn(dir string) (map[string]os.FileInfo, error) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]os.FileInfo{}
+	for _, file := range files {
+		if file.Mode().IsRegular() {
+			out[file.Name()] = file
+		}
+	}
+	return out, nil
+}
+
+// removeOldFiles removes hidden files from previous runs, as well as packet
+// files without indexes and vice versa.
+func (d *Directory) removeOldFiles() {
+	for _, thread := range d.conf.Threads {
+		v(1, "Checking %q/%q for stale pkt/idx files...", thread.PacketsDirectory, thread.IndexDirectory)
+		removeHiddenFilesFrom(thread.PacketsDirectory)
+		removeHiddenFilesFrom(thread.IndexDirectory)
+		packetFiles, err := filesIn(thread.PacketsDirectory)
+		if err != nil {
+			log.Printf("could not get files from %q: %v", thread.PacketsDirectory, err)
+			continue
+		}
+		indexFiles, err := filesIn(thread.IndexDirectory)
+		if err != nil {
+			log.Printf("could not get files from %q: %v", thread.IndexDirectory, err)
+			continue
+		}
+		var mismatchedFilesToRemove []string
+		for file := range packetFiles {
+			if indexFiles[file] == nil {
+				mismatchedFilesToRemove = append(mismatchedFilesToRemove, filepath.Join(thread.PacketsDirectory, file))
+				log.Printf("Removing packet file %q without index found in %q", file, thread.PacketsDirectory)
+			}
+		}
+		for file := range indexFiles {
+			if packetFiles[file] == nil {
+				mismatchedFilesToRemove = append(mismatchedFilesToRemove, filepath.Join(thread.IndexDirectory, file))
+				log.Printf("Removing index file %q without packets found in %q", file, thread.IndexDirectory)
+			}
+		}
+		for _, file := range mismatchedFilesToRemove {
+			v(2, "Removing file %q", file)
+			if err := os.Remove(file); err != nil {
+				log.Printf("Unable to remove mismatched file %q", file)
+			}
+		}
+	}
+}
+
 func (d *Directory) syncFiles() {
 	for _, t := range d.threads {
+		t.mu.Lock()
 		t.syncFilesWithDisk()
 		t.cleanUpOnLowDiskSpace()
+		t.mu.Unlock()
 	}
 }
 
@@ -454,6 +553,8 @@ func (d *Directory) getHTTPBlockfile(r *http.Request) (*blockfile.BlockFile, fun
 // ExportDebugHandlers exports a few debugging handlers to an HTTP ServeMux.
 func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/files", func(w http.ResponseWriter, r *http.Request) {
+		w = httplog.New(w, r, false)
+		defer log.Print(w)
 		w.Header().Set("Content-Type", "text/plain")
 		for _, thread := range d.threads {
 			fmt.Fprintf(w, "Thread %d (IDX: %q, PKT: %q)\n", thread.id, thread.indexPath, thread.packetPath)
@@ -465,6 +566,8 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 		}
 	})
 	mux.HandleFunc("/debug/index", func(w http.ResponseWriter, r *http.Request) {
+		w = httplog.New(w, r, false)
+		defer log.Print(w)
 		file, cleanup, err := d.getHTTPBlockfile(r)
 		defer cleanup()
 		if err != nil {
@@ -491,6 +594,8 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 		file.DumpIndex(w, start, finish)
 	})
 	mux.HandleFunc("/debug/packets", func(w http.ResponseWriter, r *http.Request) {
+		w = httplog.New(w, r, false)
+		defer log.Print(w)
 		file, cleanup, err := d.getHTTPBlockfile(r)
 		defer cleanup()
 		if err != nil {
@@ -501,6 +606,8 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 		base.PacketsToFile(file.AllPackets(), w)
 	})
 	mux.HandleFunc("/debug/positions", func(w http.ResponseWriter, r *http.Request) {
+		w = httplog.New(w, r, true)
+		defer log.Print(w)
 		file, cleanup, err := d.getHTTPBlockfile(r)
 		defer cleanup()
 		if err != nil {
@@ -535,4 +642,82 @@ func (d *Directory) ExportDebugHandlers(mux *http.ServeMux) {
 			}
 		}
 	})
+}
+
+// MinLastFileSeen returns the timestamp of the oldest among the newest files
+// created by all threads.
+func (d *Directory) MinLastFileSeen() time.Time {
+	var t time.Time
+	for _, thread := range d.threads {
+		ls := thread.FileLastSeen()
+		if t.IsZero() || ls.Before(t) {
+			t = ls
+		}
+	}
+	return t
+}
+
+// runStaleFileCheck watches files generated by stenotype to make sure it's
+// regularly generating new files.  It will Kill() stenotype if it doesn't see
+// at least one new file every maxFileLastSeenDuration in each thread directory.
+func (d *Directory) runStaleFileCheck(cmd *exec.Cmd, done chan struct{}) {
+	ticker := time.NewTicker(maxFileLastSeenDuration)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			v(2, "Checking stenotype for stale files...")
+			diff := time.Now().Sub(d.MinLastFileSeen())
+			if diff > maxFileLastSeenDuration {
+				log.Printf("Restarting stenotype due to stale file.  Age: %v", diff)
+				if err := cmd.Process.Kill(); err != nil {
+					log.Fatalf("Failed to kill stenotype,  stale file found: ", err)
+				}
+			} else {
+				v(2, "Stenotype up to date, last file update %v ago", diff)
+			}
+		case <-done:
+			return
+		}
+	}
+}
+
+const (
+	minStenotypeRuntimeForRestart = time.Minute
+	maxFileLastSeenDuration       = time.Minute * 5
+)
+
+// runStenotypeOnce runs the stenotype binary a single time, returning any
+// errors associated with its running.
+func (d *Directory) runStenotypeOnce() error {
+	d.removeOldFiles()
+	cmd := d.Stenotype()
+	done := make(chan struct{})
+	defer close(done)
+	// Start running stenotype.
+	cmd.Stdout = d.StenotypeOutput
+	cmd.Stderr = d.StenotypeOutput
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("cannot start stenotype: %v", err)
+	}
+	go d.runStaleFileCheck(cmd, done)
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("stenotype wait failed: %v", err)
+	}
+	return fmt.Errorf("stenotype stopped")
+}
+
+// RunStenotype keeps the stenotype binary running, restarting it if necessary
+// but trying not to allow crash loops.
+func (d *Directory) RunStenotype() {
+	for {
+		start := time.Now()
+		v(1, "Running Stenotype")
+		err := d.runStenotypeOnce()
+		duration := time.Since(start)
+		log.Printf("Stenotype stopped after %v: %v", duration, err)
+		if duration < minStenotypeRuntimeForRestart {
+			log.Fatalf("Stenotype ran for too little time, crashing to avoid stenotype crash loop")
+		}
+	}
 }

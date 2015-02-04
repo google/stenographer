@@ -37,7 +37,7 @@ class SliceSet {
     Buffer(Buffer* l, size_t size) : last(l), total(size), remaining(size) {
       buffer = new char[size];
       current = buffer;
-      LOG(V1) << "New stringslice is " << (total >> 20) << "MB";
+      VLOG(1) << "New stringslice is " << (total >> 20) << "MB";
     }
 
     void Reset() {
@@ -47,7 +47,7 @@ class SliceSet {
       last = NULL;
       remaining = total;
       current = buffer;
-      LOG(V1) << "Reset stringslice to " << (total >> 20) << "MB";
+      VLOG(1) << "Reset stringslice to " << (total >> 20) << "MB";
     }
 
     ~Buffer() {

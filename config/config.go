@@ -404,9 +404,6 @@ type Directory struct {
 	name    string
 	threads []*stenotypeThread
 	done    chan bool
-	// StenotypeOutput is the writer that stenotype STDOUT/STDERR will be
-	// redirected to.
-	StenotypeOutput io.Writer
 }
 
 // Close closes the directory.  This should only be done when stenotype has
@@ -679,14 +676,14 @@ const (
 
 // runStenotypeOnce runs the stenotype binary a single time, returning any
 // errors associated with its running.
-func (d *Directory) runStenotypeOnce() error {
+func (d *Directory) runStenotypeOnce(outputTo io.Writer) error {
 	d.removeOldFiles()
 	cmd := d.Stenotype()
 	done := make(chan struct{})
 	defer close(done)
 	// Start running stenotype.
-	cmd.Stdout = d.StenotypeOutput
-	cmd.Stderr = d.StenotypeOutput
+	cmd.Stdout = outputTo
+	cmd.Stderr = outputTo
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("cannot start stenotype: %v", err)
 	}
@@ -699,11 +696,11 @@ func (d *Directory) runStenotypeOnce() error {
 
 // RunStenotype keeps the stenotype binary running, restarting it if necessary
 // but trying not to allow crash loops.
-func (d *Directory) RunStenotype() {
+func (d *Directory) RunStenotype(outputTo io.Writer) {
 	for {
 		start := time.Now()
 		v(1, "Running Stenotype")
-		err := d.runStenotypeOnce()
+		err := d.runStenotypeOnce(outputTo)
 		duration := time.Since(start)
 		log.Printf("Stenotype stopped after %v: %v", duration, err)
 		if duration < minStenotypeRuntimeForRestart {

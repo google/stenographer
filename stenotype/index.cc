@@ -170,8 +170,8 @@ std::string Hex(const char* start, int size) {
 
 void WriteToIndex(char first, const char* start, int size, int64_t pos,
                   leveldb::TableBuilder* ss) {
-  LOG(V4) << "Writing index " << int(first) << ":*" << size << ")"
-          << Hex(start, size) << "=" << pos;
+  VLOG(10) << "Writing index " << int(first) << ":*" << size << ")"
+           << Hex(start, size) << "=" << pos;
   char buf[1 +   // First byte is type of index (ip4, ip6, proto, etc)
            4 +   // Last 4 bytes are position in the blockfile
            16];  // Middle 1-16 bytes are type-specific index values.
@@ -269,7 +269,7 @@ Error Index::Flush() {
   LOG(INFO) << "Wrote all index files for " << filename << ", moving to "
             << unhidden;
   RETURN_IF_ERROR(Errno(rename(filename.c_str(), unhidden.c_str())), "rename");
-  LOG(V1) << "Stored " << packets_ << " with " << ip4_.size() << " IP4 "
+  VLOG(1) << "Stored " << packets_ << " with " << ip4_.size() << " IP4 "
           << ip6_.size() << " IP6 " << proto_.size() << " protos "
           << port_.size() << " ports";
   return SUCCESS;

@@ -164,23 +164,19 @@ extern int logging_verbose_level;
 #define LOGGING_FATAL_CRASH true
 #define LOGGING_ERROR_CRASH false
 #define LOGGING_INFO_CRASH false
-#define LOGGING_V1_CRASH false
-#define LOGGING_V2_CRASH false
-#define LOGGING_V3_CRASH false
-#define LOGGING_V4_CRASH false
 
 #define LOGGING_FATAL_LOG true
 #define LOGGING_ERROR_LOG true
 #define LOGGING_INFO_LOG (logging_verbose_level > 0)
-#define LOGGING_V1_LOG (logging_verbose_level > 1)
-#define LOGGING_V2_LOG (logging_verbose_level > 2)
-#define LOGGING_V3_LOG (logging_verbose_level > 3)
-#define LOGGING_V4_LOG (logging_verbose_level > 4)
 
 #ifndef LOG
 #define LOG(level)           \
   if (LOGGING_##level##_LOG) \
   LogLine(LOGGING_##level##_CRASH, __FILE__, __LINE__)
+#endif
+#ifndef VLOG
+#define VLOG(level) \
+  if (logging_verbose_level > level + 1) LogLine(false, __FILE__, __LINE__)
 #endif
 #ifndef CHECK
 #define CHECK(expr) \
@@ -388,7 +384,7 @@ class Watchdog {
       if (done_) {
         return;
       } else if (last != ctr_) {
-        LOG(V2) << "Fed watchdog: " << description_;
+        VLOG(2) << "Fed watchdog: " << description_;
         last = ctr_;
         continue;
       }

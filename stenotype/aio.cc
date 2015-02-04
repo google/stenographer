@@ -32,12 +32,12 @@ class SingleFile;
 class PWrite {
  public:
   PWrite(Block* b, SingleFile* f) {
-    LOG(V3) << "PWriteBlockConstructor b" << int64_t(b) << " INTO b"
+    VLOG(3) << "PWriteBlockConstructor b" << int64_t(b) << " INTO b"
             << int64_t(&block);
     block.Swap(b);
     file = f;
   }
-  ~PWrite() { LOG(V3) << "PWriteBLockDestructor b" << int64_t(&block); }
+  ~PWrite() { VLOG(3) << "PWriteBLockDestructor b" << int64_t(&block); }
 
   Error Done(io_event* evt);
 
@@ -63,7 +63,7 @@ class SingleFile {
   int Outstanding() { return outstanding_.size(); }
   void RemoveOutstanding(PWrite* write) {
     CHECK(outstanding_.erase(write) == 1);
-    LOG(V2) << "File has " << outstanding_.size() << " remaining ops";
+    VLOG(2) << "File has " << outstanding_.size() << " remaining ops";
   }
   void RequestClose() { truncate_ = offset_; }
   bool Closable() { return outstanding_.size() == 0 && truncate_ >= 0; }
@@ -91,7 +91,7 @@ Error PWrite::Done(io_event* event) {
   }
   file->RemoveOutstanding(this);
   delete this;
-  return move(result);
+  return result;
 }
 
 SingleFile::~SingleFile() {
@@ -149,12 +149,13 @@ Error Output::SetUp() {
       break;
     }
     SleepForSeconds(1);
-    LOG(V1) << "io_setup retrying";
+    VLOG(1) << "io_setup retrying";
   }
   return NegErrno(ret);
 }
 
 Error Output::CheckForCompletedOps(bool block) {
+  VLOG(4) << "Checking for completed ops, block=" << block;
   Error result;
   io_event events[4];
   int ret;
@@ -164,6 +165,7 @@ Error Output::CheckForCompletedOps(bool block) {
     ret = io_getevents(ctx_, block ? 1 : 0, 4, events, NULL);
   } while (ret == -EINTR);
   RETURN_IF_ERROR(NegErrno(ret), "io_getevents");
+  VLOG(4) << "Got " << ret << " completed ops, processing";
   for (int i = 0; i < ret; i++) {
     auto aio = reinterpret_cast<io::PWrite*>(events[i].obj->data);
     auto file = aio->file;
@@ -190,10 +192,9 @@ Error Output::Rotate(const std::string& dirname, int64_t micros) {
   }
   std::string name = HiddenFile(dirname, micros);
   int fd = open(name.c_str(), O_CREAT | O_WRONLY | O_DSYNC | O_DIRECT, 0600);
+  RETURN_IF_ERROR(Errno(fd), "open");
   LOG(INFO) << "Opening packet file " << name << ": " << fd;
-  RETURN_IF_ERROR(Errno(fd > 0), "open");
-  LOG_IF_ERROR(Errno(0 <= fallocate(fd, 0, 0, initial_file_size_)),
-               "fallocate");
+  LOG_IF_ERROR(Errno(fallocate(fd, 0, 0, initial_file_size_)), "fallocate");
   current_ = new io::SingleFile(this, dirname, micros, fd);
   files_.insert(current_);
   return SUCCESS;

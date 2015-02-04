@@ -65,7 +65,7 @@ func ReadConfig() *config.Config {
 func main() {
 	flag.Parse()
 
-	stenotypeOutput := io.Writer(os.Stderr)
+  var stenotypeOutput io.Writer = os.Stderr
 
 	// Set up syslog logging
 	if *logToSyslog {
@@ -82,13 +82,12 @@ func main() {
 	conf := ReadConfig()
 	v(1, "Using config:\n%v", conf)
 	dir, err := conf.Directory()
-	dir.StenotypeOutput = stenotypeOutput
 	if err != nil {
 		log.Fatalf("unable to set up stenographer directory: %v", err)
 	}
 	defer dir.Close()
 
-	go dir.RunStenotype()
+	go dir.RunStenotype(stenotypeOutput)
 
 	// HTTP handling
 	conf.ExportDebugHandlers(http.DefaultServeMux)

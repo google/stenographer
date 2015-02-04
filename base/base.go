@@ -289,7 +289,7 @@ func PathDiskFreePercentage(path string) (int, error) {
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return 0, err
 	}
-	return int(100 * stat.Bfree / stat.Blocks), nil
+	return int(100 * stat.Bavail / stat.Blocks), nil
 }
 
 // snapLen is the max packet size we'll return in pcap files to users.

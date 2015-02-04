@@ -19,7 +19,7 @@
 # will probably guide the debian work by detailing all the actual stuff that
 # needs to be done to install stenographer correctly.
 
-BINDIR="${BINDIR-/usr/local/bin}"
+BINDIR="${BINDIR-/usr/bin}"
 OUTDIR="${OUTDIR-/tmp/stenographer}"
 
 cd "$(dirname $0)"

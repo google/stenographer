@@ -52,7 +52,7 @@ fi
 if [ -d /etc/security/limits.d ]; then
   if [ ! -f /etc/security/limits.d/stenographer.conf ]; then
     Info "Setting up stenographer limits"
-    sudo cp limits.conf /etc/security/limits.d/stenographer.conf
+    sudo cp configs/limits.conf /etc/security/limits.d/stenographer.conf
   fi
 fi
 
@@ -60,7 +60,7 @@ if [ ! -d /etc/stenographer/certs ]; then
   Info "Setting up stenographer /etc directory"
   sudo mkdir -p /etc/stenographer/certs
   if [ ! -f /etc/stenographer/config ]; then
-    sudo cp -vf sample_config /etc/stenographer/config
+    sudo cp -vf configs/steno.conf /etc/stenographer/config
   fi
   sudo chown -R stenographer:stenographer /etc/stenographer
 fi

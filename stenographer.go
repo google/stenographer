@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
@@ -100,12 +101,12 @@ func main() {
 	http.Handle("/debug/stats", stats.S)
 	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
 		w = httplog.New(w, r, true)
-    start := time.Now()
+		start := time.Now()
 		defer func() {
 			queries.Increment()
 			queryNanos.IncrementBy(time.Since(start).Nanoseconds())
-      log.Print(w)
-    }()
+			log.Print(w)
+		}()
 		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "could not read request body", http.StatusBadRequest)

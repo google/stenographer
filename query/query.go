@@ -91,7 +91,7 @@ func (q protocolQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile)
 	defer log(q, index, &bp, &err)()
 	return index.ProtoPositions(ctx, byte(q))
 }
-func (q protocolQuery) String() string { return fmt.Sprintf("protocol %d", q) }
+func (q protocolQuery) String() string { return fmt.Sprintf("ip proto %d", q) }
 func (q protocolQuery) base() bool     { return true }
 
 type ipQuery [2]net.IP
@@ -179,6 +179,7 @@ func (a timeQuery) String() string {
 	}
 	return fmt.Sprintf("after %v", a[0].Format(time.RFC3339))
 }
+func (a timeQuery) base() bool { return true }
 
 // NewQuery parses the given query arg and returns a query object.
 // This query can then be passed into a blockfile to get out the set of packets

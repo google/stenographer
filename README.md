@@ -35,37 +35,6 @@ It is NOT designed for:
        disks are very good at doing quickly, and generally reading back sparse
        data with lots of seeks, which disks do slowly.
 
-Architecture
-------------
-
-Stenographer is actually two separate processes:
-
-1.  Stenographer:  long-running server which handles packet read requests, disk
-    cleanup, and running/babysitting stenotype.
-2.  Stenotype:  The actual packet-writing system; a multi-threaded NIC-to-disk
-    writer.  Also writes out simple indexes for finding packets within files.
-3.  Stenoread:  A simple command-line script that automates requesting packets
-    from Stenographer and presenting them to analysts or other programs.
-
-Stenotype writes packet files in a set of directories, based on the number of
-writing threads it runs (one directory per thread).  Admins can then mount
-different disks under these directories to spread load across a set of disks,
-allowing faster writes than a single disk's throughput would allow.
-
-Format
-------
-
-Stenotype writes files to disk in a non-standard format (they're straight dumps
-of TPACKET_V3 memory regions), but users may request packets from Stenographer,
-and the responses will be made available in PCAP format.  These can then be
-passed to other systems like Wireshark or TCPDump for further analysis.
-
-As well as writing out actual packet data, Stenotype also writes out indexes
-which allow lookup of packets based on IP address, port (TCP and UDP), and
-IP protocol.  When requesting packets from Stenographer, users may request
-packets matching combinations of these features (packets between 1.2.3.4 and
-4.3.2.1 on port 80), and only that subset of packets will be returned.
-
 Performance
 -----------
 

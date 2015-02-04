@@ -170,18 +170,24 @@ Error Output::CheckForCompletedOps(bool block) {
     auto aio = reinterpret_cast<io::PWrite*>(events[i].obj->data);
     auto file = aio->file;
     REPLACE_IF_ERROR(result, aio->Done(&events[i]));
-    if (file->Closable()) {
-      REPLACE_IF_ERROR(result, file->Close());
-      files_.erase(file);
-      delete file;
-    }
+    REPLACE_IF_ERROR(result, MaybeCloseFile(file));
   }
   return result;
+}
+
+Error Output::MaybeCloseFile(io::SingleFile* file) {
+  if (file->Closable()) {
+    RETURN_IF_ERROR(file->Close(), "closing file");
+    files_.erase(file);
+    delete file;
+  }
+  return SUCCESS;
 }
 
 Error Output::Rotate(const std::string& dirname, int64_t micros) {
   if (current_) {
     current_->RequestClose();
+    RETURN_IF_ERROR(MaybeCloseFile(current_), "maybe close");
     current_ = NULL;
   }
   std::string name = HiddenFile(dirname, micros);

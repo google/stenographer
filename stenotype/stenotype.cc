@@ -338,6 +338,7 @@ Error SetAffinity(int cpu) {
 }
 
 void WriteIndexes(int thread, st::ProducerConsumerQueue* write_index) {
+  LOG(V1) << "Starting WriteIndexes thread " << thread;
   Watchdog dog("WriteIndexes thread " + std::to_string(thread),
                flag_fileage_sec * 3);
   pid_t tid = syscall(SYS_gettid);
@@ -348,11 +349,12 @@ void WriteIndexes(int thread, st::ProducerConsumerQueue* write_index) {
   while (true) {
     VLOG(1) << "Waiting for index";
     Index* i = reinterpret_cast<Index*>(write_index->Get());
-    LOG(INFO) << "Got index " << int64_t(i);
+    LOG(V1) << "Got index " << int64_t(i);
     if (i == NULL) {
       break;
     }
     CHECK_SUCCESS(i->Flush());
+    LOG(V1) << "Wrote index " << int64_t(i);
     delete i;
     dog.Feed();
   }
@@ -438,9 +440,26 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   int64_t lastlog = 0;
   int64_t blocks = 0;
   int64_t block_offset = 0;
-  int64_t errors = 0;  // allows us to ignore spurious errors.
   for (int64_t remaining = flag_count; remaining != 0 && run_threads;) {
     LOG_IF_ERROR(output.CheckForCompletedOps(false), "check for completed");
+    int64_t current_micros = GetCurrentTimeMicros();
+
+    // Rotate file if necessary.
+    int64_t current_file_age_secs =
+        (current_micros - micros) / kNumMicrosPerSecond;
+    if (block_offset == flag_filesize_mb ||
+        current_file_age_secs > flag_fileage_sec) {
+      LOG(V1) << "Rotating file " << micros << " with " << block_offset
+              << " blocks";
+      // File size got too big, rotate file.
+      micros = current_micros;
+      block_offset = 0;
+      CHECK_SUCCESS(output.Rotate(file_dirname, micros));
+      if (flag_index) {
+        write_index->Put(index);
+        index = new Index(index_dirname, micros);
+      }
+    }
     // Read in a new block from AF_PACKET.
     Block b;
     CHECK_SUCCESS(v3->NextBlock(&b, kNumMillisPerSecond));
@@ -454,38 +473,8 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
         index->Process(p, block_offset << 20);
       }
     }
-
-    // Iterate over all packets in the block.  Currently unused, but
-    // eventually packet indexing will go here.
     blocks++;
     block_offset++;
-
-    // Start an async write of the current block.  Could block
-    // waiting for the write 'aiops' writes ago.
-    Error write_err = output.Write(&b);
-    if (!SUCCEEDED(write_err)) {
-      LOG(ERROR) << "output write error: " << *write_err;
-      errors++;
-      CHECK(errors < 5) << "Too many errors in close proximity";
-    } else if (errors > 0) {
-      errors--;
-    }
-
-    int64_t current_micros = GetCurrentTimeMicros();
-    // Rotate file if necessary.
-    int64_t current_file_age_secs =
-        (current_micros - micros) / kNumMicrosPerSecond;
-    if (block_offset == flag_filesize_mb ||
-        current_file_age_secs > flag_fileage_sec) {
-      // File size got too big, rotate file.
-      micros = current_micros;
-      block_offset = 0;
-      CHECK_SUCCESS(output.Rotate(file_dirname, micros));
-      if (flag_index) {
-        write_index->Put(index);
-        index = new Index(index_dirname, micros);
-      }
-    }
 
     // Log stats every 100MB or at least 1/minute.
     if (blocks % 100 == 0 ||
@@ -502,6 +491,10 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
         LOG(ERROR) << "Unable to get stats: " << *stats_err;
       }
     }
+
+    // Start an async write of the current block.  Could block
+    // waiting for the write 'aiops' writes ago.
+    CHECK_SUCCESS(output.Write(&b));
     dog.Feed();
   }
   VLOG(1) << "Finishing thread " << thread;

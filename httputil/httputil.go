@@ -12,17 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package httplog wraps a http.ResponseWriter to allow request logging.
-package httplog
+// Package httputil provides http utilities for stenographer.
+package httputil
 
 import (
 	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"time"
+
+	"golang.org/x/net/context"
 )
+
+// Context returns a new context.Content that cancels when the
+// underlying http.ResponseWriter closes.
+func Context(w http.ResponseWriter, r *http.Request) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	if closer, ok := w.(http.CloseNotifier); ok {
+		go func() {
+			select {
+			case <-closer.CloseNotify():
+				log.Printf("Detected closed HTTP connection, canceling query")
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+	}
+	return ctx, cancel
+}
 
 type httpLog struct {
 	r      *http.Request

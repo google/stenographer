@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package env contains the environment that stenographer will set up and run.
-// This is the main part of the stenographer server, setting up stenptype's
+// This is the main part of the stenographer server, setting up stenotype's
 // environment and running it, and serving all HTTP requests.
 package env
 

@@ -20,20 +20,15 @@ package main
 import (
 	"flag"
 	"io"
-	"io/ioutil"
 	"log"
 	"log/syslog"
 	"net/http"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/config"
-	"github.com/google/stenographer/httplog"
-	"github.com/google/stenographer/query"
-	"github.com/google/stenographer/stats"
-	"golang.org/x/net/context"
+	"github.com/google/stenographer/env"
 
 	_ "net/http/pprof" // server debugging info in /debug/pprof/*
 )
@@ -49,23 +44,11 @@ var (
 
 	// Verbose logging.
 	v = base.V
-
-	queries    = stats.S.Get("queries")
-	queryNanos = stats.S.Get("queryNanos")
 )
 
 const (
 	snapLen = 65536 // Max packet size we return in pcap files to users.
 )
-
-// ReadConfig reads in the config specified by the --config flag.
-func ReadConfig() *config.Config {
-	c, err := config.ReadConfigFile(*configFilename)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	return c
-}
 
 func main() {
 	flag.Parse()
@@ -84,61 +67,22 @@ func main() {
 
 	runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 	runtime.SetBlockProfileRate(1000)
-	conf := ReadConfig()
-	v(1, "Using config:\n%v", conf)
-	dir, err := conf.Directory()
-	dir.StenotypeOutput = stenotypeOutput
+
+	conf, err := config.ReadConfigFile(*configFilename)
 	if err != nil {
-		log.Fatalf("unable to set up stenographer directory: %v", err)
+		log.Fatal(err.Error())
 	}
-	defer dir.Close()
 
-	go dir.RunStenotype()
-
-	// HTTP handling
-	conf.ExportDebugHandlers(http.DefaultServeMux)
-	dir.ExportDebugHandlers(http.DefaultServeMux)
-	http.Handle("/debug/stats", stats.S)
-	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
-		w = httplog.New(w, r, true)
-		start := time.Now()
-		defer func() {
-			queries.Increment()
-			queryNanos.IncrementBy(time.Since(start).Nanoseconds())
-			log.Print(w)
-		}()
-		queryBytes, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "could not read request body", http.StatusBadRequest)
-			return
-		}
-		q, err := query.NewQuery(string(queryBytes))
-		if err != nil {
-			http.Error(w, "could not parse query", http.StatusBadRequest)
-			return
-		}
-		ctx, cancel := contextFromHTTP(w, r)
-		defer cancel()
-		packets := dir.Lookup(ctx, q)
-		w.Header().Set("Content-Type", "appliation/octet-stream")
-		base.PacketsToFile(packets, w)
-	})
-	log.Fatal(conf.Serve())
-}
-
-// contextFromHTTP returns a new context.Content that cancels when the
-// underlying http.ResponseWriter closes.
-func contextFromHTTP(w http.ResponseWriter, r *http.Request) (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(context.Background())
-	if closer, ok := w.(http.CloseNotifier); ok {
-		go func() {
-			select {
-			case <-closer.CloseNotify():
-				log.Printf("Detected closed HTTP connection, canceling query")
-				cancel()
-			case <-ctx.Done():
-			}
-		}()
+	v(1, "Using config:\n%v", conf)
+	env, err := env.New(*conf)
+	env.StenotypeOutput = stenotypeOutput
+	if err != nil {
+		log.Fatalf("unable to set up stenographer environment: %v", err)
 	}
-	return ctx, cancel
+	defer env.Close()
+
+	go env.RunStenotype()
+
+	env.ExportDebugHandlers(http.DefaultServeMux)
+	log.Fatal(env.Serve())
 }

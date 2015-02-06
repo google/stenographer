@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 )
 
@@ -100,12 +101,17 @@ func (h *httpLog) String() string {
 	if h.err != nil {
 		errstr = h.err.Error()
 	}
+	duration := time.Since(h.start)
+	prefix := "http_request_" + h.r.URL.Path + ":" + h.r.Method + "_"
+	stats.S.Get(prefix + "completed").Increment()
+	stats.S.Get(prefix + "nanos").IncrementBy(duration.Nanoseconds())
+	stats.S.Get(prefix + "bytes").IncrementBy(int64(h.nBytes))
 	return fmt.Sprintf("Requester:%q Request:\"%v %v %v\" Time:%v Bytes:%v Code:%q Err:%q%v",
 		h.r.RemoteAddr,
 		h.r.Method,
 		h.r.URL,
 		h.r.Proto,
-		time.Since(h.start),
+		duration,
 		h.nBytes,
 		http.StatusText(h.code),
 		errstr,

@@ -28,10 +28,19 @@ import (
 
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/indexfile"
+	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 )
 
-var v = base.V // verbose logging.
+var (
+	v                        = base.V // verbose logging
+	indexBaseLookupsStarted  = stats.S.Get("index_base_lookups_started")
+	indexBaseLookupsFinished = stats.S.Get("index_base_lookups_finished")
+	indexBaseLookupNanos     = stats.S.Get("index_base_lookup_nanos")
+	indexSetLookupsStarted   = stats.S.Get("index_set_lookups_started")
+	indexSetLookupsFinished  = stats.S.Get("index_set_lookups_finished")
+	indexSetLookupNanos      = stats.S.Get("index_set_lookup_nanos")
+)
 
 // Query encodes the set of packets a requester wants to get from stenographer.
 type Query interface {
@@ -42,12 +51,28 @@ type Query interface {
 	LookupIn(context.Context, *indexfile.IndexFile) (base.Positions, error)
 	// String returns a human readable string for this query.
 	String() string
+	// base returns whether this is a base query, hitting an indexfile directly,
+	// or an intersect/union set operation.
+	base() bool
 }
 
 func log(q Query, i *indexfile.IndexFile, bp *base.Positions, err *error) func() {
 	start := time.Now()
+	if q.base() {
+		indexBaseLookupsStarted.Increment()
+	} else {
+		indexSetLookupsStarted.Increment()
+	}
 	return func() {
-		v(3, "Query %q in %q took %v, found %d  %v", q, i.Name(), time.Since(start), len(*bp), *err)
+		duration := time.Since(start)
+		if q.base() {
+			indexBaseLookupsFinished.Increment()
+			indexBaseLookupNanos.IncrementBy(duration.Nanoseconds())
+		} else {
+			indexSetLookupsFinished.Increment()
+			indexSetLookupNanos.IncrementBy(duration.Nanoseconds())
+		}
+		v(3, "Query %q in %q took %v, found %d  %v", q, i.Name(), duration, len(*bp), *err)
 	}
 }
 
@@ -58,6 +83,7 @@ func (q portQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp
 	return index.PortPositions(ctx, uint16(q))
 }
 func (q portQuery) String() string { return fmt.Sprintf("port %d", q) }
+func (q portQuery) base() bool     { return true }
 
 type protocolQuery byte
 
@@ -65,7 +91,8 @@ func (q protocolQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile)
 	defer log(q, index, &bp, &err)()
 	return index.ProtoPositions(ctx, byte(q))
 }
-func (q protocolQuery) String() string { return fmt.Sprintf("protocol %d", q) }
+func (q protocolQuery) String() string { return fmt.Sprintf("ip proto %d", q) }
+func (q protocolQuery) base() bool     { return true }
 
 type ipQuery [2]net.IP
 
@@ -74,6 +101,7 @@ func (q ipQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp b
 	return index.IPPositions(ctx, q[0], q[1])
 }
 func (q ipQuery) String() string { return fmt.Sprintf("host %v-%v", q[0], q[1]) }
+func (q ipQuery) base() bool     { return true }
 
 type unionQuery []Query
 
@@ -96,6 +124,7 @@ func (q unionQuery) String() string {
 	}
 	return "(" + strings.Join(all, " or ") + ")"
 }
+func (q unionQuery) base() bool { return false }
 
 type intersectQuery []Query
 
@@ -118,6 +147,7 @@ func (q intersectQuery) String() string {
 	}
 	return "(" + strings.Join(all, " and ") + ")"
 }
+func (q intersectQuery) base() bool { return false }
 
 type timeQuery [2]time.Time
 
@@ -149,6 +179,7 @@ func (a timeQuery) String() string {
 	}
 	return fmt.Sprintf("after %v", a[0].Format(time.RFC3339))
 }
+func (a timeQuery) base() bool { return true }
 
 // NewQuery parses the given query arg and returns a query object.
 // This query can then be passed into a blockfile to get out the set of packets

@@ -29,13 +29,21 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
+	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 )
 
 // #include <linux/if_packet.h>
 import "C"
 
-var v = base.V // Verbose logging.
+var (
+	v                = base.V // Verbose logging
+	packetReadNanos  = stats.S.Get("packet_read_nanos")
+	packetScanNanos  = stats.S.Get("packet_scan_nanos")
+	packetsRead      = stats.S.Get("packets_read")
+	packetsScanned   = stats.S.Get("packets_scanned")
+	packetBlocksRead = stats.S.Get("packets_blocks_read")
+)
 
 // BlockFile provides an interface to a single stenotype file on disk and its
 // associated index.
@@ -76,6 +84,11 @@ func (b *BlockFile) Name() string {
 func (b *BlockFile) readPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, error) {
 	// 28 bytes actually isn't the entire packet header, but it's all the fields
 	// that we care about.
+	packetsRead.Increment()
+	start := time.Now()
+	defer func() {
+		packetReadNanos.IncrementBy(time.Since(start).Nanoseconds())
+	}()
 	var dataBuf [28]byte
 	_, err := b.f.ReadAt(dataBuf[:], pos)
 	if err != nil {
@@ -120,10 +133,15 @@ type allPacketsIter struct {
 }
 
 func (a *allPacketsIter) Next() bool {
+	start := time.Now()
+	defer func() {
+		packetScanNanos.IncrementBy(time.Since(start).Nanoseconds())
+	}()
 	if a.err != nil || a.done {
 		return false
 	}
 	for a.block == nil || a.blockPacketsRead == int(a.block.num_pkts) {
+		packetBlocksRead.Increment()
 		_, err := a.f.ReadAt(a.blockData[:], a.blockOffset)
 		if err == io.EOF {
 			a.done = true
@@ -148,6 +166,7 @@ func (a *allPacketsIter) Next() bool {
 		return false
 	}
 	a.pkt = (*C.struct_tpacket3_hdr)(unsafe.Pointer(&a.blockData[a.packetOffset]))
+	packetsScanned.Increment()
 	return true
 }
 

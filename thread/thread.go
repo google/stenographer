@@ -35,10 +35,16 @@ import (
 	"github.com/google/stenographer/httputil"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
+	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 )
 
-var v = base.V // verbose logging
+var (
+	v            = base.V // verbose logging
+	currentFiles = stats.S.Get("current_files")
+	agedFiles    = stats.S.Get("aged_files")
+)
+
 const (
 	packetPrefix = "PKT"
 	indexPrefix  = "IDX"
@@ -163,6 +169,7 @@ func (t *Thread) trackNewFile(filename string) error {
 	}
 	v(1, "new blockfile %q", filepath)
 	t.files[filename] = bf
+	currentFiles.Increment()
 	return nil
 }
 
@@ -230,6 +237,8 @@ func (t *Thread) untrackFile(filename string) error {
 	v(1, "Thread %v old blockfile %q", t.id, b.Name())
 	b.Close()
 	delete(t.files, filename)
+	agedFiles.Increment()
+	currentFiles.IncrementBy(-1)
 	return nil
 }
 

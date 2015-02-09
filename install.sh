@@ -25,8 +25,10 @@ OUTDIR="${OUTDIR-/tmp/stenographer}"
 cd "$(dirname $0)"
 source lib.sh
 
+set -e
 Info "Making sure we have sudo access"
 sudo cat /dev/null
+set +e
 
 Info "Killing aleady-running processes"
 ReallyKill stenographer

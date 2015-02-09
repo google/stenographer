@@ -83,7 +83,6 @@ func main() {
 
 	go env.RunStenotype()
 
-	// HTTP handling
 	env.ExportDebugHandlers(http.DefaultServeMux)
 	log.Fatal(env.Serve())
 }

@@ -35,11 +35,17 @@ import (
 	"github.com/google/stenographer/config"
 	"github.com/google/stenographer/httputil"
 	"github.com/google/stenographer/query"
+	"github.com/google/stenographer/stats"
 	"github.com/google/stenographer/thread"
 	"golang.org/x/net/context"
 )
 
-var v = base.V // verbose logging
+var (
+	v               = base.V // verbose logging
+	rmHiddenFiles   = stats.S.Get("removed_hidden_files")
+	rmMismatchFiles = stats.S.Get("removed_mismatched_files")
+)
+
 const (
 	fileSyncFrequency = 15 * time.Second
 
@@ -184,6 +190,7 @@ func removeHiddenFilesFrom(dir string) {
 			if err := os.Remove(filename); err != nil {
 				log.Printf("Unable to remove hidden file %q: %v", filename, err)
 			} else {
+				rmHiddenFiles.Increment()
 				log.Printf("Deleted stale output file %q", filename)
 			}
 		}
@@ -238,6 +245,8 @@ func (d *Env) removeOldFiles() {
 			v(2, "Removing file %q", file)
 			if err := os.Remove(file); err != nil {
 				log.Printf("Unable to remove mismatched file %q", file)
+			} else {
+				rmMismatchFiles.Increment()
 			}
 		}
 	}

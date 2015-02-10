@@ -139,7 +139,7 @@ func (i *IndexFile) positions(ctx context.Context, from, to []byte) (out base.Po
 		indexCurrentReads.IncrementBy(-1)
 		indexReads.Increment()
 	}()
-	defer indexReadNanos.NanoTimer()
+	defer indexReadNanos.NanoTimer()()
 	iter := i.ss.Find(from, nil)
 	keyLen := len(from)
 	last := make([]byte, keyLen)

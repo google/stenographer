@@ -85,7 +85,7 @@ func (b *BlockFile) readPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, err
 	// 28 bytes actually isn't the entire packet header, but it's all the fields
 	// that we care about.
 	packetsRead.Increment()
-	defer packetReadNanos.NanoTimer()
+	defer packetReadNanos.NanoTimer()()
 	var dataBuf [28]byte
 	_, err := b.f.ReadAt(dataBuf[:], pos)
 	if err != nil {
@@ -130,7 +130,7 @@ type allPacketsIter struct {
 }
 
 func (a *allPacketsIter) Next() bool {
-	defer packetScanNanos.NanoTimer()
+	defer packetScanNanos.NanoTimer()()
 	if a.err != nil || a.done {
 		return false
 	}

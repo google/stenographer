@@ -28,10 +28,16 @@ import (
 
 	"code.google.com/p/leveldb-go/leveldb/table"
 	"github.com/google/stenographer/base"
+	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 )
 
-var v = base.V // verbose logging locally.
+var (
+	v                 = base.V // verbose logging locally.
+	indexReadNanos    = stats.S.Get("indexfile_read_nanos")
+	indexReads        = stats.S.Get("indexfile_reads")
+	indexCurrentReads = stats.S.Get("indexfile_current_reads")
+)
 
 type IndexFile struct {
 	name string
@@ -128,6 +134,12 @@ func (i *IndexFile) positions(ctx context.Context, from, to []byte) (out base.Po
 	if len(from) != len(to) {
 		return nil, fmt.Errorf("invalid from/to lengths don't match: %v %v", from, to)
 	}
+	indexCurrentReads.Increment()
+	defer func() {
+		indexCurrentReads.IncrementBy(-1)
+		indexReads.Increment()
+	}()
+	defer indexReadNanos.NanoTimer()
 	iter := i.ss.Find(from, nil)
 	keyLen := len(from)
 	last := make([]byte, keyLen)

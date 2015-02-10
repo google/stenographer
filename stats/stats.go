@@ -21,6 +21,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Stat provides a method of exporting a single named variable.
@@ -55,6 +56,13 @@ func (s *Stat) get() int64 {
 // IncrementBy increments this stat by the given delta.
 func (s *Stat) IncrementBy(delta int64) {
 	atomic.AddInt64(&s.int64, delta)
+}
+
+func (s *Stat) NanoTimer() func() {
+	start := time.Now()
+	return func() {
+		s.IncrementBy(time.Since(start).Nanoseconds())
+	}
 }
 
 // Increment increments this stat by 1.

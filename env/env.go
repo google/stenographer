@@ -98,6 +98,7 @@ func (e *Env) Serve() error {
 		w.Header().Set("Content-Type", "appliation/octet-stream")
 		base.PacketsToFile(packets, w)
 	})
+	http.Handle("/debug/stats", stats.S)
 	return server.ListenAndServeTLS(serverCert, serverKey)
 }
 

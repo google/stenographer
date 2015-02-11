@@ -252,11 +252,9 @@ void WriteToIndex(char first, const char* start, int size,
 }
 
 // Should be incremented for backwards-incompatible changes.
-const uint16_t kIndexVersionNumberMajor = 1;
+const uint16_t kIndexVersionNumberMajor = 2;
 // Should be incremented for backwards-compatible changes.
-const uint16_t kIndexVersionNumberMinor = 1;
-const uint32_t kIndexVersionNumber =
-    (uint32_t(kIndexVersionNumberMajor) << 16) | kIndexVersionNumberMinor;
+const uint16_t kIndexVersionNumberMinor = 0;
 
 const char kIndexVersion = 0;
 const char kIndexProtocol = 1;
@@ -283,10 +281,12 @@ Error Index::Flush() {
 
   // The first entry we write is the version number that defines
   // the format for this file.
-  std::vector<uint32_t> version;
-  version.push_back(kIndexVersionNumberMajor);
-  version.push_back(kIndexVersionNumberMinor);
-  WriteToIndex(kIndexVersion, NULL, 0, version, &index_ss);
+  char versionKeyBuf[1] = {0};
+  char versionBuf[8];
+  *reinterpret_cast<uint32_t*>(versionBuf) = htonl(kIndexVersionNumberMajor);
+  *reinterpret_cast<uint32_t*>(versionBuf + 4) =
+      htonl(kIndexVersionNumberMinor);
+  index_ss.Add(leveldb::Slice(versionKeyBuf, 1), leveldb::Slice(versionBuf, 8));
 
 #define WRITE_TO_INDEX(name, convert, indextype, size)                    \
   do {                                                                    \

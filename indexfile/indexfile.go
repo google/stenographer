@@ -39,6 +39,9 @@ var (
 	indexCurrentReads = stats.S.Get("indexfile_current_reads")
 )
 
+// Major version number of the file format that we support.
+const majorVersionNumber = 2
+
 type IndexFile struct {
 	name string
 	ss   *table.Reader
@@ -64,6 +67,15 @@ func NewIndexFile(filename string) (*IndexFile, error) {
 		return nil, fmt.Errorf("error opening file %q: %v", filename, err)
 	}
 	ss := table.NewReader(f, nil)
+	if versions, err := ss.Get([]byte{0}, nil); err != nil {
+		return nil, fmt.Errorf("invalid index file %q missing versions record: %v", filename, err)
+	} else if len(versions) != 8 {
+		return nil, fmt.Errorf("invalid index file %q invalid versions record: %v", filename, versions)
+	} else if major, minor := binary.BigEndian.Uint32(versions[:4]), binary.BigEndian.Uint32(versions[4:]); major != majorVersionNumber {
+		return nil, fmt.Errorf("invalid index file %q: version mismatch, want %d got %d", majorVersionNumber, major)
+	} else {
+		v(3, "index file %q has file format version %d:%d", filename, major, minor)
+	}
 	if *base.VerboseLogging >= 10 {
 		iter := ss.Find([]byte{}, nil)
 		v(4, "=== %q ===", filename)

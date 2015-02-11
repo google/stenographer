@@ -85,6 +85,24 @@ func (q portQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp
 func (q portQuery) String() string { return fmt.Sprintf("port %d", q) }
 func (q portQuery) base() bool     { return true }
 
+type vlanQuery uint16
+
+func (q vlanQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
+	defer log(q, index, &bp, &err)()
+	return index.VLANPositions(ctx, uint16(q))
+}
+func (q vlanQuery) String() string { return fmt.Sprintf("vlan %d", q) }
+func (q vlanQuery) base() bool     { return true }
+
+type mplsQuery uint32
+
+func (q mplsQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {
+	defer log(q, index, &bp, &err)()
+	return index.MPLSPositions(ctx, uint32(q))
+}
+func (q mplsQuery) String() string { return fmt.Sprintf("mpls %d", q) }
+func (q mplsQuery) base() bool     { return true }
+
 type protocolQuery byte
 
 func (q protocolQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp base.Positions, err error) {

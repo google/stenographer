@@ -52,7 +52,7 @@ import (
 %type	<query>	top expr expr2
 %type <time> timestamp
 
-%token <str> HOST PORT PROTO AND OR NET MASK TCP UDP ICMP BEFORE AFTER IPP AGO
+%token <str> HOST PORT PROTO AND OR NET MASK TCP UDP ICMP BEFORE AFTER IPP AGO VLAN MPLS
 %token <ip> IP
 %token <num> NUM
 %token <dur> DURATION
@@ -88,6 +88,20 @@ expr2:
 		parserlex.Error(fmt.Sprintf("invalid port %v", $2))
 	}
 	$$ = portQuery($2)
+}
+|   VLAN NUM
+{
+	if $2 < 0 || $2 >= 65536 {
+		parserlex.Error(fmt.Sprintf("invalid vlan %v", $2))
+	}
+	$$ = vlanQuery($2)
+}
+|   MPLS NUM
+{
+	if $2 < 0 || $2 >= (1 << 20) {
+		parserlex.Error(fmt.Sprintf("invalid mpls %v", $2))
+	}
+	$$ = mplsQuery($2)
 }
 |   IPP PROTO NUM
 {
@@ -197,6 +211,8 @@ var tokens = map[string]int{
  "||": OR,
  "or": OR,
  "port": PORT,
+ "vlan": VLAN,
+ "mpls": MPLS,
  "proto": PROTO,
  "tcp": TCP,
  "udp": UDP,

@@ -53,10 +53,12 @@ const BEFORE = 57356
 const AFTER = 57357
 const IPP = 57358
 const AGO = 57359
-const IP = 57360
-const NUM = 57361
-const DURATION = 57362
-const TIME = 57363
+const VLAN = 57360
+const MPLS = 57361
+const IP = 57362
+const NUM = 57363
+const DURATION = 57364
+const TIME = 57365
 
 var parserToknames = []string{
 	"HOST",
@@ -73,6 +75,8 @@ var parserToknames = []string{
 	"AFTER",
 	"IPP",
 	"AGO",
+	"VLAN",
+	"MPLS",
 	"IP",
 	"NUM",
 	"DURATION",
@@ -84,7 +88,7 @@ const parserEofCode = 1
 const parserErrCode = 2
 const parserMaxDepth = 200
 
-//line parser.y:158
+//line parser.y:172
 func ipsFromNet(ip net.IP, mask net.IPMask) (from, to net.IP, _ error) {
 	if len(ip) != len(mask) || (len(ip) != 4 && len(ip) != 16) {
 		return nil, nil, fmt.Errorf("bad IP or mask: %v %v", ip, mask)
@@ -102,7 +106,7 @@ func ipsFromNet(ip net.IP, mask net.IPMask) (from, to net.IP, _ error) {
 // It must be named <prefix>Lex (where prefix is passed into go tool yacc with
 // the -p flag).
 type parserLex struct {
-	now time.Time
+	now time.Time // guarantees consistent time differences
 	in  string
 	pos int
 	out Query
@@ -125,6 +129,8 @@ var tokens = map[string]int{
 	"||":     OR,
 	"or":     OR,
 	"port":   PORT,
+	"vlan":   VLAN,
+	"mpls":   MPLS,
 	"proto":  PROTO,
 	"tcp":    TCP,
 	"udp":    UDP,
@@ -234,56 +240,56 @@ var parserExca = []int{
 	-2, 0,
 }
 
-const parserNprod = 18
+const parserNprod = 20
 const parserPrivate = 57344
 
 var parserTokenNames []string
 var parserStates []string
 
-const parserLast = 41
+const parserLast = 46
 
 var parserAct = []int{
 
-	4, 5, 32, 29, 27, 7, 17, 9, 10, 11,
-	12, 13, 6, 14, 15, 28, 33, 23, 22, 8,
-	19, 16, 31, 3, 14, 15, 21, 2, 18, 1,
-	30, 0, 0, 0, 0, 0, 20, 0, 25, 26,
-	24,
+	4, 5, 27, 26, 33, 9, 36, 11, 12, 13,
+	14, 15, 8, 31, 6, 7, 16, 17, 32, 21,
+	20, 10, 19, 37, 23, 18, 3, 35, 2, 25,
+	16, 17, 22, 1, 0, 34, 0, 0, 0, 24,
+	0, 0, 0, 29, 30, 28,
 }
 var parserPact = []int{
 
-	-4, -1000, 17, -1000, 3, -13, 22, 2, -4, -1000,
-	-1000, -1000, -3, -3, -4, -4, -1000, -1000, -15, -7,
-	6, -1000, -1000, 5, -1000, -1000, -1000, -1000, -17, -2,
-	-1000, -1000, -1000, -1000,
+	-4, -1000, 23, -1000, 5, 1, -1, -2, 26, 4,
+	-4, -1000, -1000, -1000, -20, -20, -4, -4, -1000, -1000,
+	-1000, -1000, -8, -6, 9, -1000, -1000, 10, -1000, -1000,
+	-1000, -1000, -15, 3, -1000, -1000, -1000, -1000,
 }
 var parserPgo = []int{
 
-	0, 29, 27, 23, 26,
+	0, 33, 28, 26, 29,
 }
 var parserR1 = []int{
 
 	0, 1, 2, 2, 2, 3, 3, 3, 3, 3,
-	3, 3, 3, 3, 3, 3, 4, 4,
+	3, 3, 3, 3, 3, 3, 3, 3, 4, 4,
 }
 var parserR2 = []int{
 
-	0, 1, 1, 3, 3, 2, 2, 3, 4, 4,
-	3, 1, 1, 1, 2, 2, 1, 2,
+	0, 1, 1, 3, 3, 2, 2, 2, 2, 3,
+	4, 4, 3, 1, 1, 1, 2, 2, 1, 2,
 }
 var parserChk = []int{
 
-	-1000, -1, -2, -3, 4, 5, 16, 9, 23, 11,
-	12, 13, 14, 15, 7, 8, 18, 19, 6, 18,
-	-2, -4, 21, 20, -4, -3, -3, 19, 22, 10,
-	24, 17, 19, 18,
+	-1000, -1, -2, -3, 4, 5, 18, 19, 16, 9,
+	25, 11, 12, 13, 14, 15, 7, 8, 20, 21,
+	21, 21, 6, 20, -2, -4, 23, 22, -4, -3,
+	-3, 21, 24, 10, 26, 17, 21, 20,
 }
 var parserDef = []int{
 
-	0, -2, 1, 2, 0, 0, 0, 0, 0, 11,
-	12, 13, 0, 0, 0, 0, 5, 6, 0, 0,
-	0, 14, 16, 0, 15, 3, 4, 7, 0, 0,
-	10, 17, 8, 9,
+	0, -2, 1, 2, 0, 0, 0, 0, 0, 0,
+	0, 13, 14, 15, 0, 0, 0, 0, 5, 6,
+	7, 8, 0, 0, 0, 16, 18, 0, 17, 3,
+	4, 9, 0, 0, 12, 19, 10, 11,
 }
 var parserTok1 = []int{
 
@@ -291,12 +297,13 @@ var parserTok1 = []int{
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-	23, 24, 3, 3, 3, 3, 3, 22,
+	25, 26, 3, 3, 3, 3, 3, 24,
 }
 var parserTok2 = []int{
 
 	2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
 	12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+	22, 23,
 }
 var parserTok3 = []int{
 	0,
@@ -560,13 +567,29 @@ parserdefault:
 	case 7:
 		//line parser.y:93
 		{
+			if parserS[parserpt-0].num < 0 || parserS[parserpt-0].num >= 65536 {
+				parserlex.Error(fmt.Sprintf("invalid vlan %v", parserS[parserpt-0].num))
+			}
+			parserVAL.query = vlanQuery(parserS[parserpt-0].num)
+		}
+	case 8:
+		//line parser.y:100
+		{
+			if parserS[parserpt-0].num < 0 || parserS[parserpt-0].num >= (1<<20) {
+				parserlex.Error(fmt.Sprintf("invalid mpls %v", parserS[parserpt-0].num))
+			}
+			parserVAL.query = mplsQuery(parserS[parserpt-0].num)
+		}
+	case 9:
+		//line parser.y:107
+		{
 			if parserS[parserpt-0].num < 0 || parserS[parserpt-0].num >= 256 {
 				parserlex.Error(fmt.Sprintf("invalid proto %v", parserS[parserpt-0].num))
 			}
 			parserVAL.query = protocolQuery(parserS[parserpt-0].num)
 		}
-	case 8:
-		//line parser.y:100
+	case 10:
+		//line parser.y:114
 		{
 			mask := net.CIDRMask(parserS[parserpt-0].num, len(parserS[parserpt-2].ip)*8)
 			if mask == nil {
@@ -578,8 +601,8 @@ parserdefault:
 			}
 			parserVAL.query = ipQuery{from, to}
 		}
-	case 9:
-		//line parser.y:112
+	case 11:
+		//line parser.y:126
 		{
 			from, to, err := ipsFromNet(parserS[parserpt-2].ip, net.IPMask(parserS[parserpt-0].ip))
 			if err != nil {
@@ -587,47 +610,47 @@ parserdefault:
 			}
 			parserVAL.query = ipQuery{from, to}
 		}
-	case 10:
-		//line parser.y:120
+	case 12:
+		//line parser.y:134
 		{
 			parserVAL.query = parserS[parserpt-1].query
 		}
-	case 11:
-		//line parser.y:124
+	case 13:
+		//line parser.y:138
 		{
 			parserVAL.query = protocolQuery(6)
 		}
-	case 12:
-		//line parser.y:128
+	case 14:
+		//line parser.y:142
 		{
 			parserVAL.query = protocolQuery(17)
 		}
-	case 13:
-		//line parser.y:132
+	case 15:
+		//line parser.y:146
 		{
 			parserVAL.query = protocolQuery(1)
 		}
-	case 14:
-		//line parser.y:136
+	case 16:
+		//line parser.y:150
 		{
 			var t timeQuery
 			t[1] = parserS[parserpt-0].time
 			parserVAL.query = t
 		}
-	case 15:
-		//line parser.y:142
+	case 17:
+		//line parser.y:156
 		{
 			var t timeQuery
 			t[0] = parserS[parserpt-0].time
 			parserVAL.query = t
 		}
-	case 16:
-		//line parser.y:150
+	case 18:
+		//line parser.y:164
 		{
 			parserVAL.time = parserS[parserpt-0].time
 		}
-	case 17:
-		//line parser.y:154
+	case 19:
+		//line parser.y:168
 		{
 			parserVAL.time = parserlex.(*parserLex).now.Add(-parserS[parserpt-1].dur)
 		}

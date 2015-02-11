@@ -111,18 +111,22 @@ class Index {
   Error Flush();
 
  private:
-  void AddIP(leveldb::Slice ip, int64_t pos);
-  void AddProtocol(uint8_t proto, int64_t pos);
-  void AddPort(uint16_t port, int64_t pos);
+  void AddIP(leveldb::Slice ip, uint32_t pos);
+  void AddProtocol(uint8_t proto, uint32_t pos);
+  void AddPort(uint16_t port, uint32_t pos);
+  void AddVLAN(uint16_t port, uint32_t pos);
+  void AddMPLS(uint32_t mpls, uint32_t pos);
 
   std::string dirname_;
   int64_t micros_;
   int64_t packets_;
   SliceSet ip_pieces_;
-  std::map<leveldb::Slice, std::vector<int64_t>> ip4_;
-  std::map<leveldb::Slice, std::vector<int64_t>> ip6_;
-  std::map<uint8_t, std::vector<int64_t>> proto_;
-  std::map<uint16_t, std::vector<int64_t>> port_;
+  std::map<leveldb::Slice, std::vector<uint32_t>> ip4_;
+  std::map<leveldb::Slice, std::vector<uint32_t>> ip6_;
+  std::map<uint8_t, std::vector<uint32_t>> proto_;
+  std::map<uint16_t, std::vector<uint32_t>> port_;
+  std::map<uint16_t, std::vector<uint32_t>> vlan_;
+  std::map<uint32_t, std::vector<uint32_t>> mpls_;
 
   DISALLOW_COPY_AND_ASSIGN(Index);
 };

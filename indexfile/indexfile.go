@@ -119,6 +119,24 @@ func (i *IndexFile) PortPositions(ctx context.Context, port uint16) (base.Positi
 	return i.positionsSingleKey(ctx, buf[:])
 }
 
+// ProtoPositions returns the positions in the block file of all packets with
+// the give VLAN number.
+func (i *IndexFile) VLANPositions(ctx context.Context, port uint16) (base.Positions, error) {
+	var buf [3]byte
+	binary.BigEndian.PutUint16(buf[1:], port)
+	buf[0] = 3
+	return i.positionsSingleKey(ctx, buf[:])
+}
+
+// ProtoPositions returns the positions in the block file of all packets with
+// the give MPLS number.
+func (i *IndexFile) MPLSPositions(ctx context.Context, mpls uint32) (base.Positions, error) {
+	var buf [5]byte
+	binary.BigEndian.PutUint32(buf[1:], mpls)
+	buf[0] = 5
+	return i.positionsSingleKey(ctx, buf[:])
+}
+
 // Dump writes out a debug version of the entire index to the given writer.
 func (i *IndexFile) Dump(out io.Writer, start, finish []byte) {
 	for iter := i.ss.Find(start, nil); iter.Next() && bytes.Compare(iter.Key(), finish) <= 0; {

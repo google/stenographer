@@ -44,6 +44,7 @@ namespace st {
 void Index::Process(const Packet& p, int64_t block_offset) {
   packets_++;
   int64_t packet_offset = block_offset + p.offset_in_block;
+  CHECK(packet_offset < (int64_t(1) << 32));
   const char* start = p.data.data();
   const char* limit = start + p.data.size();
   if (start + sizeof(struct ethhdr) > limit) {
@@ -52,15 +53,51 @@ void Index::Process(const Packet& p, int64_t block_offset) {
   auto eth = reinterpret_cast<const struct ethhdr*>(start);
   start += sizeof(struct ethhdr);
   auto type = ntohs(eth->h_proto);
-  if (type == ETH_P_8021Q) {
-    if (start + 4 > limit) {
-      return;
-    }
-    type = ntohs(*reinterpret_cast<const uint16_t*>(start + 2));
-    start += 4;
-  }
   uint8_t protocol = 0;
+encapsulation_loop:
   switch (type) {
+    case ETH_P_8021Q:
+    case ETH_P_8021AD:
+    case ETH_P_QINQ1:
+    case ETH_P_QINQ2:
+    case ETH_P_QINQ3: {
+      if (start + 4 > limit) {
+        return;
+      }
+      AddVLAN(ntohs(*reinterpret_cast<const uint16_t*>(start)) & 0x0FFF,
+              packet_offset);
+      type = ntohs(*reinterpret_cast<const uint16_t*>(start + 2));
+      start += 4;
+      goto encapsulation_loop;  // enable QinQ
+    }
+    case ETH_P_MPLS_UC:
+    case ETH_P_MPLS_MC: {
+      uint32_t mpls_header;
+      do {
+        if (start + 4 > limit) {
+          return;
+        }
+        mpls_header = ntohl(*reinterpret_cast<const uint32_t*>(start));
+        AddMPLS(mpls_header >> 12, packet_offset);
+        start += 4;
+      } while (mpls_header & (1 << 8));
+      if (start + 1 > limit) {
+        return;
+      }
+      // MPLS doesn't say what the type it holds is, so we guess based on the
+      // first nibble, where IP keeps its version number.
+      switch (start[0] >> 4) {
+        case 4:
+          type = ETH_P_IP;
+          break;
+        case 6:
+          type = ETH_P_IPV6;
+          break;
+        default:
+          return;
+      }
+      goto encapsulation_loop;
+    }
     case ETH_P_IP: {
       if (start + sizeof(struct iphdr) > limit) {
         return;
@@ -168,7 +205,7 @@ std::string Hex(const char* start, int size) {
   return out;
 }
 
-void WriteToIndex(char first, const char* start, int size, int64_t pos,
+void WriteToIndex(char first, const char* start, int size, uint32_t pos,
                   leveldb::TableBuilder* ss) {
   LOG(V4) << "Writing index " << int(first) << ":*" << size << ")"
           << Hex(start, size) << "=" << pos;
@@ -176,7 +213,6 @@ void WriteToIndex(char first, const char* start, int size, int64_t pos,
            4 +   // Last 4 bytes are position in the blockfile
            16];  // Middle 1-16 bytes are type-specific index values.
   CHECK(size <= 16);
-  CHECK(pos < int64_t(1) << 32);
   buf[0] = first;
   memcpy(buf + 1, start, size);
   uint32_t pos32 = htonl(pos);
@@ -187,14 +223,16 @@ void WriteToIndex(char first, const char* start, int size, int64_t pos,
 // Should be incremented for backwards-incompatible changes.
 const uint16_t kIndexVersionNumberMajor = 1;
 // Should be incremented for backwards-compatible changes.
-const uint16_t kIndexVersionNumberMinor = 0;
+const uint16_t kIndexVersionNumberMinor = 1;
 const uint32_t kIndexVersionNumber =
     (uint32_t(kIndexVersionNumberMajor) << 16) | kIndexVersionNumberMinor;
 
 const char kIndexVersion = 0;
 const char kIndexProtocol = 1;
 const char kIndexPort = 2;
+const char kIndexVLAN = 3;
 const char kIndexIPv4 = 4;
+const char kIndexMPLS = 5;
 const char kIndexIPv6 = 6;
 
 }  // namespace
@@ -217,8 +255,8 @@ Error Index::Flush() {
   WriteToIndex(kIndexVersion, NULL, 0, kIndexVersionNumber, &index_ss);
 
   for (auto iter : proto_) {
-    int64_t last_pos = 0;
-    for (int64_t pos : iter.second) {
+    uint32_t last_pos = 0;
+    for (uint32_t pos : iter.second) {
       if (pos > last_pos) {
         WriteToIndex(kIndexProtocol, reinterpret_cast<const char*>(&iter.first),
                      1, pos, &index_ss);
@@ -228,8 +266,8 @@ Error Index::Flush() {
   }
   for (auto iter : port_) {
     uint16_t port = htons(iter.first);
-    int64_t last_pos = 0;
-    for (int64_t pos : iter.second) {
+    uint32_t last_pos = 0;
+    for (uint32_t pos : iter.second) {
       if (pos > last_pos) {
         WriteToIndex(kIndexPort, reinterpret_cast<const char*>(&port), 2, pos,
                      &index_ss);
@@ -237,18 +275,40 @@ Error Index::Flush() {
       last_pos = pos;
     }
   }
+  for (auto iter : vlan_) {
+    uint16_t vlan = htons(iter.first);
+    uint32_t last_pos = 0;
+    for (uint32_t pos : iter.second) {
+      if (pos > last_pos) {
+        WriteToIndex(kIndexVLAN, reinterpret_cast<const char*>(&vlan), 2, pos,
+                     &index_ss);
+      }
+      last_pos = pos;
+    }
+  }
   for (auto iter : ip4_) {
-    int64_t last_pos = 0;
-    for (int64_t pos : iter.second) {
+    uint32_t last_pos = 0;
+    for (uint32_t pos : iter.second) {
       if (pos > last_pos) {
         WriteToIndex(kIndexIPv4, iter.first.data(), 4, pos, &index_ss);
       }
       last_pos = pos;
     }
   }
+  for (auto iter : mpls_) {
+    uint32_t mpls = htonl(iter.first);
+    uint32_t last_pos = 0;
+    for (uint32_t pos : iter.second) {
+      if (pos > last_pos) {
+        WriteToIndex(kIndexMPLS, reinterpret_cast<const char*>(&mpls), 4, pos,
+                     &index_ss);
+      }
+      last_pos = pos;
+    }
+  }
   for (auto iter : ip6_) {
-    int64_t last_pos = 0;
-    for (int64_t pos : iter.second) {
+    uint32_t last_pos = 0;
+    for (uint32_t pos : iter.second) {
       if (pos > last_pos) {
         WriteToIndex(kIndexIPv6, iter.first.data(), 16, pos, &index_ss);
       }
@@ -271,11 +331,12 @@ Error Index::Flush() {
   RETURN_IF_ERROR(Errno(rename(filename.c_str(), unhidden.c_str())), "rename");
   LOG(V1) << "Stored " << packets_ << " with " << ip4_.size() << " IP4 "
           << ip6_.size() << " IP6 " << proto_.size() << " protos "
-          << port_.size() << " ports";
+          << port_.size() << " ports " << vlan_.size() << " vlan "
+          << mpls_.size() << " mpls";
   return SUCCESS;
 }
 
-void Index::AddIP(leveldb::Slice ip, int64_t pos) {
+void Index::AddIP(leveldb::Slice ip, uint32_t pos) {
   CHECK(ip.size() == 4 || ip.size() == 16);
   auto tree = ip.size() == 4 ? &ip4_ : &ip6_;
   auto finder = tree->find(ip);
@@ -286,7 +347,7 @@ void Index::AddIP(leveldb::Slice ip, int64_t pos) {
     finder->second.push_back(pos);
   }
 }
-void Index::AddProtocol(uint8_t proto, int64_t pos) {
+void Index::AddProtocol(uint8_t proto, uint32_t pos) {
   auto finder = proto_.find(proto);
   if (finder == proto_.end()) {
     proto_[proto].push_back(pos);
@@ -294,10 +355,26 @@ void Index::AddProtocol(uint8_t proto, int64_t pos) {
     finder->second.push_back(pos);
   }
 }
-void Index::AddPort(uint16_t port, int64_t pos) {
+void Index::AddPort(uint16_t port, uint32_t pos) {
   auto finder = port_.find(port);
   if (finder == port_.end()) {
     port_[port].push_back(pos);
+  } else {
+    finder->second.push_back(pos);
+  }
+}
+void Index::AddVLAN(uint16_t vlan, uint32_t pos) {
+  auto finder = vlan_.find(vlan);
+  if (finder == vlan_.end()) {
+    vlan_[vlan].push_back(pos);
+  } else {
+    finder->second.push_back(pos);
+  }
+}
+void Index::AddMPLS(uint32_t mpls, uint32_t pos) {
+  auto finder = mpls_.find(mpls);
+  if (finder == mpls_.end()) {
+    mpls_[mpls].push_back(pos);
   } else {
     finder->second.push_back(pos);
   }

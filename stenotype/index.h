@@ -111,7 +111,8 @@ class Index {
   Error Flush();
 
  private:
-  void AddIP(leveldb::Slice ip, uint32_t pos);
+  void AddIPv4(uint32_t ip, uint32_t pos);
+  void AddIPv6(leveldb::Slice ip, uint32_t pos);
   void AddProtocol(uint8_t proto, uint32_t pos);
   void AddPort(uint16_t port, uint32_t pos);
   void AddVLAN(uint16_t port, uint32_t pos);
@@ -121,7 +122,7 @@ class Index {
   int64_t micros_;
   int64_t packets_;
   SliceSet ip_pieces_;
-  std::map<leveldb::Slice, std::vector<uint32_t>> ip4_;
+  std::map<uint32_t, std::vector<uint32_t>> ip4_;
   std::map<leveldb::Slice, std::vector<uint32_t>> ip6_;
   std::map<uint8_t, std::vector<uint32_t>> proto_;
   std::map<uint16_t, std::vector<uint32_t>> port_;

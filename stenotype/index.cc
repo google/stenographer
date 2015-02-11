@@ -122,10 +122,8 @@ pre_ip_encapsulation:
         return;
       }
       auto ip4 = reinterpret_cast<const struct iphdr*>(start);
-      AddIP(leveldb::Slice(reinterpret_cast<const char*>(&ip4->saddr), 4),
-            packet_offset);
-      AddIP(leveldb::Slice(reinterpret_cast<const char*>(&ip4->daddr), 4),
-            packet_offset);
+      AddIPv4(ntohl(ip4->saddr), packet_offset);
+      AddIPv4(ntohl(ip4->daddr), packet_offset);
       size_t len = ip4->ihl;
       len *= 4;
       if (len < 20) return;
@@ -140,10 +138,10 @@ pre_ip_encapsulation:
       auto ip6 = reinterpret_cast<const struct ip6_hdr*>(start);
       protocol = ip6->ip6_ctlun.ip6_un1.ip6_un1_nxt;
       start += sizeof(struct ip6_hdr);
-      AddIP(leveldb::Slice(reinterpret_cast<const char*>(&ip6->ip6_src), 16),
-            packet_offset);
-      AddIP(leveldb::Slice(reinterpret_cast<const char*>(&ip6->ip6_dst), 16),
-            packet_offset);
+      AddIPv6(leveldb::Slice(reinterpret_cast<const char*>(&ip6->ip6_src), 16),
+              packet_offset);
+      AddIPv6(leveldb::Slice(reinterpret_cast<const char*>(&ip6->ip6_dst), 16),
+              packet_offset);
 
     // Here, we use another goto loop to strip off all IPv6 extensions.
     ip6_extensions:
@@ -209,6 +207,28 @@ pre_ip_encapsulation:
 
 namespace {
 
+// ValueFromVector returns a leveldb slice to act as the value in an index,
+// converting the passed-in vector into that slice.
+//
+// This function destructively modifies the passed-in vector, and the return
+// value references that vector's memory space.  This function cannot be called
+// on the same vector more than once, and the returned slice cannot be used if
+// the passed-in vector is modified after this function returns.
+leveldb::Slice ValueFromVector(std::vector<uint32_t>& vec) {
+  CHECK(vec.size() > 0);
+  size_t size = 1;
+  uint32_t last = vec[0];
+  vec[0] = htonl(last);
+  for (size_t i = 1; i < vec.size(); i++) {
+    if (vec[i] != last) {
+      last = vec[i];
+      vec[size] = htonl(last);  // convert to network order.
+      size++;
+    }
+  }
+  return leveldb::Slice(reinterpret_cast<const char*>(vec.data()), size * 4);
+}
+
 // Simple, horribly inefficient, and slow.  You've been warned.
 std::string Hex(const char* start, int size) {
   const char* vals = "0123456789ABCDEF";
@@ -221,19 +241,14 @@ std::string Hex(const char* start, int size) {
   return out;
 }
 
-void WriteToIndex(char first, const char* start, int size, uint32_t pos,
-                  leveldb::TableBuilder* ss) {
-  LOG(V4) << "Writing index " << int(first) << ":*" << size << ")"
-          << Hex(start, size) << "=" << pos;
+void WriteToIndex(char first, const char* start, int size,
+                  std::vector<uint32_t>& val, leveldb::TableBuilder* ss) {
   char buf[1 +   // First byte is type of index (ip4, ip6, proto, etc)
-           4 +   // Last 4 bytes are position in the blockfile
-           16];  // Middle 1-16 bytes are type-specific index values.
+           16];  // Last 1-16 bytes are type-specific index values.
   CHECK(size <= 16);
   buf[0] = first;
   memcpy(buf + 1, start, size);
-  uint32_t pos32 = htonl(pos);
-  memcpy(buf + 1 + size, reinterpret_cast<const char*>(&pos32), 4);
-  ss->Add(leveldb::Slice(buf, size + 1 + 4), leveldb::Slice());
+  ss->Add(leveldb::Slice(buf, size + 1), ValueFromVector(val));
 }
 
 // Should be incremented for backwards-incompatible changes.
@@ -268,52 +283,32 @@ Error Index::Flush() {
 
   // The first entry we write is the version number that defines
   // the format for this file.
-  WriteToIndex(kIndexVersion, NULL, 0, kIndexVersionNumber, &index_ss);
+  std::vector<uint32_t> version;
+  version.push_back(kIndexVersionNumberMajor);
+  version.push_back(kIndexVersionNumberMinor);
+  WriteToIndex(kIndexVersion, NULL, 0, version, &index_ss);
 
-#define WRITE_TO_INDEX(name, convert, indextype, size)                        \
-  do {                                                                        \
-    for (auto iter : name##_) {                                               \
-      auto name = convert(iter.first);                                        \
-      uint32_t last_pos = 0;                                                  \
-      for (uint32_t pos : iter.second) {                                      \
-        if (pos > last_pos) {                                                 \
-          WriteToIndex(indextype, reinterpret_cast<const char*>(&name), size, \
-                       pos, &index_ss);                                       \
-        }                                                                     \
-        last_pos = pos;                                                       \
-      }                                                                       \
-    }                                                                         \
+#define WRITE_TO_INDEX(name, convert, indextype, size)                    \
+  do {                                                                    \
+    for (auto iter : name##_) {                                           \
+      auto name = convert(iter.first);                                    \
+      WriteToIndex(indextype, reinterpret_cast<const char*>(&name), size, \
+                   iter.second, &index_ss);                               \
+    }                                                                     \
   } while (0)
 
   WRITE_TO_INDEX(proto, , kIndexProtocol, 1);
   WRITE_TO_INDEX(port, htons, kIndexPort, 2);
   WRITE_TO_INDEX(vlan, htons, kIndexVLAN, 2);
-
-  for (auto iter : ip4_) {
-    auto ip4 = iter.first.data();
-    uint32_t last_pos = 0;
-    for (uint32_t pos : iter.second) {
-      if (pos > last_pos) {
-        WriteToIndex(kIndexIPv4, ip4, 4, pos, &index_ss);
-      }
-      last_pos = pos;
-    }
-  }
-
+  WRITE_TO_INDEX(ip4, htonl, kIndexIPv4, 4);
   WRITE_TO_INDEX(mpls, htonl, kIndexMPLS, 4);
+
+#undef WRITE_TO_INDEX
 
   for (auto iter : ip6_) {
     auto ip6 = iter.first.data();
-    uint32_t last_pos = 0;
-    for (uint32_t pos : iter.second) {
-      if (pos > last_pos) {
-        WriteToIndex(kIndexIPv6, ip6, 16, pos, &index_ss);
-      }
-      last_pos = pos;
-    }
+    WriteToIndex(kIndexIPv6, ip6, 16, iter.second, &index_ss);
   }
-
-#undef WRITE_TO_INDEX
 
   auto finished = index_ss.Finish();
   if (!finished.ok()) {
@@ -336,13 +331,12 @@ Error Index::Flush() {
   return SUCCESS;
 }
 
-void Index::AddIP(leveldb::Slice ip, uint32_t pos) {
-  CHECK(ip.size() == 4 || ip.size() == 16);
-  auto tree = ip.size() == 4 ? &ip4_ : &ip6_;
-  auto finder = tree->find(ip);
-  if (finder == tree->end()) {
+void Index::AddIPv6(leveldb::Slice ip, uint32_t pos) {
+  CHECK(ip.size() == 16);
+  auto finder = ip6_.find(ip);
+  if (finder == ip6_.end()) {
     ip = ip_pieces_.Store(ip);
-    (*tree)[ip].push_back(pos);
+    ip6_[ip].push_back(pos);
   } else {
     finder->second.push_back(pos);
   }
@@ -353,23 +347,13 @@ void Index::AddIP(leveldb::Slice ip, uint32_t pos) {
     name##_[name].push_back(pos); \
   } while (0)
 
-/*
-    auto finder = name ## _.find(name); \
-    if (finder == name ## _.end()) { \
-      auto nv = new std::vector<uint32_t>; \
-      name ## _[name] = nv; \
-      nv->push_back(pos); \
-    } else { \
-      finder->second->push_back(pos); \
-    } \
-    */
-
 void Index::AddProtocol(uint8_t proto, uint32_t pos) {
   ADD_TO_INDEX(proto, pos);
 }
 void Index::AddPort(uint16_t port, uint32_t pos) { ADD_TO_INDEX(port, pos); }
 void Index::AddVLAN(uint16_t vlan, uint32_t pos) { ADD_TO_INDEX(vlan, pos); }
 void Index::AddMPLS(uint32_t mpls, uint32_t pos) { ADD_TO_INDEX(mpls, pos); }
+void Index::AddIPv4(uint32_t ip4, uint32_t pos) { ADD_TO_INDEX(ip4, pos); }
 
 #undef ADD_TO_INDEX
 

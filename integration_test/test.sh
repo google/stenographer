@@ -131,7 +131,7 @@ fi
 
 Info "Sending packets to $DUMMY"
 sudo tcpreplay -i $DUMMY --topspeed $BASEDIR/steno_integration_test.pcap
-Sleep 100
+Sleep 80
 
 Info "Looking for packets"
 TestCountPackets "port 21582" 1018
@@ -141,7 +141,7 @@ TestCountPackets "net 172.0.0.0/8 and port 23" 292041
 
 Info "Sending packets to $DUMMY a second time"
 sudo tcpreplay -i $DUMMY --topspeed $BASEDIR/steno_integration_test.pcap
-Sleep 100
+Sleep 80
 
 Info "Looking for packets a second time, in parallel"
 TESTPIDS=""

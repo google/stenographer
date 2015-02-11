@@ -159,36 +159,26 @@ func (i *IndexFile) positions(ctx context.Context, from, to []byte) (out base.Po
 	}()
 	defer indexReadNanos.NanoTimer()()
 	iter := i.ss.Find(from, nil)
-	keyLen := len(from)
-	last := make([]byte, keyLen)
-	copy(last, from)
-	var current base.Positions
 	for iter.Next() && !base.ContextDone(ctx) {
-		// iter.Key() contains the concatenation of key and pos, where pos are the
-		// last 4 bytes.
-		if len(iter.Key()) < 4 {
-			return nil, fmt.Errorf("invalid index file %q has key %v", i.name, iter.Key())
-		}
-		separator := len(iter.Key()) - 4
-		keypart, pospart := iter.Key()[:separator], iter.Key()[separator:]
-		if to != nil && bytes.Compare(keypart, to) > 0 || len(keypart) != len(last) {
+		if to != nil && bytes.Compare(iter.Key(), to) > 0 {
 			v(4, "%q multi key iterator %v:%v hit limit with %v", i.name, from, to, iter.Key())
 			break
 		}
-		if bytes.Compare(keypart, last) != 0 {
-			v(4, "%q multi key iterator got in-iter union of length %d for %v", i.name, len(current), last)
-			out = out.Union(current)
-			current = base.Positions{}
-			copy(last, keypart)
+		current := make(base.Positions, len(iter.Value())/4)
+		for i := 0; i < len(iter.Value()); i += 4 {
+			current[i/4] = int64(binary.BigEndian.Uint32(iter.Value()[i : i+4]))
 		}
-		pos := binary.BigEndian.Uint32(pospart)
-		current = append(current, int64(pos))
+		v(4, "%q multi key iterator got in-iter union of length %d for %v", i.name, len(current), iter.Key())
+		if out == nil {
+			out = current
+		} else {
+			out = out.Union(current)
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		v(4, "%q multi key iterator context err: %v", i.name, err)
 		return nil, err
 	}
-	out = out.Union(current)
 	v(4, "%q multi key iterator done, got %d", i.name, len(out))
 	if err := iter.Close(); err != nil {
 		v(4, "%q multi key iterator err=%v", i.name, err)

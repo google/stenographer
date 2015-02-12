@@ -21,11 +21,14 @@ LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp $(LDFLAGS_SEC)
 all: index_bin
 	afl-fuzz -i tests -o findings ./index_bin @@
 
-%.o: %.cc $(DEPS)
+%.o: ../%.cc $(DEPS)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+index_bin.o: index_bin.cc
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
 	rm -f *.o index_bin
 
-index_bin: index_bin.o
-	$(CC) $(CFLAGS) -o index_bin index_bin.o ../packets.o ../index.o ../util.o $(LDFLAGS)
+index_bin: index_bin.o packets.o index.o util.o
+	$(CC) $(CFLAGS) -o index_bin index_bin.o packets.o index.o util.o $(LDFLAGS)

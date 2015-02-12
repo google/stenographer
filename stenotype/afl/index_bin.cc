@@ -15,13 +15,26 @@
 // This binary provides an entry point into Index::Process for the 'afl'
 // (american fuzzy lop) fuzzer.
 
-#include <stdio.h>   // fprintf(), stderr
-#include <fcntl.h>   // open()
-#include <unistd.h>  // read()
+#include <stdio.h>        // fprintf(), stderr
+#include <fcntl.h>        // open()
+#include <unistd.h>       // read()
+#include <leveldb/env.h>  // WriableFile
 
 #include "util.h"
 #include "packets.h"
 #include "index.h"
+
+class NullFile : public leveldb::WritableFile {
+ public:
+  NullFile() {}
+  virtual ~NullFile() {}
+  leveldb::Status Append(const leveldb::Slice& data) override {
+    return leveldb::Status::OK();
+  }
+  leveldb::Status Close() override { return leveldb::Status::OK(); }
+  leveldb::Status Flush() override { return leveldb::Status::OK(); }
+  leveldb::Status Sync() override { return leveldb::Status::OK(); }
+};
 
 int main(int argc, char** argv) {
   if (argc != 2) {
@@ -54,4 +67,6 @@ int main(int argc, char** argv) {
 
   st::Index idx("/tmp", 123);
   idx.Process(p, 0);
+  NullFile file;
+  idx.WriteTo(&file);
 }

@@ -25,6 +25,10 @@
 #include "packets.h"
 #include "util.h"
 
+namespace leveldb {
+class WritableFile;
+}  // namespace leveldb
+
 namespace st {
 
 // SliceSet is a utility function for storing unique Slices in a
@@ -109,6 +113,7 @@ class Index {
 
   void Process(const Packet& p, int64_t block_offset);
   Error Flush();
+  Error WriteTo(leveldb::WritableFile* file);
 
  private:
   void AddIPv4(uint32_t ip, uint32_t pos);

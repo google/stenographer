@@ -135,14 +135,14 @@ func (a unionQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (b
 	}
 	return positions, nil
 }
-func (q unionQuery) String() string {
-	all := make([]string, len(q))
-	for i, query := range q {
+func (a unionQuery) String() string {
+	all := make([]string, len(a))
+	for i, query := range a {
 		all[i] = query.String()
 	}
 	return "(" + strings.Join(all, " or ") + ")"
 }
-func (q unionQuery) base() bool { return false }
+func (a unionQuery) base() bool { return false }
 
 type intersectQuery []Query
 
@@ -158,14 +158,14 @@ func (a intersectQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile
 	}
 	return positions, nil
 }
-func (q intersectQuery) String() string {
-	all := make([]string, len(q))
-	for i, query := range q {
+func (a intersectQuery) String() string {
+	all := make([]string, len(a))
+	for i, query := range a {
 		all[i] = query.String()
 	}
 	return "(" + strings.Join(all, " and ") + ")"
 }
-func (q intersectQuery) base() bool { return false }
+func (a intersectQuery) base() bool { return false }
 
 type timeQuery [2]time.Time
 

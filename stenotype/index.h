@@ -22,8 +22,8 @@
 
 #include <leveldb/slice.h>
 
-#include "packets.h"
 #include "util.h"
+#include "packets.h"
 
 namespace leveldb {
 class WritableFile;

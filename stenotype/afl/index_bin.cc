@@ -16,9 +16,10 @@
 // (american fuzzy lop) fuzzer.
 
 #include <stdio.h>        // fprintf(), stderr
+#include <stdlib.h>       // exit()
 #include <fcntl.h>        // open()
 #include <unistd.h>       // read()
-#include <leveldb/env.h>  // WriableFile
+#include <leveldb/env.h>  // WritableFile
 
 #include "util.h"
 #include "packets.h"
@@ -36,37 +37,45 @@ class NullFile : public leveldb::WritableFile {
   leveldb::Status Sync() override { return leveldb::Status::OK(); }
 };
 
-int main(int argc, char** argv) {
-  if (argc != 2) {
-    fprintf(stderr, "need filename\n");
-    exit(1);
-  }
-  int fd = open(argv[1], O_RDONLY);
+size_t ReadFile(char* filename, char* buffer, size_t len) {
+  fprintf(stderr, "Reading %s\n", filename);
+  int fd = open(filename, O_RDONLY);
   if (fd <= 0) {
     fprintf(stderr, "could not open file\n");
     exit(1);
   }
-  char buffer[8 << 20];  // 8MB
   char* start = buffer;
-  int left = 8 << 20;
-  while (true) {
-    int n = read(fd, start, left);
+  char* limit = start + len;
+  while (start < limit) {
+    int n = read(fd, start, limit - start);
     if (n < 0) {
       fprintf(stderr, "failed to read file\n");
       exit(1);
     }
     if (n == 0) break;
     start += n;
-    left -= n;
   }
-  int size = start - buffer;
+  close(fd);
+  return start - buffer;
+}
+
+int main(int argc, char** argv) {
+  if (argc != 2) {
+    fprintf(stderr, "need filename\n");
+    exit(1);
+  }
+
+  char buffer[1 << 20];  // 1MB
+  size_t got = ReadFile(argv[1], buffer, 1 << 20);
+
   st::Packet p;
-  p.length = size;
-  p.data = leveldb::Slice(buffer, size);
+  p.length = got;
+  p.data = leveldb::Slice(buffer, got);
   p.offset_in_block = 1;
 
   st::Index idx("/tmp", 123);
   idx.Process(p, 0);
   NullFile file;
   idx.WriteTo(&file);
+  return 0;
 }

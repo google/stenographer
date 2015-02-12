@@ -80,7 +80,7 @@ func (e *Env) Serve() error {
 		TLSConfig: tlsConfig,
 	}
 	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
-		w = httputil.New(w, r, true)
+		w = httputil.Log(w, r, true)
 		defer log.Print(w)
 		queryBytes, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -92,8 +92,8 @@ func (e *Env) Serve() error {
 			http.Error(w, "could not parse query", http.StatusBadRequest)
 			return
 		}
-		ctx, done := httputil.Context(w, r)
-		defer done()
+		ctx, cancel := httputil.Context(w, r, time.Minute*15)
+		defer cancel()
 		packets := e.Lookup(ctx, q)
 		w.Header().Set("Content-Type", "appliation/octet-stream")
 		base.PacketsToFile(packets, w)
@@ -272,14 +272,14 @@ func watchdog(d time.Duration, msg string) func() {
 		select {
 		case <-done:
 		default:
-			log.Fatal("watchdog failed after %v: %v", d, msg)
+			log.Fatalf("watchdog failed after %v: %v", d, msg)
 		}
 	}()
 	return func() { close(done) }
 }
 
 func (d *Env) syncFiles() {
-	defer watchdog(time.Minute*10, "syncing files")()
+	defer watchdog(time.Minute*15, "syncing files")()
 	for _, t := range d.threads {
 		t.SyncFiles()
 	}
@@ -303,7 +303,7 @@ func (d *Env) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 // ExportDebugHandlers exports a few debugging handlers to an HTTP ServeMux.
 func (d *Env) ExportDebugHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/config", func(w http.ResponseWriter, r *http.Request) {
-		w = httputil.New(w, r, false)
+		w = httputil.Log(w, r, false)
 		defer log.Print(w)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(d.conf)

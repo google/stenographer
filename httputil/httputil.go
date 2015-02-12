@@ -30,8 +30,14 @@ import (
 
 // Context returns a new context.Content that cancels when the
 // underlying http.ResponseWriter closes.
-func Context(w http.ResponseWriter, r *http.Request) (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(context.Background())
+func Context(w http.ResponseWriter, r *http.Request, timeout time.Duration) (context.Context, context.CancelFunc) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if timeout != 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
+	}
 	if closer, ok := w.(http.CloseNotifier); ok {
 		go func() {
 			select {
@@ -58,11 +64,11 @@ type httpLog struct {
 // New returns a new ResponseWriter which provides a nice
 // String() method for easy printing.  The expected usage is:
 //   func (h *myHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-//     w = httplog.New(w, r, false)
+//     w = httputil.Log(w, r, false)
 //     defer log.Print(w)  // Prints out useful information about request AND response
 //     ... do stuff ...
 //   }
-func New(w http.ResponseWriter, r *http.Request, logRequestBody bool) http.ResponseWriter {
+func Log(w http.ResponseWriter, r *http.Request, logRequestBody bool) http.ResponseWriter {
 	h := &httpLog{w: w, r: r, start: time.Now(), code: http.StatusOK}
 	if logRequestBody {
 		var buf bytes.Buffer

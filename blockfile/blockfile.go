@@ -52,6 +52,7 @@ type BlockFile struct {
 	f    *os.File
 	i    *indexfile.IndexFile
 	mu   sync.RWMutex // Stops Close() from invalidating a file before a current query is done with it.
+	done chan struct{}
 }
 
 // NewBlockFile opens up a named block file (and its index), returning a handle
@@ -71,6 +72,7 @@ func NewBlockFile(filename string) (*BlockFile, error) {
 		f:    f,
 		i:    i,
 		name: filename,
+		done: make(chan struct{}),
 	}, nil
 }
 
@@ -105,6 +107,7 @@ func (b *BlockFile) readPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, err
 
 // Close cleans up this blockfile.
 func (b *BlockFile) Close() (err error) {
+	close(b.done)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if e := b.i.Close(); e != nil {
@@ -113,6 +116,7 @@ func (b *BlockFile) Close() (err error) {
 	if e := b.f.Close(); e != nil {
 		err = e
 	}
+	b.i, b.f = nil, nil
 	return
 }
 
@@ -181,8 +185,10 @@ func (a *allPacketsIter) Err() error {
 // AllPackets returns a packet channel to which all packets in the blockfile are
 // sent.
 func (b *BlockFile) AllPackets() *base.PacketChan {
+	b.mu.RLock()
 	c := base.NewPacketChan(100)
 	go func() {
+		defer b.mu.RUnlock()
 		pkts := &allPacketsIter{BlockFile: b}
 		for pkts.Next() {
 			c.Send(pkts.Packet())
@@ -195,6 +201,18 @@ func (b *BlockFile) AllPackets() *base.PacketChan {
 // Positions returns the positions in the blockfile of all packets matched by
 // the passed-in query.
 func (b *BlockFile) Positions(ctx context.Context, q query.Query) (base.Positions, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.positionsLocked(ctx, q)
+}
+
+// positionsLocked returns the positions in the blockfile of all packets matched by
+// the passed-in query.  b.mu must be locked.
+func (b *BlockFile) positionsLocked(ctx context.Context, q query.Query) (base.Positions, error) {
+	if b.i == nil || b.f == nil {
+		// If we're closed, just return nothing.
+		return nil, nil
+	}
 	return q.LookupIn(ctx, b.i)
 }
 
@@ -206,7 +224,7 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query, out *base.PacketC
 	var ci gopacket.CaptureInfo
 	v(3, "Blockfile %q looking up query %q", q.String(), b.name)
 	start := time.Now()
-	positions, err := b.Positions(ctx, q)
+	positions, err := b.positionsLocked(ctx, q)
 	if err != nil {
 		out.Close(fmt.Errorf("index lookup failure: %v", err))
 		return
@@ -214,7 +232,17 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query, out *base.PacketC
 	if positions.IsAllPositions() {
 		v(2, "Blockfile %q reading all packets", b.name)
 		iter := &allPacketsIter{BlockFile: b}
-		for iter.Next() && !base.ContextDone(ctx) {
+	all_packets_loop:
+		for iter.Next() {
+			select {
+			case <-ctx.Done():
+				v(2, "Blockfile %q canceling packet read", b.name)
+				break all_packets_loop
+			case <-b.done:
+				v(2, "Blockfile %q closing, breaking out of query", b.name)
+				break all_packets_loop
+			default:
+			}
 			out.Send(iter.Packet())
 		}
 		if iter.Err() != nil {
@@ -223,10 +251,16 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query, out *base.PacketC
 		}
 	} else {
 		v(2, "Blockfile %q reading %v packets", b.name, len(positions))
+	query_packets_loop:
 		for _, pos := range positions {
-			if base.ContextDone(ctx) {
+			select {
+			case <-ctx.Done():
 				v(2, "Blockfile %q canceling packet read", b.name)
-				break
+				break query_packets_loop
+			case <-b.done:
+				v(2, "Blockfile %q closing, breaking out of query", b.name)
+				break query_packets_loop
+			default:
 			}
 			buffer, err := b.readPacket(pos, &ci)
 			if err != nil {
@@ -247,5 +281,7 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query, out *base.PacketC
 // DumpIndex dumps out a "human-readable" debug version of the blockfile's index
 // to the given writer.
 func (b *BlockFile) DumpIndex(out io.Writer, start, finish []byte) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 	b.i.Dump(out, start, finish)
 }

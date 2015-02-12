@@ -223,10 +223,12 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query, out *base.PacketC
 		v(2, "Blockfile %q reading %v packets", b.name, len(positions))
 		for _, pos := range positions {
 			if base.ContextDone(ctx) {
+				v(2, "Blockfile %q canceling packet read", b.name)
 				break
 			}
 			buffer, err := b.readPacket(pos, &ci)
 			if err != nil {
+				v(2, "Blockfile %q error reading packet: %v", b.name, err)
 				out.Close(fmt.Errorf("error reading packets from %q @ %v: %v", b.name, pos, err))
 				return
 			}

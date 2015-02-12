@@ -17,6 +17,7 @@
 DUMMY="${DUMMY-dummy0}"
 PORT="${PORT-9123}"
 BASEDIR="${BASEDIR-/tmp}"
+SKIP_CLEANUP="${SKIP_CLEANUP}"
 
 set -e
 cd $(dirname $0)
@@ -76,20 +77,22 @@ set +e
 STENOGRAPHER_PID=""
 STENOTYPE_PID=""
 function CleanUp {
-  Info "Cleaning up"
-  if [ ! -z "$STENOGRAPHER_PID" ]; then
-    Info "Killing stenographer ($STENOGRAPHER_PID)"
-    KILLCMD=kill ReallyKill $STENOGRAPHER_PID
+  if [ -z "$SKIP_CLEANUP" ]; then
+    Info "Cleaning up"
+    if [ ! -z "$STENOGRAPHER_PID" ]; then
+      Info "Killing stenographer ($STENOGRAPHER_PID)"
+      KILLCMD=kill ReallyKill $STENOGRAPHER_PID
+    fi
+    if [ ! -z "$STENOTYPE_PID" ]; then
+      Info "Killing stenotype ($STENOTYPE_PID)"
+      KILLCMD=kill ReallyKill $STENOTYPE_PID
+    fi
+    Info "Deleting $DUMMY interface"
+    Info "Removing $OUTDIR"
+    rm -rfv $OUTDIR
+    sudo ifconfig $DUMMY down
+    sudo ip link del dummy0
   fi
-  if [ ! -z "$STENOTYPE_PID" ]; then
-    Info "Killing stenotype ($STENOTYPE_PID)"
-    KILLCMD=kill ReallyKill $STENOTYPE_PID
-  fi
-  Info "Deleting $DUMMY interface"
-  Info "Removing $OUTDIR"
-  rm -rfv $OUTDIR
-  sudo ifconfig $DUMMY down
-  sudo ip link del dummy0
 }
 trap CleanUp EXIT
 
@@ -128,7 +131,7 @@ fi
 
 Info "Sending packets to $DUMMY"
 sudo tcpreplay -i $DUMMY --topspeed $BASEDIR/steno_integration_test.pcap
-Sleep 100
+Sleep 80
 
 Info "Looking for packets"
 TestCountPackets "port 21582" 1018
@@ -138,7 +141,7 @@ TestCountPackets "net 172.0.0.0/8 and port 23" 292041
 
 Info "Sending packets to $DUMMY a second time"
 sudo tcpreplay -i $DUMMY --topspeed $BASEDIR/steno_integration_test.pcap
-Sleep 100
+Sleep 80
 
 Info "Looking for packets a second time, in parallel"
 TESTPIDS=""

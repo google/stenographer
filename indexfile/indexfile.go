@@ -39,6 +39,9 @@ var (
 	indexCurrentReads = stats.S.Get("indexfile_current_reads")
 )
 
+// Major version number of the file format that we support.
+const majorVersionNumber = 2
+
 type IndexFile struct {
 	name string
 	ss   *table.Reader
@@ -64,6 +67,15 @@ func NewIndexFile(filename string) (*IndexFile, error) {
 		return nil, fmt.Errorf("error opening file %q: %v", filename, err)
 	}
 	ss := table.NewReader(f, nil)
+	if versions, err := ss.Get([]byte{0}, nil); err != nil {
+		return nil, fmt.Errorf("invalid index file %q missing versions record: %v", filename, err)
+	} else if len(versions) != 8 {
+		return nil, fmt.Errorf("invalid index file %q invalid versions record: %v", filename, versions)
+	} else if major, minor := binary.BigEndian.Uint32(versions[:4]), binary.BigEndian.Uint32(versions[4:]); major != majorVersionNumber {
+		return nil, fmt.Errorf("invalid index file %q: version mismatch, want %d got %d", majorVersionNumber, major)
+	} else {
+		v(3, "index file %q has file format version %d:%d", filename, major, minor)
+	}
 	if *base.VerboseLogging >= 10 {
 		iter := ss.Find([]byte{}, nil)
 		v(4, "=== %q ===", filename)
@@ -119,6 +131,24 @@ func (i *IndexFile) PortPositions(ctx context.Context, port uint16) (base.Positi
 	return i.positionsSingleKey(ctx, buf[:])
 }
 
+// ProtoPositions returns the positions in the block file of all packets with
+// the give VLAN number.
+func (i *IndexFile) VLANPositions(ctx context.Context, port uint16) (base.Positions, error) {
+	var buf [3]byte
+	binary.BigEndian.PutUint16(buf[1:], port)
+	buf[0] = 3
+	return i.positionsSingleKey(ctx, buf[:])
+}
+
+// ProtoPositions returns the positions in the block file of all packets with
+// the give MPLS number.
+func (i *IndexFile) MPLSPositions(ctx context.Context, mpls uint32) (base.Positions, error) {
+	var buf [5]byte
+	binary.BigEndian.PutUint32(buf[1:], mpls)
+	buf[0] = 5
+	return i.positionsSingleKey(ctx, buf[:])
+}
+
 // Dump writes out a debug version of the entire index to the given writer.
 func (i *IndexFile) Dump(out io.Writer, start, finish []byte) {
 	for iter := i.ss.Find(start, nil); iter.Next() && bytes.Compare(iter.Key(), finish) <= 0; {
@@ -141,36 +171,26 @@ func (i *IndexFile) positions(ctx context.Context, from, to []byte) (out base.Po
 	}()
 	defer indexReadNanos.NanoTimer()()
 	iter := i.ss.Find(from, nil)
-	keyLen := len(from)
-	last := make([]byte, keyLen)
-	copy(last, from)
-	var current base.Positions
 	for iter.Next() && !base.ContextDone(ctx) {
-		// iter.Key() contains the concatenation of key and pos, where pos are the
-		// last 4 bytes.
-		if len(iter.Key()) < 4 {
-			return nil, fmt.Errorf("invalid index file %q has key %v", i.name, iter.Key())
-		}
-		separator := len(iter.Key()) - 4
-		keypart, pospart := iter.Key()[:separator], iter.Key()[separator:]
-		if to != nil && bytes.Compare(keypart, to) > 0 || len(keypart) != len(last) {
+		if to != nil && bytes.Compare(iter.Key(), to) > 0 {
 			v(4, "%q multi key iterator %v:%v hit limit with %v", i.name, from, to, iter.Key())
 			break
 		}
-		if bytes.Compare(keypart, last) != 0 {
-			v(4, "%q multi key iterator got in-iter union of length %d for %v", i.name, len(current), last)
-			out = out.Union(current)
-			current = base.Positions{}
-			copy(last, keypart)
+		current := make(base.Positions, len(iter.Value())/4)
+		for i := 0; i < len(iter.Value()); i += 4 {
+			current[i/4] = int64(binary.BigEndian.Uint32(iter.Value()[i : i+4]))
 		}
-		pos := binary.BigEndian.Uint32(pospart)
-		current = append(current, int64(pos))
+		v(4, "%q multi key iterator got in-iter union of length %d for %v", i.name, len(current), iter.Key())
+		if out == nil {
+			out = current
+		} else {
+			out = out.Union(current)
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		v(4, "%q multi key iterator context err: %v", i.name, err)
 		return nil, err
 	}
-	out = out.Union(current)
 	v(4, "%q multi key iterator done, got %d", i.name, len(out))
 	if err := iter.Close(); err != nil {
 		v(4, "%q multi key iterator err=%v", i.name, err)

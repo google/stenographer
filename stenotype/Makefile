@@ -14,7 +14,7 @@
 
 CC=g++
 CFLAGS_SEC=-fPIC -fPIE -pie -fstack-protector -D_FORTIFY_SOURCE=2
-CFLAGS=-std=c++0x -g -O2 -rdynamic -Wall $(CFLAGS_SEC)
+CFLAGS=-std=c++0x -g -O2 -rdynamic -Wall -fno-strict-aliasing $(CFLAGS_SEC)
 LDFLAGS_SEC=-Wl,-z,now -Wl,-z,relro
 LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp $(LDFLAGS_SEC)
 

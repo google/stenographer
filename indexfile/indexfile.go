@@ -72,7 +72,7 @@ func NewIndexFile(filename string) (*IndexFile, error) {
 	} else if len(versions) != 8 {
 		return nil, fmt.Errorf("invalid index file %q invalid versions record: %v", filename, versions)
 	} else if major, minor := binary.BigEndian.Uint32(versions[:4]), binary.BigEndian.Uint32(versions[4:]); major != majorVersionNumber {
-		return nil, fmt.Errorf("invalid index file %q: version mismatch, want %d got %d", majorVersionNumber, major)
+		return nil, fmt.Errorf("invalid index file %q: version mismatch, want %d got %d", filename, majorVersionNumber, major)
 	} else {
 		v(3, "index file %q has file format version %d:%d", filename, major, minor)
 	}

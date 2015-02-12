@@ -1,4 +1,3 @@
-#!/bin/bash
 # Copyright 2014 Google Inc. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,5 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cd $(dirname $0)
-clang-format-3.5 -style=Google -i stenotype/*.{cc,h} stenotype/afl/index_bin.cc
+CC=afl-g++
+CFLAGS_SEC=-fPIC -fPIE -pie -fstack-protector -D_FORTIFY_SOURCE=2
+CFLAGS=-std=c++0x -g -O2 -rdynamic -Wall -fno-strict-aliasing -I../ $(CFLAGS_SEC)
+LDFLAGS_SEC=-Wl,-z,now -Wl,-z,relro
+LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp $(LDFLAGS_SEC)
+
+all: index_bin
+	afl-fuzz -i tests -o findings ./index_bin @@
+
+%.o: %.cc $(DEPS)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+clean:
+	rm -f *.o index_bin
+
+index_bin: index_bin.o
+	$(CC) $(CFLAGS) -o index_bin index_bin.o ../packets.o ../index.o ../util.o $(LDFLAGS)

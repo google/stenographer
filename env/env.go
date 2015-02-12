@@ -314,7 +314,7 @@ func (d *Env) runStaleFileCheck(cmd *exec.Cmd, done chan struct{}) {
 			if diff > maxFileLastSeenDuration {
 				log.Printf("Restarting stenotype due to stale file.  Age: %v", diff)
 				if err := cmd.Process.Kill(); err != nil {
-					log.Fatalf("Failed to kill stenotype,  stale file found: ", err)
+					log.Fatalf("Failed to kill stenotype,  stale file found: %v", err)
 				}
 			} else {
 				v(2, "Stenotype up to date, last file update %v ago", diff)

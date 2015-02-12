@@ -42,6 +42,7 @@ var (
 // Major version number of the file format that we support.
 const majorVersionNumber = 2
 
+// IndexFile wraps a stenotype index, allowing it to be queried.
 type IndexFile struct {
 	name string
 	ss   *table.Reader
@@ -122,7 +123,7 @@ func (i *IndexFile) ProtoPositions(ctx context.Context, proto byte) (base.Positi
 	return i.positionsSingleKey(ctx, []byte{1, proto})
 }
 
-// ProtoPositions returns the positions in the block file of all packets with
+// PortPositions returns the positions in the block file of all packets with
 // the give port number (TCP or UDP).
 func (i *IndexFile) PortPositions(ctx context.Context, port uint16) (base.Positions, error) {
 	var buf [3]byte
@@ -131,7 +132,7 @@ func (i *IndexFile) PortPositions(ctx context.Context, port uint16) (base.Positi
 	return i.positionsSingleKey(ctx, buf[:])
 }
 
-// ProtoPositions returns the positions in the block file of all packets with
+// VLANPositions returns the positions in the block file of all packets with
 // the give VLAN number.
 func (i *IndexFile) VLANPositions(ctx context.Context, port uint16) (base.Positions, error) {
 	var buf [3]byte
@@ -140,7 +141,7 @@ func (i *IndexFile) VLANPositions(ctx context.Context, port uint16) (base.Positi
 	return i.positionsSingleKey(ctx, buf[:])
 }
 
-// ProtoPositions returns the positions in the block file of all packets with
+// MPLSPositions returns the positions in the block file of all packets with
 // the give MPLS number.
 func (i *IndexFile) MPLSPositions(ctx context.Context, mpls uint32) (base.Positions, error) {
 	var buf [5]byte
@@ -213,6 +214,7 @@ func parseIP(in string) net.IP {
 	return ip
 }
 
+// Close the indexfile.
 func (i *IndexFile) Close() error {
 	return i.ss.Close()
 }

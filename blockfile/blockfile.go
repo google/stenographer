@@ -103,7 +103,7 @@ func (b *BlockFile) readPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, err
 	return out, err
 }
 
-// Close() cleans up this blockfile.
+// Close cleans up this blockfile.
 func (b *BlockFile) Close() (err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -178,6 +178,8 @@ func (a *allPacketsIter) Err() error {
 	return a.err
 }
 
+// AllPackets returns a packet channel to which all packets in the blockfile are
+// sent.
 func (b *BlockFile) AllPackets() *base.PacketChan {
 	c := base.NewPacketChan(100)
 	go func() {
@@ -242,6 +244,8 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query, out *base.PacketC
 	v(3, "Blockfile %q finished reading all packets in %v", b.name, time.Since(start))
 }
 
+// DumpIndex dumps out a "human-readable" debug version of the blockfile's index
+// to the given writer.
 func (b *BlockFile) DumpIndex(out io.Writer, start, finish []byte) {
 	b.i.Dump(out, start, finish)
 }

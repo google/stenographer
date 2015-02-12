@@ -58,7 +58,7 @@ type BlockFile struct {
 // NewBlockFile opens up a named block file (and its index), returning a handle
 // which can be used to look up packets.
 func NewBlockFile(filename string) (*BlockFile, error) {
-	v(1, "opening blockfile %q", filename)
+	v(1, "Blockfile opening: %q", filename)
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("could not open %q: %v", filename, err)
@@ -107,9 +107,11 @@ func (b *BlockFile) readPacket(pos int64, ci *gopacket.CaptureInfo) ([]byte, err
 
 // Close cleans up this blockfile.
 func (b *BlockFile) Close() (err error) {
+	v(2, "Blockfile closing: %q", b.name)
 	close(b.done)
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	v(3, "Blockfile closing file descriptors: %q", b.name)
 	if e := b.i.Close(); e != nil {
 		err = e
 	}
@@ -222,7 +224,7 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query, out *base.PacketC
 	defer b.mu.RUnlock()
 
 	var ci gopacket.CaptureInfo
-	v(3, "Blockfile %q looking up query %q", q.String(), b.name)
+	v(2, "Blockfile %q looking up query %q", q.String(), b.name)
 	start := time.Now()
 	positions, err := b.positionsLocked(ctx, q)
 	if err != nil {
@@ -241,9 +243,8 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query, out *base.PacketC
 			case <-b.done:
 				v(2, "Blockfile %q closing, breaking out of query", b.name)
 				break all_packets_loop
-			default:
+			case out.C <- iter.Packet():
 			}
-			out.Send(iter.Packet())
 		}
 		if iter.Err() != nil {
 			out.Close(fmt.Errorf("error reading all packets from %q: %v", b.name, iter.Err()))
@@ -253,6 +254,12 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query, out *base.PacketC
 		v(2, "Blockfile %q reading %v packets", b.name, len(positions))
 	query_packets_loop:
 		for _, pos := range positions {
+			buffer, err := b.readPacket(pos, &ci)
+			if err != nil {
+				v(2, "Blockfile %q error reading packet: %v", b.name, err)
+				out.Close(fmt.Errorf("error reading packets from %q @ %v: %v", b.name, pos, err))
+				return
+			}
 			select {
 			case <-ctx.Done():
 				v(2, "Blockfile %q canceling packet read", b.name)
@@ -260,22 +267,12 @@ func (b *BlockFile) Lookup(ctx context.Context, q query.Query, out *base.PacketC
 			case <-b.done:
 				v(2, "Blockfile %q closing, breaking out of query", b.name)
 				break query_packets_loop
-			default:
+			case out.C <- &base.Packet{Data: buffer, CaptureInfo: ci}:
 			}
-			buffer, err := b.readPacket(pos, &ci)
-			if err != nil {
-				v(2, "Blockfile %q error reading packet: %v", b.name, err)
-				out.Close(fmt.Errorf("error reading packets from %q @ %v: %v", b.name, pos, err))
-				return
-			}
-			out.Send(&base.Packet{
-				Data:        buffer,
-				CaptureInfo: ci,
-			})
 		}
 	}
+	v(2, "Blockfile %q finished reading all packets in %v", b.name, time.Since(start))
 	out.Close(ctx.Err())
-	v(3, "Blockfile %q finished reading all packets in %v", b.name, time.Since(start))
 }
 
 // DumpIndex dumps out a "human-readable" debug version of the blockfile's index

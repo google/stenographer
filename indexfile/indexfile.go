@@ -132,7 +132,7 @@ func (i *IndexFile) PortPositions(ctx context.Context, port uint16) (base.Positi
 }
 
 // ProtoPositions returns the positions in the block file of all packets with
-// the give VLAN number.
+// the given VLAN number.
 func (i *IndexFile) VLANPositions(ctx context.Context, port uint16) (base.Positions, error) {
 	var buf [3]byte
 	binary.BigEndian.PutUint16(buf[1:], port)
@@ -141,7 +141,7 @@ func (i *IndexFile) VLANPositions(ctx context.Context, port uint16) (base.Positi
 }
 
 // ProtoPositions returns the positions in the block file of all packets with
-// the give MPLS number.
+// the given MPLS number.
 func (i *IndexFile) MPLSPositions(ctx context.Context, mpls uint32) (base.Positions, error) {
 	var buf [5]byte
 	binary.BigEndian.PutUint32(buf[1:], mpls)

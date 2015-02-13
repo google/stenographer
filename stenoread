@@ -42,5 +42,6 @@ echo "Running stenographer query '$STENOQUERY', piping to 'tcpdump $@'" >&2
 $(dirname $0)/stenocurl /query \
     -d "$STENOQUERY" \
     --silent \
+    --max-time 890 \
     --show-error |
     tcpdump -r /dev/stdin -s 0 "$@"

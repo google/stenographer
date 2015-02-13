@@ -256,17 +256,21 @@ func (t *Thread) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 	t.mu.RLock()
 	inputs := make(chan *base.PacketChan, concurrentBlockfileReadsPerThread)
 	out := base.ConcatPacketChans(ctx, inputs)
+	var files []*blockfile.BlockFile
+	for _, file := range t.getSortedFiles() {
+		files = append(files, t.files[file])
+	}
+	t.mu.RUnlock()
 	go func() {
 		defer func() {
 			close(inputs)
 			<-out.Done()
-			t.mu.RUnlock()
 		}()
-		for _, file := range t.getSortedFiles() {
+		for _, file := range files {
 			packets := base.NewPacketChan(100)
 			select {
 			case inputs <- packets:
-				go t.files[file].Lookup(ctx, q, packets)
+				go file.Lookup(ctx, q, packets)
 			case <-ctx.Done():
 				return
 			}
@@ -289,7 +293,7 @@ func (t *Thread) SyncFiles() {
 func (t *Thread) ExportDebugHandlers(mux *http.ServeMux) {
 	prefix := fmt.Sprintf("/debug/t%d", t.id)
 	mux.HandleFunc(prefix+"/files", func(w http.ResponseWriter, r *http.Request) {
-		w = httputil.New(w, r, false)
+		w = httputil.Log(w, r, false)
 		defer log.Print(w)
 		w.Header().Set("Content-Type", "text/plain")
 		fmt.Fprintf(w, "Thread %d (IDX: %q, PKT: %q)\n", t.id, t.indexPath, t.packetPath)
@@ -300,7 +304,7 @@ func (t *Thread) ExportDebugHandlers(mux *http.ServeMux) {
 		t.mu.RUnlock()
 	})
 	mux.HandleFunc(prefix+"/index", func(w http.ResponseWriter, r *http.Request) {
-		w = httputil.New(w, r, false)
+		w = httputil.Log(w, r, false)
 		defer log.Print(w)
 		t.mu.RLock()
 		defer t.mu.RUnlock()
@@ -330,7 +334,7 @@ func (t *Thread) ExportDebugHandlers(mux *http.ServeMux) {
 		file.DumpIndex(w, start, finish)
 	})
 	mux.HandleFunc(prefix+"/packets", func(w http.ResponseWriter, r *http.Request) {
-		w = httputil.New(w, r, false)
+		w = httputil.Log(w, r, false)
 		defer log.Print(w)
 		t.mu.RLock()
 		defer t.mu.RUnlock()
@@ -344,7 +348,7 @@ func (t *Thread) ExportDebugHandlers(mux *http.ServeMux) {
 		base.PacketsToFile(file.AllPackets(), w)
 	})
 	mux.HandleFunc(prefix+"/positions", func(w http.ResponseWriter, r *http.Request) {
-		w = httputil.New(w, r, true)
+		w = httputil.Log(w, r, true)
 		defer log.Print(w)
 		t.mu.RLock()
 		defer t.mu.RUnlock()

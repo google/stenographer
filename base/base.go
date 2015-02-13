@@ -49,8 +49,11 @@ type Packet struct {
 // PacketChan provides an async method for passing multiple ordered packets
 // between goroutines.
 type PacketChan struct {
-	mu   sync.Mutex
-	c    chan *Packet
+	mu sync.Mutex
+	c  chan *Packet
+	// C can be used to send packets on this channel in a select.  Do NOT
+	// call 'close' on it... instead call the Close function.
+	C    chan<- *Packet
 	err  error
 	done chan struct{}
 }
@@ -79,10 +82,12 @@ func (p *PacketChan) Done() <-chan struct{} {
 
 // NewPacketChan returns a new PacketChan channel for passing packets around.
 func NewPacketChan(buffer int) *PacketChan {
-	return &PacketChan{
+	pc := &PacketChan{
 		c:    make(chan *Packet, buffer),
 		done: make(chan struct{}),
 	}
+	pc.C = pc.c
+	return pc
 }
 
 // Discard discards all remaining packets on the receiving end.  If you stop

@@ -35,6 +35,7 @@ func TestValidName(t *testing.T) {
 			t.Fatalf("wrong filename. want: %q, got %q", name, filename)
 		} else {
 			t.Log(name)
+			idx.Close()
 		}
 	}
 }
@@ -52,6 +53,7 @@ func TestValidIPPositions(t *testing.T) {
 			t.Fatalf("missing IP positions. want: %v\n got: %v\n err:", validPositions, positions, err)
 		} else {
 			t.Log(positions)
+			idx.Close()
 		}
 	}
 }
@@ -68,6 +70,7 @@ func TestInvalidIPPositions(t *testing.T) {
 			t.Fatalf("missing IP positions. want: %v\n got: %v\n err:", nil, positions, err)
 		} else {
 			t.Log(nil)
+			idx.Close()
 		}
 	}
 }
@@ -84,6 +87,7 @@ func TestValidMPLSPositions(t *testing.T) {
 			t.Fatalf("missing MPLS positions. want: %v\n got: %v\n err:", validPositions, positions, err)
 		} else {
 			t.Log(positions)
+			idx.Close()
 		}
 	}
 }
@@ -99,6 +103,7 @@ func TestInvalidMPLSPositions(t *testing.T) {
 			t.Fatalf("invalid MPLS positions. want: %v\n got: %v\n err:", nil, positions, err)
 		} else {
 			t.Log(nil)
+			idx.Close()
 		}
 	}
 }
@@ -115,6 +120,7 @@ func TestValidVLANPositions(t *testing.T) {
 			t.Fatalf("missing VLAN positions. want: %v\n got: %v\n err:", validPositions, positions, err)
 		} else {
 			t.Log(positions)
+			idx.Close()
 		}
 	}
 }
@@ -130,6 +136,7 @@ func TestInvalidVLANPositions(t *testing.T) {
 			t.Fatalf("missing VLAN positions. want: %v\n got: %v\n err:", nil, positions, err)
 		} else {
 			t.Log(nil)
+			idx.Close()
 		}
 	}
 }
@@ -146,6 +153,7 @@ func TestValidProtoPositions(t *testing.T) {
 			t.Fatalf("want: %v\n got: %v\n err:", validPositions, positions, err)
 		} else {
 			t.Log(positions)
+			idx.Close()
 		}
 	}
 }
@@ -161,6 +169,7 @@ func TestInvalidProtoPositions(t *testing.T) {
 			t.Fatalf("want: %v\n got: %v\n err:", nil, positions, err)
 		} else {
 			t.Log(nil)
+			idx.Close()
 		}
 	}
 }
@@ -177,6 +186,7 @@ func TestValidPortPositions(t *testing.T) {
 			t.Fatalf("want: %v\n got: %v\n err:", validPositions, positions, err)
 		} else {
 			t.Log(positions)
+			idx.Close()
 		}
 	}
 }
@@ -192,6 +202,7 @@ func TestInvalidPortPositions(t *testing.T) {
 			t.Fatalf("want: %v\n got: %v\n err:", nil, positions, err)
 		} else {
 			t.Log(nil)
+			idx.Close()
 		}
 	}
 }
@@ -211,17 +222,7 @@ func TestDump(t *testing.T) {
 			t.Fatalf("want %q\n got: %q\n", want, got)
 		} else {
 			t.Log(got)
-		}
-	}
-}
-
-func TestClose(t *testing.T) {
-	filename := "testdata/dhcp_indexfile"
-	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
-		t.Fatalf("could not open index file %q: %v", filename, idxErr)
-	} else {
-		if err := idx.Close(); err != nil {
-			t.Fatalf("failed to close index file: %v", err)
+			idx.Close()
 		}
 	}
 }

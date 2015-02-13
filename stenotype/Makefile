@@ -12,19 +12,53 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-CC=g++
-CFLAGS_SEC=-fPIC -fPIE -pie -fstack-protector -D_FORTIFY_SOURCE=2
-CFLAGS=-std=c++0x -g -O2 -rdynamic -Wall -fno-strict-aliasing $(CFLAGS_SEC)
-LDFLAGS_SEC=-Wl,-z,now -Wl,-z,relro
-LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp $(LDFLAGS_SEC)
+SHARED_CFLAGS=-std=c++11 -g -Wall -fno-strict-aliasing
+SHARED_LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp
+
+GCC=g++
+GCC_CFLAGS_SEC=-fPIC -fPIE -pie -fstack-protector -D_FORTIFY_SOURCE=2
+GCC_CFLAGS=-rdynamic -O2 $(GCC_CFLAGS_SEC)
+GCC_LDFLAGS_SEC=-Wl,-z,now -Wl,-z,relro
+GCC_LDFLAGS=$(GCC_LDFLAGS_SEC)
+
+CLANG=clang++
+CLANG_CFLAGS=-fno-omit-frame-pointer -O1 -fno-optimize-sibling-calls -fsanitize-memory-track-origins
+CLANG_LDFLAGS=
+
+FILES=util packets index aio stenotype
+
+# We allow for the compiling of Clang binaries with -fsanitize=XXX by setting
+# the SANITIZE argument.  If that argument is set, we'll build stenotype using
+# Clang-specific flags.
+# Examples:
+#   make SANITIZE=address
+#   make SANITIZE=memory
+#   make SANITIZE=thread
+# NOTE:  When clang is used, many security options are NOT.  Clang should be
+# used just for testing, NOT for production systems.
+SANITIZE=
+ifndef SANITIZE
+	OBJECTS=$(foreach file,$(FILES),$(file)_gcc.o)
+	CFLAGS=$(SHARED_CFLAGS) $(GCC_CFLAGS)
+	LDFLAGS=$(SHARED_LDFLAGS) $(GCC_LDFLAGS)
+	CC=$(GCC)
+else
+	OBJECTS=$(foreach file,$(FILES),$(file)_$(SANITIZE)_clang.o)
+	CFLAGS=$(SHARED_CFLAGS) $(CLANG_CFLAGS) -fsanitize=$(SANITIZE)
+	LDFLAGS=$(SHARED_LDFLAGS) $(CLANG_LDFLAGS)
+	CC=$(CLANG)
+endif
 
 all: stenotype
 
-%.o: %.cc $(DEPS)
-	$(CC) $(CFLAGS) -c -o $@ $<
+%_gcc.o: %.cc $(DEPS)
+	$(GCC) $(GCC_CFLAGS) $(CFLAGS) -c -o $@ $<
+
+%_$(SANITIZE)_clang.o: %.cc $(DEPS)
+	$(CLANG) $(CFLAGS) -c -o $@ $<
 
 clean:
 	rm -f *.o stenotype
 
-stenotype: util.o packets.o index.o aio.o stenotype.o
-	$(CC) $(CFLAGS) -o stenotype *.o $(LDFLAGS)
+stenotype: $(OBJECTS)
+	$(CC) $(CFLAGS) -o stenotype $(OBJECTS) $(LDFLAGS)

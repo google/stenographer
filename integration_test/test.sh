@@ -18,6 +18,7 @@ DUMMY="${DUMMY-dummy0}"
 PORT="${PORT-9123}"
 BASEDIR="${BASEDIR-/tmp}"
 SKIP_CLEANUP="${SKIP_CLEANUP}"
+SANITIZE="${SANITIZE}"
 
 set -e
 cd $(dirname $0)
@@ -57,7 +58,7 @@ Info "Building stenographer"
 pushd ../
 go build
 pushd stenotype
-make
+make SANITIZE=$SANITIZE
 SetCapabilities stenotype
 STENOTYPE_BIN="$(pwd)/stenotype"
 popd

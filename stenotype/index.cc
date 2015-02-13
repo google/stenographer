@@ -229,18 +229,6 @@ leveldb::Slice ValueFromVector(std::vector<uint32_t>& vec) {
   return leveldb::Slice(reinterpret_cast<const char*>(vec.data()), size * 4);
 }
 
-// Simple, horribly inefficient, and slow.  You've been warned.
-std::string Hex(const char* start, int size) {
-  const char* vals = "0123456789ABCDEF";
-  std::string out;
-  for (const char* limit = start + size; start < limit; start++) {
-    unsigned char c = *start;
-    out.append(1, vals[c >> 4]);
-    out.append(1, vals[c & 0x7]);
-  }
-  return out;
-}
-
 void WriteToIndex(char first, const char* start, int size,
                   std::vector<uint32_t>& val, leveldb::TableBuilder* ss) {
   char buf[1 +   // First byte is type of index (ip4, ip6, proto, etc)
@@ -295,7 +283,7 @@ Error Index::WriteTo(leveldb::WritableFile* file) {
 
   // The first entry we write is the version number that defines
   // the format for this file.
-  char versionKeyBuf[1] = {0};
+  char versionKeyBuf[1] = {kIndexVersion};
   char versionBuf[8];
   *reinterpret_cast<uint32_t*>(versionBuf) = htonl(kIndexVersionNumberMajor);
   *reinterpret_cast<uint32_t*>(versionBuf + 4) =

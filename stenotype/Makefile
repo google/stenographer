@@ -49,7 +49,7 @@ ifndef SANITIZE
 	CC=$(GCC)
 else
 	OBJECTS=$(foreach file,$(FILES),$(file)_$(SANITIZE)_clang.o)
-	CFLAGS=$(SHARED_CFLAGS) $(ClANG_CFLAGS) -fsanitize=$(SANITIZE)
+	CFLAGS=$(SHARED_CFLAGS) $(CLANG_CFLAGS) -fsanitize=$(SANITIZE)
 	LDFLAGS=$(SHARED_LDFLAGS) $(CLANG_LDFLAGS)
 	CC=$(CLANG)
 endif

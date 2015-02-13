@@ -14,4 +14,4 @@
 # limitations under the License.
 
 cd $(dirname $0)
-clang-format-3.5 -style=Google -i stenotype/*.{cc,h}
+clang-format-3.5 -style=Google -i stenotype/*.{cc,h} stenotype/afl/index_bin.cc

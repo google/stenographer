@@ -109,6 +109,8 @@ namespace {
 const size_t kTimeBufferSize = 20;
 const char* kTimeFormat = "%Y-%m-%dT%H:%M:%S";
 
+}  // namespace
+
 class LogLine {
  public:
   LogLine(bool crash, const char* file, int line) : crash_(crash) {
@@ -158,8 +160,6 @@ class LogLine {
   DISALLOW_COPY_AND_ASSIGN(LogLine);
 };
 
-}  // namespace
-
 extern int logging_verbose_level;
 #define LOGGING_FATAL_CRASH true
 #define LOGGING_ERROR_CRASH false
@@ -180,7 +180,7 @@ extern int logging_verbose_level;
 #ifndef LOG
 #define LOG(level)           \
   if (LOGGING_##level##_LOG) \
-  LogLine(LOGGING_##level##_CRASH, __FILE__, __LINE__)
+  ::st::LogLine(LOGGING_##level##_CRASH, __FILE__, __LINE__)
 #endif
 #ifndef CHECK
 #define CHECK(expr) \

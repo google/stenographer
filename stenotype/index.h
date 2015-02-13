@@ -22,8 +22,12 @@
 
 #include <leveldb/slice.h>
 
-#include "packets.h"
 #include "util.h"
+#include "packets.h"
+
+namespace leveldb {
+class WritableFile;
+}  // namespace leveldb
 
 namespace st {
 
@@ -109,6 +113,7 @@ class Index {
 
   void Process(const Packet& p, int64_t block_offset);
   Error Flush();
+  Error WriteTo(leveldb::WritableFile* file);
 
  private:
   void AddIPv4(uint32_t ip, uint32_t pos);

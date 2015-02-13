@@ -270,11 +270,25 @@ Error Index::Flush() {
   leveldb::WritableFile* file;
   std::string filename = HiddenFile(dirname_, micros_);
   auto status = leveldb::Env::Default()->NewWritableFile(filename, &file);
-  std::unique_ptr<leveldb::WritableFile> cleaner(file);
   if (!status.ok()) {
     return ERROR("could not open '" + filename + "': " + status.ToString());
   }
+  std::unique_ptr<leveldb::WritableFile> cleaner(file);
 
+  RETURN_IF_ERROR(WriteTo(file), "writing index " + filename);
+
+  std::string unhidden = UnhiddenFile(dirname_, micros_);
+  LOG(INFO) << "Wrote all index files for " << filename << ", moving to "
+            << unhidden;
+  RETURN_IF_ERROR(Errno(rename(filename.c_str(), unhidden.c_str())), "rename");
+  LOG(V1) << "Stored " << packets_ << " with " << ip4_.size() << " IP4 "
+          << ip6_.size() << " IP6 " << proto_.size() << " protos "
+          << port_.size() << " ports " << vlan_.size() << " vlan "
+          << mpls_.size() << " mpls";
+  return SUCCESS;
+}
+
+Error Index::WriteTo(leveldb::WritableFile* file) {
   leveldb::Options options;
   options.compression = leveldb::kNoCompression;
   leveldb::TableBuilder index_ss(options, file);
@@ -312,22 +326,13 @@ Error Index::Flush() {
 
   auto finished = index_ss.Finish();
   if (!finished.ok()) {
-    return ERROR("could not finish writing index table '" + filename + "': " +
+    return ERROR("could not finish writing index table: " +
                  finished.ToString());
   }
   auto closed = file->Close();
   if (!closed.ok()) {
-    return ERROR("could not close index table '" + filename + "': " +
-                 closed.ToString());
+    return ERROR("could not close index table: " + closed.ToString());
   }
-  std::string unhidden = UnhiddenFile(dirname_, micros_);
-  LOG(INFO) << "Wrote all index files for " << filename << ", moving to "
-            << unhidden;
-  RETURN_IF_ERROR(Errno(rename(filename.c_str(), unhidden.c_str())), "rename");
-  LOG(V1) << "Stored " << packets_ << " with " << ip4_.size() << " IP4 "
-          << ip6_.size() << " IP6 " << proto_.size() << " protos "
-          << port_.size() << " ports " << vlan_.size() << " vlan "
-          << mpls_.size() << " mpls";
   return SUCCESS;
 }
 

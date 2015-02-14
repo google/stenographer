@@ -32,7 +32,7 @@ func TestValidName(t *testing.T) {
 	} else {
 		name := idx.Name()
 		if name != filename {
-			t.Fatalf("wrong filename. want: %q, got %q", name, filename)
+			t.Fatalf("wrong filename.\nwant: %q, got %q", name, filename)
 		} else {
 			t.Log(name)
 			idx.Close()
@@ -50,7 +50,7 @@ func TestValidIPPositions(t *testing.T) {
 		validPositions := base.Positions{1049024, 1049848}
 		positions, err := idx.IPPositions(ctx, parseIP(validStart), parseIP(validEnd))
 		if !reflect.DeepEqual(validPositions, positions) {
-			t.Fatalf("missing IP positions. want: %v\n got: %v\n err:", validPositions, positions, err)
+			t.Fatalf("missing IP positions.\nwant: %v\n got: %v\n err:", validPositions, positions, err)
 		} else {
 			t.Log(positions)
 			idx.Close()
@@ -67,7 +67,7 @@ func TestInvalidIPPositions(t *testing.T) {
 		invalidEnd := "10.0.0.254"
 		positions, err := idx.IPPositions(ctx, parseIP(invalidStart), parseIP(invalidEnd))
 		if positions != nil {
-			t.Fatalf("missing IP positions. want: %v\n got: %v\n err:", nil, positions, err)
+			t.Fatalf("invalid IP positions.\nwant: %v\n got: %v\n err:", nil, positions, err)
 		} else {
 			t.Log(nil)
 			idx.Close()
@@ -84,7 +84,7 @@ func TestValidMPLSPositions(t *testing.T) {
 		validPositions := base.Positions{1051144, 1054304, 1054592, 1054736, 1054888, 1055184, 1055328, 1055472, 1055800, 1056824, 1056968}
 		positions, err := idx.MPLSPositions(ctx, validMPLSLabel)
 		if !reflect.DeepEqual(positions, validPositions) {
-			t.Fatalf("missing MPLS positions. want: %v\n got: %v\n err:", validPositions, positions, err)
+			t.Fatalf("missing MPLS positions.\nwant: %v\n got: %v\n err:", validPositions, positions, err)
 		} else {
 			t.Log(positions)
 			idx.Close()
@@ -100,7 +100,7 @@ func TestInvalidMPLSPositions(t *testing.T) {
 		var invalidMPLSLabel uint32 = 55
 		positions, err := idx.MPLSPositions(ctx, invalidMPLSLabel)
 		if positions != nil {
-			t.Fatalf("invalid MPLS positions. want: %v\n got: %v\n err:", nil, positions, err)
+			t.Fatalf("invalid MPLS positions.\nwant: %v\n got: %v\n err:", nil, positions, err)
 		} else {
 			t.Log(nil)
 			idx.Close()
@@ -117,7 +117,7 @@ func TestValidVLANPositions(t *testing.T) {
 		validPositions := base.Positions{1123648, 1126248, 1178544, 1192552, 1208680}
 		positions, err := idx.VLANPositions(ctx, validVLAN)
 		if !reflect.DeepEqual(validPositions, positions) {
-			t.Fatalf("missing VLAN positions. want: %v\n got: %v\n err:", validPositions, positions, err)
+			t.Fatalf("missing VLAN positions.\nwant: %v\n got: %v\n err:", validPositions, positions, err)
 		} else {
 			t.Log(positions)
 			idx.Close()
@@ -133,7 +133,7 @@ func TestInvalidVLANPositions(t *testing.T) {
 		var validVLAN uint16 = 8
 		positions, err := idx.VLANPositions(ctx, validVLAN)
 		if positions != nil {
-			t.Fatalf("missing VLAN positions. want: %v\n got: %v\n err:", nil, positions, err)
+			t.Fatalf("invalid VLAN positions.\nwant: %v\n got: %v\n err:", nil, positions, err)
 		} else {
 			t.Log(nil)
 			idx.Close()
@@ -150,7 +150,7 @@ func TestValidProtoPositions(t *testing.T) {
 		validPositions := base.Positions{1048624, 1049024, 1049448, 1049848}
 		positions, err := idx.ProtoPositions(ctx, validDhcpProto)
 		if !reflect.DeepEqual(validPositions, positions) {
-			t.Fatalf("want: %v\n got: %v\n err:", validPositions, positions, err)
+			t.Fatalf("missing protocol positions.\nwant: %v\n got: %v\n err:", validPositions, positions, err)
 		} else {
 			t.Log(positions)
 			idx.Close()
@@ -166,7 +166,7 @@ func TestInvalidProtoPositions(t *testing.T) {
 		var invalidDhcpProto byte = '\x12'
 		positions, err := idx.ProtoPositions(ctx, invalidDhcpProto)
 		if positions != nil {
-			t.Fatalf("want: %v\n got: %v\n err:", nil, positions, err)
+			t.Fatalf("found invalid protocol positions.\nwant: %v\n got: %v\n err:", nil, positions, err)
 		} else {
 			t.Log(nil)
 			idx.Close()
@@ -183,7 +183,7 @@ func TestValidPortPositions(t *testing.T) {
 		validPositions := base.Positions{1048624, 1049024, 1049448, 1049848}
 		positions, err := idx.PortPositions(ctx, validDhcpPort)
 		if !reflect.DeepEqual(validPositions, positions) {
-			t.Fatalf("want: %v\n got: %v\n err:", validPositions, positions, err)
+			t.Fatalf("missing port positions.\nwant: %v\n got: %v\n err:", validPositions, positions, err)
 		} else {
 			t.Log(positions)
 			idx.Close()
@@ -199,7 +199,7 @@ func TestInvalidPortPositions(t *testing.T) {
 		var invalidDhcpPort uint16 = 69
 		positions, err := idx.PortPositions(ctx, invalidDhcpPort)
 		if positions != nil {
-			t.Fatalf("want: %v\n got: %v\n err:", nil, positions, err)
+			t.Fatalf("missing port positions.\nwant: %v\n got: %v\n err:", nil, positions, err)
 		} else {
 			t.Log(nil)
 			idx.Close()
@@ -219,7 +219,7 @@ func TestDump(t *testing.T) {
 		idx.Dump(&w, start, end)
 		got := w.String()
 		if got != want {
-			t.Fatalf("want %q\n got: %q\n", want, got)
+			t.Fatalf("invalid dump.\nwant %q\n got: %q\n", want, got)
 		} else {
 			t.Log(got)
 			idx.Close()

@@ -50,7 +50,7 @@ type IndexFile struct {
 // IndexPathFromBlockfilePath returns the path to an index file based on the path to a
 // block file.
 func IndexPathFromBlockfilePath(p string) string {
-	return strings.Replace(p, "PKT", "IDX", 1)
+   return strings.Replace(p, "PKT", "IDX", 1)
 }
 
 // BlockfilePathFromIndexPath returns the path to a block file based on the path to an

@@ -26,7 +26,7 @@ import (
 var ctx = context.Background()
 
 func TestValidName(t *testing.T) {
-	filename := "testdata/dhcp_indexfile"
+	filename := "../testdata/IDX0/dhcp"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {
@@ -41,7 +41,7 @@ func TestValidName(t *testing.T) {
 }
 
 func TestValidIPPositions(t *testing.T) {
-	filename := "testdata/dhcp_indexfile"
+	filename := "../testdata/IDX0/dhcp"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {
@@ -59,7 +59,7 @@ func TestValidIPPositions(t *testing.T) {
 }
 
 func TestInvalidIPPositions(t *testing.T) {
-	filename := "testdata/dhcp_indexfile"
+	filename := "../testdata/IDX0/dhcp"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {
@@ -76,7 +76,7 @@ func TestInvalidIPPositions(t *testing.T) {
 }
 
 func TestValidMPLSPositions(t *testing.T) {
-	filename := "testdata/mpls_indexfile"
+	filename := "../testdata/IDX0/mpls"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {
@@ -93,7 +93,7 @@ func TestValidMPLSPositions(t *testing.T) {
 }
 
 func TestInvalidMPLSPositions(t *testing.T) {
-	filename := "testdata/mpls_indexfile"
+	filename := "../testdata/IDX0/mpls"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {
@@ -109,7 +109,7 @@ func TestInvalidMPLSPositions(t *testing.T) {
 }
 
 func TestValidVLANPositions(t *testing.T) {
-	filename := "testdata/vlan_indexfile"
+	filename := "../testdata/IDX0/vlan"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {
@@ -126,7 +126,7 @@ func TestValidVLANPositions(t *testing.T) {
 }
 
 func TestInvalidVLANPositions(t *testing.T) {
-	filename := "testdata/vlan_indexfile"
+	filename := "../testdata/IDX0/vlan"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {
@@ -142,7 +142,7 @@ func TestInvalidVLANPositions(t *testing.T) {
 }
 
 func TestValidProtoPositions(t *testing.T) {
-	filename := "testdata/dhcp_indexfile"
+	filename := "../testdata/IDX0/dhcp"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {
@@ -159,7 +159,7 @@ func TestValidProtoPositions(t *testing.T) {
 }
 
 func TestInvalidProtoPositions(t *testing.T) {
-	filename := "testdata/dhcp_indexfile"
+	filename := "../testdata/IDX0/dhcp"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {
@@ -175,7 +175,7 @@ func TestInvalidProtoPositions(t *testing.T) {
 }
 
 func TestValidPortPositions(t *testing.T) {
-	filename := "testdata/dhcp_indexfile"
+	filename := "../testdata/IDX0/dhcp"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {
@@ -192,7 +192,7 @@ func TestValidPortPositions(t *testing.T) {
 }
 
 func TestInvalidPortPositions(t *testing.T) {
-	filename := "testdata/dhcp_indexfile"
+	filename := "../testdata/IDX0/dhcp"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {
@@ -208,7 +208,7 @@ func TestInvalidPortPositions(t *testing.T) {
 }
 
 func TestDump(t *testing.T) {
-	filename := "testdata/dhcp_indexfile"
+	filename := "../testdata/IDX0/dhcp"
 	if idx, idxErr := NewIndexFile(filename); idxErr != nil {
 		t.Fatalf("could not open index file %q: %v", filename, idxErr)
 	} else {

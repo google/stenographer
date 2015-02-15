@@ -510,6 +510,10 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
 int Main(int argc, char** argv) {
   LOG_IF_ERROR(Errno(prctl(PR_SET_PDEATHSIG, SIGTERM)), "prctl PDEATHSIG");
   ParseOptions(argc, argv);
+  LOG(V1) << "Stenotype running with these arguments:";
+  for (int i = 0; i < argc; i++) {
+    LOG(V1) << i << ":\t\"" << argv[i] << "\"";
+  }
   LOG(INFO) << "Starting...";
   sockets_created = new Barrier(flag_threads + 1);
 

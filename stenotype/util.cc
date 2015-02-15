@@ -41,4 +41,94 @@ std::string Dirname(const std::string& filename) {
   return std::string(dirname(copy));
 }
 
+void Barrier::Block() {
+  std::unique_lock<std::mutex> lock(mu_);
+  count_++;
+  if (count_ >= threads_) {
+    lock.unlock();
+    cond_.notify_all();
+  } else {
+    while (count_ < threads_) {
+      cond_.wait(lock);
+    }
+  }
+}
+
+void Notification::WaitForNotification() {
+  std::unique_lock<std::mutex> lock(mu_);
+  while (waiting_) {
+    cond_.wait(lock);
+  }
+}
+
+void Notification::Notify() {
+  mu_.lock();
+  CHECK(waiting_);
+  waiting_ = false;
+  mu_.unlock();
+  cond_.notify_all();
+}
+
+void ProducerConsumerQueue::Put(void* val) {
+  CHECK(val != NULL);
+  CHECK(!closed_);
+  std::unique_lock<std::mutex> lock(mu_);
+  d_.push_back(val);
+  lock.unlock();
+  cond_.notify_one();
+}
+
+void* ProducerConsumerQueue::Get() {
+  std::unique_lock<std::mutex> lock(mu_);
+  while (d_.empty() && !closed_) {
+    cond_.wait(lock);
+  }
+  if (d_.empty() && closed_) {
+    return NULL;
+  }
+  void* ret = d_.front();
+  d_.pop_front();
+  return ret;
+}
+
+void ProducerConsumerQueue::Close() {
+  std::unique_lock<std::mutex> lock(mu_);
+  closed_ = true;
+  lock.unlock();
+  cond_.notify_all();
+}
+
+void Watchdog::Watch() {
+  auto last = ctr_;
+  while (true) {
+    auto now = GetCurrentTimeMicros();
+    auto recheck = now + kNumMicrosPerSecond * seconds_;
+    for (; last == ctr_ && !done_ && now < recheck;
+         now = GetCurrentTimeMicros()) {
+      SleepForSeconds(std::min(1.0, double(seconds_) / 10));
+    }
+    if (done_) {
+      return;
+    } else if (last != ctr_) {
+      LOG(V2) << "Fed watchdog: " << description_;
+      last = ctr_;
+      continue;
+    }
+    LOG(FATAL) << "WATCHDOG FAILURE: " << description_;
+  }
+}
+
+Watchdog::Watchdog(std::string description, int seconds)
+    : description_(description), seconds_(seconds), ctr_(0), done_(false) {
+  t_ = new std::thread(&Watchdog::Watch, this);
+}
+
+Watchdog::~Watchdog() {
+  done_ = true;
+  t_->join();
+  delete t_;
+}
+
+void Watchdog::Feed() { ctr_++; }
+
 }  // namespace st

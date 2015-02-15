@@ -131,10 +131,9 @@ Error SingleFile::Close() {
 
 }  // namespace io
 
-Output::Output(int aiops, int64_t initial_file_size)
+Output::Output(int aiops)
     : ctx_(NULL),
       max_ops_(aiops),
-      initial_file_size_(initial_file_size),
       current_(NULL) {
   CHECK_SUCCESS(SetUp());
 }
@@ -182,7 +181,8 @@ Error Output::MaybeCloseFile(io::SingleFile* file) {
   return SUCCESS;
 }
 
-Error Output::Rotate(const std::string& dirname, int64_t micros) {
+Error Output::Rotate(
+    const std::string& dirname, int64_t micros, int64_t initial_size) {
   if (current_) {
     current_->RequestClose();
     RETURN_IF_ERROR(MaybeCloseFile(current_), "maybe close");
@@ -192,8 +192,10 @@ Error Output::Rotate(const std::string& dirname, int64_t micros) {
   int fd = open(name.c_str(), O_CREAT | O_WRONLY | O_DSYNC | O_DIRECT, 0600);
   LOG(INFO) << "Opening packet file " << name << ": " << fd;
   RETURN_IF_ERROR(Errno(fd > 0), "open");
-  LOG_IF_ERROR(Errno(0 <= fallocate(fd, 0, 0, initial_file_size_)),
-               "fallocate");
+  if (initial_size > 0) {
+    LOG_IF_ERROR(Errno(0 <= fallocate(fd, 0, 0, initial_size)),
+                 "fallocate");
+  }
   current_ = new io::SingleFile(this, dirname, micros, fd);
   files_.insert(current_);
   return SUCCESS;

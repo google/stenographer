@@ -105,6 +105,7 @@ std::string flag_gid;
 bool flag_index = true;
 std::string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
+int flag_preallocate_file_mb = 0;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
   switch (key) {
@@ -162,6 +163,9 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
     case 315:
       flag_seccomp = arg;
       break;
+    case 316:
+      flag_preallocate_file_mb = atoi(arg);
+      break;
   }
   return 0;
 }
@@ -193,6 +197,8 @@ void ParseOptions(int argc, char** argv) {
        "can be obtained from a human readable filter expression using the "
        "provided compile_bpf.sh script."},
       {"seccomp", 315, s, 0, "Seccomp style, one of 'none', 'trace', 'kill'."},
+      {"preallocate_file_mb", 316, n, 0,
+       "When creating new files, preallocate to this many MB"},
       {0}, };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
@@ -420,7 +426,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
   LOG(INFO) << "Thread " << thread << " starting to process packets";
 
   // Set up file writing, if requested.
-  Output output(flag_aiops, flag_filesize_mb << 20);
+  Output output(flag_aiops);
 
   // All dirnames are guaranteed to end with '/'.
   std::string file_dirname = flag_dir + "PKT" + std::to_string(thread) + "/";
@@ -428,7 +434,8 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
 
   Packet p;
   int64_t micros = GetCurrentTimeMicros();
-  CHECK_SUCCESS(output.Rotate(file_dirname, micros));
+  CHECK_SUCCESS(output.Rotate(
+      file_dirname, micros, flag_preallocate_file_mb << 10));
   Index* index = NULL;
   if (flag_index) {
     index = new Index(index_dirname, micros);
@@ -454,7 +461,8 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
       // File size got too big, rotate file.
       micros = current_micros;
       block_offset = 0;
-      CHECK_SUCCESS(output.Rotate(file_dirname, micros));
+      CHECK_SUCCESS(output.Rotate(
+          file_dirname, micros, flag_preallocate_file_mb << 10));
       if (flag_index) {
         write_index->Put(index);
         index = new Index(index_dirname, micros);

@@ -145,8 +145,10 @@ class LogLine {
  private:
   void FillTimeBuffer() {
     gettimeofday(&tv_, NULL);
-    struct tm* timeinfo = gmtime(&tv_.tv_sec);
-    size_t len = strftime(time_buffer_, kTimeBufferSize, kTimeFormat, timeinfo);
+    struct tm timeinfo;
+    gmtime_r(&tv_.tv_sec, &timeinfo);
+    size_t len =
+        strftime(time_buffer_, kTimeBufferSize, kTimeFormat, &timeinfo);
     if (len + 1 != kTimeBufferSize) {  // returned num bytes doesn't include \0
       strcpy(time_buffer_, "STRFTIME_ERROR");
     }

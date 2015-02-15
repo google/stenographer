@@ -521,9 +521,9 @@ int Main(int argc, char** argv) {
   CHECK(flag_filesize_mb <= 4 << 10);
   CHECK(flag_filesize_mb > 1);
   CHECK(flag_filesize_mb > flag_aiops);
-  CHECK(flag_blocks > 16);  // arbitrary lower limit.
+  CHECK(flag_blocks >= 16);  // arbitrary lower limit.
   CHECK(flag_threads >= 1);
-  CHECK(flag_aiops <= flag_blocks / 2);
+  CHECK(flag_aiops <= flag_blocks);
   CHECK(flag_dir != "");
   if (flag_dir[flag_dir.size() - 1] != '/') {
     flag_dir += "/";

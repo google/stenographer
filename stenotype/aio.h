@@ -43,11 +43,14 @@ class Output {
   // Create a new async IO queue with aiops slots for IO operations.
   // This class originally starts out with no file... an Open call must occur
   // before any PWrites to open a file.
-  explicit Output(int aiops, int64_t initial_file_size);
+  explicit Output(int aiops);
   // Flush all files on exit.
   virtual ~Output();
   // Open a new file.  Will fail if a file is already open.
-  Error Rotate(const std::string& dirname, int64_t micros);
+  // If initial_size > 0, will attempt to preallocate the file to be
+  // that many bytes.
+  Error Rotate(
+      const std::string& dirname, int64_t micros, int64_t initial_size);
   // Close and flush all files.
   Error Flush();
   // Write the given Block out to the given offset in the current file,
@@ -68,7 +71,6 @@ class Output {
 
   io_context_t ctx_;
   int max_ops_;
-  int64_t initial_file_size_;
   io::SingleFile* current_;
   std::set<io::SingleFile*> files_;
 

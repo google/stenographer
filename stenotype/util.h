@@ -241,17 +241,9 @@ class Barrier {
  public:
   explicit Barrier(int threads) : threads_(threads), count_(0) {}
   ~Barrier() {}
-  void Block() {
-    std::unique_lock<std::mutex> lock(mu_);
-    if (++count_ >= threads_) {
-      lock.unlock();
-      cond_.notify_all();
-    } else {
-      while (count_ < threads_) {
-        cond_.wait(lock);
-      }
-    }
-  }
+
+  // The first N-1 calls to Block block until the Nth call.
+  void Block();
 
  private:
   int threads_;
@@ -267,19 +259,12 @@ class Notification {
  public:
   Notification() : waiting_(true) {}
   ~Notification() {}
-  void WaitForNotification() {
-    std::unique_lock<std::mutex> lock(mu_);
-    while (waiting_) {
-      cond_.wait(lock);
-    }
-  }
-  void Notify() {
-    mu_.lock();
-    CHECK(waiting_);
-    waiting_ = false;
-    mu_.unlock();
-    cond_.notify_all();
-  }
+
+  // Block until Notify is called.
+  void WaitForNotification();
+
+  // Unblock WaitForNotification calls.
+  void Notify();
 
  private:
   bool waiting_;
@@ -295,31 +280,14 @@ class ProducerConsumerQueue {
   ProducerConsumerQueue() : closed_(false) {}
   ~ProducerConsumerQueue() {}
 
-  void Put(void* val) {
-    CHECK(!closed_);
-    std::unique_lock<std::mutex> lock(mu_);
-    d_.push_back(val);
-    lock.unlock();
-    cond_.notify_one();
-  }
-  void* Get() {
-    std::unique_lock<std::mutex> lock(mu_);
-    while (d_.empty() && !closed_) {
-      cond_.wait(lock);
-    }
-    if (d_.empty() && closed_) {
-      return NULL;
-    }
-    void* ret = d_.front();
-    d_.pop_front();
-    return ret;
-  }
-  void Close() {
-    std::unique_lock<std::mutex> lock(mu_);
-    closed_ = true;
-    lock.unlock();
-    cond_.notify_all();
-  }
+  // Add value onto the queue.  Must not be NULL.
+  void Put(void* val);
+
+  // Get value off of the queue.  Gets NULL if queue is closed.
+  void* Get();
+
+  // Close queue.  All subsequent Get calls will immediately return NULL.
+  void Close();
 
  private:
   std::mutex mu_;
@@ -375,40 +343,19 @@ inline std::string UnhiddenFile(const std::string& dirname, int64_t micros) {
 //   }
 //   // dog falls out of scope, its thread is canceled and it quietly goes away.
 class Watchdog {
- private:
-  void Watch() {
-    auto last = ctr_;
-    while (true) {
-      auto now = GetCurrentTimeMicros();
-      auto recheck = now + kNumMicrosPerSecond * seconds_;
-      for (; last == ctr_ && !done_ && now < recheck;
-           now = GetCurrentTimeMicros()) {
-        SleepForSeconds(std::min(1.0, double(seconds_) / 10));
-      }
-      if (done_) {
-        return;
-      } else if (last != ctr_) {
-        LOG(V2) << "Fed watchdog: " << description_;
-        last = ctr_;
-        continue;
-      }
-      LOG(FATAL) << "WATCHDOG FAILURE: " << description_;
-    }
-  }
-
  public:
-  Watchdog(std::string description, int seconds)
-      : description_(description), seconds_(seconds), ctr_(0), done_(false) {
-    t_ = new std::thread(&Watchdog::Watch, this);
-  }
-  ~Watchdog() {
-    done_ = true;
-    t_->join();
-    delete t_;
-  }
-  void Feed() { ctr_++; }
+  // Create a watchdog that crashes if it hasn't been fed after X seconds.
+  Watchdog(std::string description, int seconds);
+
+  // Constructor stops the watchdog.
+  ~Watchdog();
+
+  // Feed the watchdog.
+  void Feed();
 
  private:
+  void Watch();
+
   std::thread* t_;
   std::string description_;
   int seconds_;

@@ -28,71 +28,33 @@ const (
 	filename = "../testdata/PKT0/dhcp"
 )
 
-func TestValidPositions(t *testing.T) {
-	if blk, blkErr := NewBlockFile(filename); blkErr != nil {
-		t.Fatalf("could not open block file %v: %v", filename, blkErr)
-	} else {
-		positions := base.Positions{1048624, 1049024, 1049448, 1049848}
-		q, _ := query.NewQuery("port 67")
-		received, err := blk.Positions(ctx, q)
-		if err != nil {
-			t.Fatalf("query error: %v", err)
-		}
-		if !reflect.DeepEqual(positions, received) {
-			t.Fatalf("wrong packet positions.\nwant: %v\n got: %v\n", positions, received)
-		} else {
-			t.Log(positions)
-		}
+func testBlockFile(t *testing.T, filename string) *BlockFile {
+	blk, err := NewBlockFile(filename)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return blk
 }
 
-func TestInvalidPositions(t *testing.T) {
-	if blk, blkErr := NewBlockFile(filename); blkErr != nil {
-		t.Fatalf("could not open block file %v: %v", filename, blkErr)
-	} else {
-		q, _ := query.NewQuery("port 69")
-		received, err := blk.Positions(ctx, q)
-		if err != nil {
-			t.Fatalf("query error: %v", err)
-		}
-		if received != nil {
-			t.Fatalf("wrong packet positions.\nwant: %v\n got: %v\n", nil, received)
-		} else {
-			t.Log(nil)
-		}
-	}
-}
-
-func TestValidLookup(t *testing.T) {
-	if blk, blkErr := NewBlockFile(filename); blkErr != nil {
-		t.Fatalf("could not open block file %v: %v", filename, blkErr)
-	} else {
-		q, _ := query.NewQuery("port 67")
-		out := base.NewPacketChan(100)
-		packets := 4
-		blk.Lookup(ctx, q, out)
-		received := len(out.Receive())
-		if received != packets {
-			t.Fatal("wrong number of packets.\nwant: %v\n got: %v\n", packets, received)
-		} else {
-			t.Log(received)
+func TestPositions(t *testing.T) {
+	blk := testBlockFile(t, filename)
+	for _, test := range []struct {
+		// test struct
+		query string
+		want  base.Positions
+	}{
+		// tests
+		{"port 67", base.Positions{1048624, 1049024, 1049448, 1049848}},
+		{"port 69", nil},
+	} {
+		// code to run single test
+		if q, err := query.NewQuery(test.query); err != nil {
+			t.Fatal(err)
+		} else if got, err := blk.Positions(ctx, q); err != nil {
+			t.Fatal(err)
+		} else if !reflect.DeepEqual(got, test.want) {
+			t.Errorf("wrong packet positions.\nwant: %v\n got: %v\n", test.want, got)
 		}
 	}
-}
-
-func TestInvalidLookup(t *testing.T) {
-	if blk, blkErr := NewBlockFile(filename); blkErr != nil {
-		t.Fatalf("could not open block file %v: %v", filename, blkErr)
-	} else {
-		q, _ := query.NewQuery("port 22")
-		out := base.NewPacketChan(100)
-		packets := 0
-		blk.Lookup(ctx, q, out)
-		received := len(out.Receive())
-		if received != packets {
-			t.Fatal("wrong number of packets.\nwant: %v\n got: %v\n", packets, received)
-		} else {
-			t.Log(received)
-		}
-	}
+	blk.Close()
 }

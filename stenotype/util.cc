@@ -119,14 +119,22 @@ void Watchdog::Watch() {
 }
 
 Watchdog::Watchdog(std::string description, int seconds)
-    : description_(description), seconds_(seconds), ctr_(0), done_(false) {
-  t_ = new std::thread(&Watchdog::Watch, this);
+    : t_(NULL),
+      description_(description),
+      seconds_(seconds),
+      ctr_(0),
+      done_(false) {
+  if (seconds > 0) {
+    t_ = new std::thread(&Watchdog::Watch, this);
+  }
 }
 
 Watchdog::~Watchdog() {
   done_ = true;
-  t_->join();
-  delete t_;
+  if (t_ != NULL) {
+    t_->join();
+    delete t_;
+  }
 }
 
 void Watchdog::Feed() { ctr_++; }

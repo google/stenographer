@@ -106,6 +106,7 @@ bool flag_index = true;
 std::string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
 int flag_preallocate_file_mb = 0;
+bool flag_watchdogs = true;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
   switch (key) {
@@ -166,6 +167,8 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
     case 316:
       flag_preallocate_file_mb = atoi(arg);
       break;
+    case 317:
+      flag_watchdogs = false;
   }
   return 0;
 }
@@ -199,6 +202,7 @@ void ParseOptions(int argc, char** argv) {
       {"seccomp", 315, s, 0, "Seccomp style, one of 'none', 'trace', 'kill'."},
       {"preallocate_file_mb", 316, n, 0,
        "When creating new files, preallocate to this many MB"},
+      {"no_watchdogs", 317, 0, 0, "Don't start any watchdogs"},
       {0}, };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
@@ -211,9 +215,7 @@ namespace st {
 // These two synchronization mechanisms are used to coordinate when to
 // chroot/chuid so it's after when the threads create their sockets but before
 // they start writing files.
-Notification privileges_dropped;
 Notification main_complete;
-Barrier* sockets_created;
 
 void DropPrivileges() {
   LOG(INFO) << "Dropping privileges";
@@ -346,11 +348,10 @@ Error SetAffinity(int cpu) {
 void WriteIndexes(int thread, st::ProducerConsumerQueue* write_index) {
   LOG(V1) << "Starting WriteIndexes thread " << thread;
   Watchdog dog("WriteIndexes thread " + std::to_string(thread),
-               flag_fileage_sec * 3);
+               (flag_watchdogs ? flag_fileage_sec * 3 : -1));
   pid_t tid = syscall(SYS_gettid);
   LOG_IF_ERROR(Errno(setpriority(PRIO_PROCESS, tid, flag_index_nicelevel)),
                "setpriority");
-  privileges_dropped.WaitForNotification();
   DropIndexThreadPrivileges();
   while (true) {
     LOG(V1) << "Waiting for index";
@@ -389,39 +390,16 @@ void HandleSignalsThread() {
   LOG(V1) << "Signal handling done";
 }
 
-void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
+void RunThread(int thread, st::ProducerConsumerQueue* write_index,
+               PacketsV3* v3) {
   if (flag_threads > 1) {
     LOG_IF_ERROR(SetAffinity(thread), "set affinity");
   }
-  int socktype = SOCK_RAW;
-  struct tpacket_req3 options;
-  memset(&options, 0, sizeof(options));
-  options.tp_block_size = 1 << 20;  // it's very important this be 1MB
-  options.tp_block_nr = flag_blocks;
-  options.tp_frame_size = 16 << 10;  // does not matter at all
-  options.tp_frame_nr = 0;           // computed for us.
-  options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
-  Watchdog dog("Thread " + std::to_string(thread), flag_fileage_sec * 2);
+  Watchdog dog("Thread " + std::to_string(thread),
+               (flag_watchdogs ? flag_fileage_sec * 2 : -1));
 
-  // Set up AF_PACKET packet reading.
-  PacketsV3::Builder builder;
-  CHECK_SUCCESS(builder.SetUp(socktype, options));
-  int fanout_id = getpid();
-  if (flag_fanout_id > 0) {
-    fanout_id = flag_fanout_id;
-  }
-  if (flag_fanout_id > 0 || flag_threads > 1) {
-    CHECK_SUCCESS(builder.SetFanout(flag_fanout_type, fanout_id));
-  }
-  if (!flag_filter.empty()) {
-    CHECK_SUCCESS(builder.SetFilter(flag_filter));
-  }
-  PacketsV3* v3;
-  CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
   std::unique_ptr<PacketsV3> cleanup(v3);
 
-  sockets_created->Block();
-  privileges_dropped.WaitForNotification();
   DropPacketThreadPrivileges();
   LOG(INFO) << "Thread " << thread << " starting to process packets";
 
@@ -434,8 +412,8 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
 
   Packet p;
   int64_t micros = GetCurrentTimeMicros();
-  CHECK_SUCCESS(output.Rotate(
-      file_dirname, micros, flag_preallocate_file_mb << 10));
+  CHECK_SUCCESS(
+      output.Rotate(file_dirname, micros, flag_preallocate_file_mb << 10));
   Index* index = NULL;
   if (flag_index) {
     index = new Index(index_dirname, micros);
@@ -461,8 +439,8 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index) {
       // File size got too big, rotate file.
       micros = current_micros;
       block_offset = 0;
-      CHECK_SUCCESS(output.Rotate(
-          file_dirname, micros, flag_preallocate_file_mb << 10));
+      CHECK_SUCCESS(
+          output.Rotate(file_dirname, micros, flag_preallocate_file_mb << 10));
       if (flag_index) {
         write_index->Put(index);
         index = new Index(index_dirname, micros);
@@ -523,7 +501,6 @@ int Main(int argc, char** argv) {
     LOG(V1) << i << ":\t\"" << argv[i] << "\"";
   }
   LOG(INFO) << "Starting...";
-  sockets_created = new Barrier(flag_threads + 1);
 
   // Sanity check flags and setup options.
   CHECK(flag_filesize_mb <= 4 << 10);
@@ -537,21 +514,78 @@ int Main(int argc, char** argv) {
     flag_dir += "/";
   }
 
+  // Before we drop any privileges, set up our sniffing sockets.
+  // We have to do this before calling DropPrivileges, which does a
+  // setuid/setgid and could lose us the ability to do this at a later date.
+  LOG(INFO) << "Setting up AF_PACKET sockets for packet reading";
+  int socktype = SOCK_RAW;
+  struct tpacket_req3 options;
+  memset(&options, 0, sizeof(options));
+  options.tp_block_size = 1 << 20;  // it's very important this be 1MB
+  options.tp_block_nr = flag_blocks;
+  options.tp_frame_size = 16 << 10;  // does not matter at all
+  options.tp_frame_nr = 0;           // computed for us.
+  options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
+
+  std::vector<PacketsV3*> sockets;
+  for (int i = 0; i < flag_threads; i++) {
+    // Set up AF_PACKET packet reading.
+    PacketsV3::Builder builder;
+    CHECK_SUCCESS(builder.SetUp(socktype, options));
+    int fanout_id = getpid();
+    if (flag_fanout_id > 0) {
+      fanout_id = flag_fanout_id;
+    }
+    if (flag_fanout_id > 0 || flag_threads > 1) {
+      CHECK_SUCCESS(builder.SetFanout(flag_fanout_type, fanout_id));
+    }
+    if (!flag_filter.empty()) {
+      CHECK_SUCCESS(builder.SetFilter(flag_filter));
+    }
+    PacketsV3* v3;
+    CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
+    sockets.push_back(v3);
+  }
+
+  // Now that we have sockets, drop privileges.
+  // We HAVE to do this before we start any threads, since it's unclear whether
+  // setXid will set the IDs for the all process threads or just the current
+  // one.  This should also be done before signal masking, because apparently
+  // sometimes Linux sends a SIGSETXID signal to threads during this, and if
+  // that is ignored setXid will hang forever.
+  DropPrivileges();
+
   // Start a thread whose sole purpose is to handle signals.
+  // Signal handling in a multi-threaded application is HARD.  This binary
+  // wants to handle signals very simply:  one thread catches SIGINT/SIGTERM and
+  // sets a bool accordingly.  However, Linux will deliver the signal to one
+  // (random) thread.  How to handle this?  First, we create the one single
+  // thread that is going to get signals...
   std::thread signal_thread(&HandleSignalsThread);
   signal_thread.detach();
-
-  // Block stopping signals, they'll be handled by the HandleSignalsThread.
+  // ... Then, we block those signals from being handled by this thread or any
+  // of its children.  All other threads MUST be created after this.
   sigset_t sigset;
   sigemptyset(&sigset);
   sigaddset(&sigset, SIGINT);
   sigaddset(&sigset, SIGTERM);
   CHECK_SUCCESS(Errno(pthread_sigmask(SIG_BLOCK, &sigset, NULL)));
 
+  // Now, we can finally start the threads that read in packets, index them, and
+  // write them to disk.
   auto write_indexes = new st::ProducerConsumerQueue[flag_threads];
+  LOG(V1) << "Starting writing threads";
+  std::vector<std::thread*> threads;
+  for (int i = 0; i < flag_threads; i++) {
+    LOG(V1) << "Starting thread " << i;
+    threads.push_back(
+        new std::thread(&RunThread, i, &write_indexes[i], sockets[i]));
+  }
+
   // To avoid blocking on index writes, each writer thread has a secondary
   // thread just for creating and writing the indexes.  We pass to-write
   // indexes through to the writing thread via the write_index FIFO queue.
+  // TODO(gconnell):  Move index writing thread creation into RunThread.
   std::vector<std::thread*> index_threads;
   if (flag_index) {
     LOG(V1) << "Starting indexing threads";
@@ -561,15 +595,10 @@ int Main(int argc, char** argv) {
     }
   }
 
-  LOG(V1) << "Starting writing threads";
-  std::vector<std::thread*> threads;
-  for (int i = 0; i < flag_threads; i++) {
-    LOG(V1) << "Starting thread " << i;
-    threads.push_back(new std::thread(&RunThread, i, &write_indexes[i]));
-  }
-  sockets_created->Block();
-  DropPrivileges();
-  privileges_dropped.Notify();
+  // Drop all privileges we need.  Note: we because of what we've already done,
+  // we really don't need much anymore.  No need to create new threads, to write
+  // files, to open sockets... we basically just hang around waiting for all the
+  // other threads to finish.
   DropCommonThreadPrivileges();
 
   for (auto thread : threads) {

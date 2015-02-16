@@ -255,7 +255,7 @@ const char kIndexIPv6 = 6;
 }  // namespace
 
 Error Index::Flush() {
-  leveldb::WritableFile* file;
+  leveldb::WritableFile* file = NULL;
   std::string filename = HiddenFile(dirname_, micros_);
   auto status = leveldb::Env::Default()->NewWritableFile(filename, &file);
   if (!status.ok()) {

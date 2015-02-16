@@ -49,8 +49,8 @@ class Output {
   // Open a new file.  Will fail if a file is already open.
   // If initial_size > 0, will attempt to preallocate the file to be
   // that many bytes.
-  Error Rotate(
-      const std::string& dirname, int64_t micros, int64_t initial_size);
+  Error Rotate(const std::string& dirname, int64_t micros,
+               int64_t initial_size);
   // Close and flush all files.
   Error Flush();
   // Write the given Block out to the given offset in the current file,

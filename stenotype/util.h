@@ -347,6 +347,7 @@ inline std::string UnhiddenFile(const std::string& dirname, int64_t micros) {
 class Watchdog {
  public:
   // Create a watchdog that crashes if it hasn't been fed after X seconds.
+  // If 'seconds' is <= zero, does nothing.
   Watchdog(std::string description, int seconds);
 
   // Constructor stops the watchdog.

@@ -14,12 +14,12 @@ the course of the project, and we doubt it will change much in the future.
 High-Level Design
 -----------------
 
-Stenographer consists of a 'stenographer' server, which serves user requests and
-manages disk, and which runs a 'stenotype' child process.  'stenotype' sniffs
-packet data and writes it to disk, communicating with 'stenographer' simply by
-un-hiding files when they're read for consumption.  The user scripts 'stenocurl'
-and 'stenoread' provide simple wrappers around 'curl', which allow analysts to
-request packet data from the 'stenographer' server simply and easily.
+Stenographer consists of a `stenographer` server, which serves user requests and
+manages disk, and which runs a `stenotype` child process.  `stenotype` sniffs
+packet data and writes it to disk, communicating with `stenographer` simply by
+un-hiding files when they're read for consumption.  The user scripts `stenocurl`
+and `stenoread` provide simple wrappers around `curl`, which allow analysts to
+request packet data from the `stenographer` server simply and easily.
 
 
 Detailed Design
@@ -31,14 +31,14 @@ Stenographer is actually a few separate processes.
 ### Stenographer ###
 
 Stenographer is a long-running server, the binary that you start up if you want
-to "run stenographer" on your system.  It manages the 'stenotype' binary as a
+to "run stenographer" on your system.  It manages the `stenotype` binary as a
 child process, watches disk usage and cleans up old files, and serves data to
 analysts based on their queries.
 
 
 #### Running Stenotype ####
 
-First off, stenographer is in charge of making sure that 'stenotype' (discussed
+First off, stenographer is in charge of making sure that `stenotype` (discussed
 momentarily) starts and keeps running.  It starts stenotype as a subprocess,
 watching for failures and restarting as necessary.  It also watches stenotype's
 output (the files it creates) and may kill/restart stenotype itself if it feels
@@ -84,7 +84,7 @@ system we came up with on very short notice:
    * On startup, stenographer creates a server cert/key pair and client cert/key
      pair in a certificate directory.  The server key is readable only by
      the analyst running stenographer.  The server cert and client cert/key are
-     readable by the POSIX 'stenographer' group.
+     readable by the POSIX `stenographer` group.
    * The server uses the server cert/key as its TLS cert/key when serving data.
      The client, when issuing TLS requests, verifies the server is valid by
      checking against the server cert it can read in the cerficates directory.
@@ -94,7 +94,7 @@ system we came up with on very short notice:
      only visible to the stenographer POSIX group.
 
 Granting access to stenographer on a local machine is as simple as adding a
-analyst to the 'stenographer' POSIX group, thus allowing them read access to the
+analyst to the `stenographer` POSIX group, thus allowing them read access to the
 client key in the certificate directory.  Revoking access involves removing the
 analyst from the POSIX group, then restarting stenographer in order to generate
 new certs/keys (and thus invalidate any old keys the analyst may have copied to
@@ -181,26 +181,23 @@ individual keys or key ranges.  Among other things, leveldb tables give us great
 compression capabilities, keeping our indexes small while still providing fast
 reads.
 
-leveldb tables do not allow for duplicate keys, so we store all data associated
-with each attribute/position pair in its own key, in the format:
+We store each attribute (port number, protocol number, IP, etc) and its
+associated packet positions in the blockfile using the format:
 
-   [type (1 byte)][value (? bytes)][position (4 bytes)]
+   Key: [type (1 byte)][value (? bytes)]
+   Value: [position 0 (4 bytes)][position 1 (4 bytes)] ...
 
 The type specifies the type of attribute being indexed (1 == protocol, 2 ==
 port, 4 == IPv4, 6 == IPv6).  The value is 1 byte for protocol, 2 for ports, 4
-and 16 respectively for IPv4 and IPv6 addresses.  The position is a seek offset
+and 16 respectively for IPv4 and IPv6 addresses.  Each position is a seek offset
 into a packet file (which are guaranteed to not exceed 4GB) and are always
 exactly 4 bytes long.  All values (ports, protocols, positions) are big endian.
-The "values" we store in the indexes are always empty... we just store the above
-keys.  Looking up packets involves reading key ranges for a specific attribute
+Looking up packets involves reading key for a specific attribute
 to get all positions for that value, then seeking into the packet files to find
 the packets in question and returning them.  For example, to find all packets
-with port 80, you'd read in all table keys with prefix
+with port 80, you'd read in the positions for key:
 
    [\x02 (type=port) \x00\x50 (value=80)]
-
-and use all of the positions found by decoding big-endian uint32s from the
-4-byte suffix of each key.
 
 
 #### Index Writing ####
@@ -231,9 +228,9 @@ while the index is flushed to disk, then moving that index into its usable
 
 As detailed above in Stenographer's "Access Control" section, we require TLS
 handshakes in order to verify that clients are indeed allowed access to packet
-data.  To aid in this, the simple shell script 'stenocurl' wraps the 'curl'
+data.  To aid in this, the simple shell script `stenocurl` wraps the `curl`
 utility, adding the various flags necessary to use the correct client
-certificate and verify against the correct server certificate.  'stenoread' is a
+certificate and verify against the correct server certificate.  `stenoread` is a
 simple addition to stenocurl, which takes in a query string, passes the query to
 stenocurl as a POST request, then passes the resulting PCAP file through tcpdump
 in order to allow for additional filtering, writing to disk, printing in a
@@ -242,14 +239,14 @@ human-readable format, etc.
 
 #### How Queries Work ####
 
-An analyst that wants to query stenographer calls the 'stenoread' script,
+An analyst that wants to query stenographer calls the `stenoread` script,
 passing in a query string (see README.md for the query language format).  This
 string is then POST'd (via stenocurl, using TLS certs/keys) to stenographer.
 Stenographer parses the query into a Query object, which allows it to decide:
 
    * which index files it should read
-   * which key prefixes it should read from each index file
-   * how it should combine packet file positions it gets from each key prefix
+   * which keys it should read from each index file
+   * how it should combine packet file positions it gets from each key
 
 To illustrate, for the query string
 
@@ -257,19 +254,75 @@ To illustrate, for the query string
 
 Stenographer would translate:
 
-   * 'after 3h ago' -> only read index files with microsecond names greater
+   * `after 3h ago` -> only read index files with microsecond names greater
      than (now() - 3h)
-   * within these files, compute the union (because of the 'or') of position
+   * within these files, compute the union (because of the `or`) of position
      sets from
-      * key prefix '\x02\x00\x01' (port == 1)
-      * key prefix '\x01\x02' (protocol == 2)
+      * key `\x02\x00\x01` (port == 1)
+      * key `\x01\x02` (protocol == 2)
 
-Once it has compted a set of packet positions for each index file, it then seeks
-in the corresponding packet files, reads the packets out, and merges them into a
-single PCAP file which it serves back to the analyst.
+Once it has computed a set of packet positions for each index file, it then
+seeks in the corresponding packet files, reads the packets out, and merges them
+into a single PCAP file which it serves back to the analyst.
 
 This PCAP file comes back via stenocurl as a stream to STDOUT, where stenoread
 passes it through tcpdump.  With no additional options, tcpdump just prints the
 packet data out in a nice format.  With various options, tcpdump could do
 further filtering (by TCP flags, etc), write its input to disk (-w out.pcap), or
 do all the other things tcpdump is so good at.
+
+
+### Defense In Depth ###
+
+#### Stenotype ####
+
+We're pretty scared of stenotype, because:
+
+   1. We're processing untrusted data: packet
+   2. We've got very strong permissions: the ability to read packets
+   3. It's written in a memory-unsafe language: C++
+   4. We're not perfect.
+
+Because of this, we've tried to use security best practices to minimize the risk
+of running these binaries with the following methods:
+
+   * Runing as an unprivileged user `stenographer`
+      * We `setcap` the stenotype binary to just have the ability to read
+        raw packets.
+      * If you DON'T want to use `setcap`, we also offer the ability to drop
+        privileges with `setuid/setgid` after starting `stenotype`... you can
+        start it as `root`, then drop privs to an untrusted user (that user
+        must still be able to open/write files in the index/packet
+        directories).
+   * `seccomp` sandboxing:  `stenotype` sandboxes itself after opening up
+     sockets for packet reading.  This sandbox isn't particularly granular,
+     but it should stop us from doing anything too crazy if the `stenotype`
+     binary is compromized.
+   * Fuzzing:  We've extracted the most concerning bit of code (the indexing
+     code that processes packet data) and fuzzed it as best we can, using the
+     excellent (AFL)[http://lcamtuf.coredump.cx/afl/] fuzzer.  If you'd like to
+     run your own fuzzing, install AFL, then run `make fuzz` in the `stenotype/`
+     subdirectory, and watch your CPUs become forced-air heaters.
+   * We're considering AppArmor, and may add some configs to use it for locking
+     down stenotype as well.
+
+#### Stenographer ####
+
+We're slightly less concerned about `stenographer`, since it doesn't actually
+process packet information.  It also has a smaller attack surface, especially
+when bound to localhost.  Our major attack vector in `stenographer` is queries
+coming in over TLS.  However, TLS certificate handling is all done with the
+Go standard library (which we trust prett well ;), so our code only ever
+touches queries that come from a user in the `stenographer` group.  Since we run
+it as user `stenographer`, if someone in the `stenographer` group does achieve a
+shell, they'll be able to... read packets.  The big concern here is that they'll
+be able to read more packets than allowed by default (let's say that we've
+passed in a BPF filter to stenotype, for example).  Our primary defenses, then,
+are:
+
+   * Running as an unprivileged user `stenographer`
+   * Using Go's standard library TLS to reject requests not coming from
+     relatively trusted users
+   * Using Go, which is much more memory-safe (runtime array bounds checks, etc)
+   * We're considering AppArmor here, too, and will update this doc if we come
+     up with good configs.

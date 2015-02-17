@@ -51,20 +51,25 @@ if ! grep -q stenographer /etc/passwd; then
     stenographer
 fi
 
-if [ -d /etc/security/limits.d ]; then
-  if [ ! -f /etc/security/limits.d/stenographer.conf ]; then
-    Info "Setting up stenographer limits"
-    sudo cp configs/limits.conf /etc/security/limits.d/stenographer.conf
-  fi
+if [ ! -f /etc/security/limits.d/stenographer.conf ]; then
+  Info "Setting up stenographer limits"
+  sudo cp -v configs/limits.conf /etc/security/limits.d/stenographer.conf
+fi
+
+if [ ! -f /etc/init/stenographer.conf ]; then
+  Info "Setting up stenographer limits"
+  sudo cp -v configs/upstart.conf /etc/init/stenographer.conf
 fi
 
 if [ ! -d /etc/stenographer/certs ]; then
   Info "Setting up stenographer /etc directory"
   sudo mkdir -p /etc/stenographer/certs
+  sudo chown stenographer:stenographer /etc/stenographer/certs
   if [ ! -f /etc/stenographer/config ]; then
     sudo cp -vf configs/steno.conf /etc/stenographer/config
+    sudo chown root:root /etc/stenographer/config
+    sudo chmod 644 /etc/stenographer/config
   fi
-  sudo chown -R stenographer:stenographer /etc/stenographer
 fi
 
 if [ ! -d "$OUTDIR" ]; then
@@ -97,8 +102,10 @@ sudo cp -vf stenocurl "$BINDIR/stenocurl"
 sudo chown stenographer:stenographer "$BINDIR/stenocurl"
 sudo chmod 0750 "$BINDIR/stenocurl"
 
-Info "Starting stenographer"
-sudo -u stenographer -b "$BINDIR/stenographer" &
+Info "Starting stenographer using upstart"
+# If you're not using upstart, you can replace this with:
+#   sudo -b -u stenographer $BINDIR/stenographer &
+sudo service stenographer reload
 
 Info "Checking for running processes..."
 sleep 5

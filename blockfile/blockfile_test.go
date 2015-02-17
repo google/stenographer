@@ -38,6 +38,7 @@ func testBlockFile(t *testing.T, filename string) *BlockFile {
 
 func TestPositions(t *testing.T) {
 	blk := testBlockFile(t, filename)
+	defer blk.Close()
 	for _, test := range []struct {
 		// test struct
 		query string
@@ -56,5 +57,4 @@ func TestPositions(t *testing.T) {
 			t.Errorf("wrong packet positions.\nwant: %v\n got: %v\n", test.want, got)
 		}
 	}
-	blk.Close()
 }

@@ -65,6 +65,7 @@
 #include <sys/prctl.h>        // prctl(), PR_SET_*
 #include <sys/resource.h>     // setpriority(), PRIO_PROCESS
 #include <sys/socket.h>       // socket()
+#include <sys/stat.h>         // umask()
 #include <sys/syscall.h>      // syscall(), SYS_gettid
 #include <unistd.h>           // setuid(), setgid()
 
@@ -546,6 +547,9 @@ int Main(int argc, char** argv) {
     CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
     sockets.push_back(v3);
   }
+
+  // To be safe, also set umask before any threads are created.
+  umask(0077);
 
   // Now that we have sockets, drop privileges.
   // We HAVE to do this before we start any threads, since it's unclear whether

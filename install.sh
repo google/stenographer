@@ -61,10 +61,11 @@ fi
 if [ ! -d /etc/stenographer/certs ]; then
   Info "Setting up stenographer /etc directory"
   sudo mkdir -p /etc/stenographer/certs
+  sudo chown -R stenographer:stenographer /etc/stenographer/certs
   if [ ! -f /etc/stenographer/config ]; then
     sudo cp -vf configs/steno.conf /etc/stenographer/config
   fi
-  sudo chown -R stenographer:stenographer /etc/stenographer
+  sudo chown root:root /etc/stenographer /etc/stenographer/config
 fi
 
 if [ ! -d "$OUTDIR" ]; then
@@ -86,16 +87,16 @@ make
 popd
 sudo cp -vf stenotype/stenotype "$BINDIR/stenotype"
 sudo chown stenographer:root "$BINDIR/stenotype"
-sudo chmod 0700 "$BINDIR/stenotype"
+sudo chmod 0500 "$BINDIR/stenotype"
 SetCapabilities "$BINDIR/stenotype"
 
 Info "Copying stenoread/stenocurl"
 sudo cp -vf stenoread "$BINDIR/stenoread"
-sudo chown stenographer:stenographer "$BINDIR/stenoread"
-sudo chmod 0750 "$BINDIR/stenoread"
+sudo chown root:root "$BINDIR/stenoread"
+sudo chmod 0755 "$BINDIR/stenoread"
 sudo cp -vf stenocurl "$BINDIR/stenocurl"
-sudo chown stenographer:stenographer "$BINDIR/stenocurl"
-sudo chmod 0750 "$BINDIR/stenocurl"
+sudo chown root:root "$BINDIR/stenocurl"
+sudo chmod 0755 "$BINDIR/stenocurl"
 
 Info "Starting stenographer"
 sudo -u stenographer -b "$BINDIR/stenographer" &

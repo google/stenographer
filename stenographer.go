@@ -75,10 +75,10 @@ func main() {
 
 	v(1, "Using config:\n%v", conf)
 	env, err := env.New(*conf)
-	env.StenotypeOutput = stenotypeOutput
 	if err != nil {
 		log.Fatalf("unable to set up stenographer environment: %v", err)
 	}
+	env.StenotypeOutput = stenotypeOutput
 	defer env.Close()
 
 	go env.RunStenotype()

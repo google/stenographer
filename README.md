@@ -139,3 +139,14 @@ Of course, you can still use 'port X' for more esoteric ports, especially
 ephemeral ports when you’re trying to follow a single stream, and for highly
 esoteric protocols (especially because they won’t have port information for
 further filtering).
+
+
+Obligatory Fine Print
+---------------------
+
+This is not an official Google product (experimental or otherwise), it is just
+code that happens to be owned by Google.
+
+This code is not intended (or used) to watch Google's users.  Its purpose
+is to increase security on our networks by augmenting our internal monitoring
+capabilities.

@@ -89,57 +89,6 @@ passed to *tcpdump*.  For example:
     # out to a local PCAP file so they can be opened in Wireshark.
     $ stenoread 'net 1.1.1.0/24' -w /tmp/output_for_wireshark.pcap
 
-### Advanced Usage:  Writing Fast Queries ###
-
-By understanding how stenographer stores/reads files and the volumes of network
-traffic that typically occur, you can optimize your queries to get data back
-faster and be an all-around nicer client.
-
-Stenographer keeps two sets of files:  indexes which stores IP/port/protocol ->
-position mappings, and blockfiles which store the actual packets.  When you
-issue a query, stenographer first looks up the positions of the packets in the
-index, then only reads the necessary packets out of the blockfiles.  These
-packets are then passed through TCPDump, which can do additional filtering.
-
-Consider the query 'ip=1.2.3.4 port=80’.  Stenographer will read in all
-positions for ip=1.2.3.4 and all positions for port=80 from the indexes, then do
-a set intersection to only pull out the packets that match both queries.  Then
-it will read from the blockfiles.  But consider that probably over 50% of all
-packets on the zombies have port=80… this means that when you use port=80,
-you’re going to block a LONG time, as all positions for all port 80 packets are
-read from all indexes.  Then, you’re going to throw away most of those positions
-because a very small number ALSO have ip=1.2.3.4.
-
-So how to optimize this?  If over 2% of all packets match a given filter, it’s
-probably best to do that filtering in the tcpdump phase.  For example, these two
-queries are guaranteed to return the same packets:
-
-*   $ stenoread 'host 1.2.3.4 and port 80’ -n
-
-    Will take a LONG time, because it has to find all port=80 packet positions
-    in index files, using lots of disk reads, CPU, and RAM to
-    read/hold/process them all, then throw them all away when filtering
-    against host 1.2.3.4.
-
-*   $ stenoread 'host 1.2.3.4’ -n port 80
-
-    Only has to find ip=1.2.3.4 packets in index files (probably far less than
-    1% of packets), then ships that small percentage to TCPDump where they’re
-    filtered further using minimal CPU/RAM.
-
-Given this, we recommend against using any of the following filters with
-stenographer if you have typical traffic human-generated traffic patterns:
-
-*   port 80
-*   port 443
-*   protocol 6  (tcp)
-*   protocol 17  (udp)
-
-Of course, you can still use 'port X' for more esoteric ports, especially
-ephemeral ports when you’re trying to follow a single stream, and for highly
-esoteric protocols (especially because they won’t have port information for
-further filtering).
-
 
 Obligatory Fine Print
 ---------------------

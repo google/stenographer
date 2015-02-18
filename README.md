@@ -35,16 +35,9 @@ It is NOT designed for:
        disks are very good at doing quickly, and generally reading back sparse
        data with lots of seeks, which disks do slowly.
 
-Performance
------------
+For further reading, check out DESIGN.md for a discussion of stenographer's
+design, or INSTALL.md for how to install stenographer on a machine.
 
-So far we're quite happy with Stenotype's performance.  When writing to
-disk, we've tested up to 10Gbps with zero packet drops using 8
-cores/disks.  Most of Stenotype's CPU usage is taken up with extracting index
-information... with that turned off (just for testing, you'd probably never
-actually want to do this), it can write out at full disk throughput
-with roughly 6-8% of a single CPU.  With indexing turned on, a full 180MBps disk
-write can be indexed with ~70% of a single CPU.
 
 Querying
 --------

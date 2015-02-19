@@ -27,7 +27,13 @@ import (
 )
 
 var v = base.V // verbose logging
-const defaultDiskSpacePercentage = 10
+const (
+	defaultDiskSpacePercentage = 10
+
+	// By default, ext3 has issues with >32k files, so we go for something less
+	// than that.
+	defaultMaxDirectoryFiles = 30000
+)
 
 // ThreadConfig is a json-decoded configuration for each stenotype thread,
 // detailing where it should store data and how much disk space it should keep
@@ -36,6 +42,7 @@ type ThreadConfig struct {
 	PacketsDirectory   string
 	IndexDirectory     string
 	DiskFreePercentage int `json:",omitempty"`
+	MaxDirectoryFiles  int `json:",omitempty"`
 }
 
 // Config is a json-decoded configuration for running stenographer.
@@ -64,6 +71,9 @@ func ReadConfigFile(filename string) (*Config, error) {
 	for i, thread := range out.Threads {
 		if thread.DiskFreePercentage <= 0 {
 			out.Threads[i].DiskFreePercentage = defaultDiskSpacePercentage
+		}
+		if thread.MaxDirectoryFiles <= 0 {
+			thread.MaxDirectoryFiles = defaultMaxDirectoryFiles
 		}
 	}
 	return &out, nil

@@ -180,11 +180,11 @@ func (t *Thread) cleanUpOnLowDiskSpace() {
 			log.Printf("Thread %v could not get the free disk percentage for %q: %v", t.id, t.packetPath, err)
 			return
 		}
-		if df > t.conf.DiskFreePercentage {
+		if df > t.conf.DiskFreePercentage && len(t.files) < t.conf.MaxDirectoryFiles {
 			v(1, "Thread %v disk space is sufficient: %v > %v", t.id, df, t.conf.DiskFreePercentage)
 			return
 		}
-		v(0, "Thread %v disk usage is high (packet path=%q): %d%% free\n", t.id, t.packetPath, df)
+		v(0, "Thread %v disk usage is high (packet path=%q): %d%% free, %d files\n", t.id, t.packetPath, df, len(t.files))
 		if len(t.files) == 0 {
 			log.Printf("Thread %v could not free up space:  no files available", t.id)
 		} else if err := t.deleteOldestThreadFile(); err != nil {

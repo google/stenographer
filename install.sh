@@ -20,7 +20,6 @@
 # needs to be done to install stenographer correctly.
 
 BINDIR="${BINDIR-/usr/bin}"
-OUTDIR="${OUTDIR-/tmp/stenographer}"
 
 cd "$(dirname $0)"
 source lib.sh
@@ -31,6 +30,7 @@ sudo cat /dev/null
 set +e
 
 Info "Killing aleady-running processes"
+sudo service stenographer stop
 ReallyKill stenographer
 ReallyKill stenotype
 
@@ -42,13 +42,13 @@ InstallPackage g++
 InstallPackage libcap2-bin
 InstallPackage libseccomp-dev
 
-if ! grep -q stenographer /etc/passwd; then
+if ! id stenographer >/dev/null 2>&1; then
   Info "Setting up stenographer user"
-  sudo adduser \
-    --system \
-    --group \
-    --no-create-home \
-    stenographer
+  sudo adduser --system --no-create-home stenographer
+fi
+if ! getent group stenographer >/dev/null 2>&1; then
+  Info "Setting up stenographer group"
+  sudo addgroup --system stenographer
 fi
 
 if [ ! -f /etc/security/limits.d/stenographer.conf ]; then
@@ -57,8 +57,9 @@ if [ ! -f /etc/security/limits.d/stenographer.conf ]; then
 fi
 
 if [ ! -f /etc/init/stenographer.conf ]; then
-  Info "Setting up stenographer limits"
+  Info "Setting up stenographer upstart config"
   sudo cp -v configs/upstart.conf /etc/init/stenographer.conf
+  sudo chmod 0644 /etc/init/stenographer.conf
 fi
 
 if [ ! -d /etc/stenographer/certs ]; then
@@ -73,11 +74,10 @@ if [ ! -d /etc/stenographer/certs ]; then
   sudo chown root:root /etc/stenographer
 fi
 
-if [ ! -d "$OUTDIR" ]; then
-  Info "Setting up initial steno output in $OUTDIR"
-  sudo mkdir -p "$OUTDIR"/{idx,pkt}
-  sudo chown -R stenographer:root "$OUTDIR"
-  sudo chmod -R 0700 "$OUTDIR"
+if grep -q /path/to /etc/stenographer/config; then
+  Error "Create directories to output packets/indexes to, then update"
+  Error "/etc/init/stenographer.conf to point to them"
+  exit 1
 fi
 
 Info "Building stenographer"
@@ -106,7 +106,7 @@ sudo chmod 0755 "$BINDIR/stenocurl"
 Info "Starting stenographer using upstart"
 # If you're not using upstart, you can replace this with:
 #   sudo -b -u stenographer $BINDIR/stenographer &
-sudo service stenographer reload
+sudo service stenographer start
 
 Info "Checking for running processes..."
 sleep 5
@@ -114,11 +114,13 @@ if Running stenographer; then
   Info "  * Stenographer up and running"
 else
   Error "  !!! Stenographer not running !!!"
+  tail -n 100 /var/log/messages | grep steno
   exit 1
 fi
 if Running stenotype; then
   Info "  * Stenotype up and running"
 else
   Error "  !!! Stenotype not running !!!"
+  tail -n 100 /var/log/messages | grep steno
   exit 1
 fi

@@ -300,7 +300,7 @@ of running these binaries with the following methods:
      binary is compromized.
    * Fuzzing:  We've extracted the most concerning bit of code (the indexing
      code that processes packet data) and fuzzed it as best we can, using the
-     excellent (AFL)[http://lcamtuf.coredump.cx/afl/] fuzzer.  If you'd like to
+     excellent [AFL](http://lcamtuf.coredump.cx/afl/) fuzzer.  If you'd like to
      run your own fuzzing, install AFL, then run `make fuzz` in the `stenotype/`
      subdirectory, and watch your CPUs become forced-air heaters.
    * We're considering AppArmor, and may add some configs to use it for locking
@@ -326,3 +326,51 @@ are:
    * Using Go, which is much more memory-safe (runtime array bounds checks, etc)
    * We're considering AppArmor here, too, and will update this doc if we come
      up with good configs.
+
+
+Design Limitations
+------------------
+
+Some of Stenographer's design decisions make it perform poorly in certain
+environments or give it strange performance characteristics.  This section aims
+to point these out in advance, so folks have a better understanding of some
+of the idiosyncracies they may see when deploying Stenographer.
+
+### Slow Links, Large Files ###
+
+Stenographer is optimized for fast links, and some of those optimizations
+give it strange behavior on slow links.  The first of these is file size.  You
+may notice that on a network link that's REALLY slow, you'll still see 6MB
+files created every minute.  This is because currently, Stenographer will:
+
+   * Store packets in 1MB _blocks_
+   * Flush one _block_ every 10 seconds
+
+Of course, if your link generates over 1MB every 10 seconds, this doesn't
+matter to you at all.  If it does, though, you're going to waste disk space.
+We're considering flushing one block a minute or every thirty seconds.
+
+### Packets Don't Show Up Immediately ###
+
+With `stenotype` writing files and `stenographer` reading them, a packet
+won't show up in a request's response until it's on disk, its index is on
+disk, and `stenographer` has noticed both of these things occurring.  This
+means that packets are generally 1-2 minutes behind real-time, since
+
+   * Packets are stored by the kernel for up to 10 seconds before being
+     written to disk
+   * Packet files flush every minute
+   * Index files created/flushed starting when packet files are written
+   * `stenographer` looks for new files on disk every 15 seconds
+
+Altogether, this means that there's a maximum 100-120 second delay between
+`stenotype` seeing a packet and `stenographer` being able to serve that
+packet based on analyst requests.
+
+Note that for fast links, this time is reduced slightly, since:
+
+   * Stenotype flushes a block whenever it gets 1MB of packets, reducing
+     the initial 10-second wait for the kernel.
+   * `stenotype` flushes at 1 minute OR at 4GB, whichever comes first, so
+     if you get over 4GB/min, you'll flush files/indexes faster than once
+     a minute.

@@ -35,8 +35,8 @@ It is NOT designed for:
        disks are very good at doing quickly, and generally reading back sparse
        data with lots of seeks, which disks do slowly.
 
-For further reading, check out DESIGN.md for a discussion of stenographer's
-design, or INSTALL.md for how to install stenographer on a machine.
+For further reading, check out **DESIGN.md** for a discussion of stenographer's
+design, or read **INSTALL.md** for how to install stenographer on a machine.
 
 
 Querying

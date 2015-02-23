@@ -13,8 +13,7 @@ best-practice (or why it's not ;)
 User/Group Setup
 ----------------
 
-We set up a single system group `stenographer`, and a system user `stenographer`
-with the former as its primary group.
+We set up a single system group `stenographer`, and a system user `stenographer`.
 
 ### Group `stenographer` ###
 

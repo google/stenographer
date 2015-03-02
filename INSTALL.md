@@ -121,6 +121,12 @@ to use), you must specify:
      index files take so little space, we haven't ever needed to clean them up
      directly.  Note that `DiskFreePercentage` is optional... it defaults to
      10%.
+   * `MaxDirectoryFiles`:  The maximum number of packet/index files to create
+     before cleaning old ones up.  Defaults to 30K files, to avoid issues with
+     ext3's 32K file-per-directory maximums.  For ext4 you should be able to go
+     higher without issue.  Note that since we create at least one file every
+     minute, this defaults to a maximum limit of 8 1/3 days before we drop old
+     packets.
 
 ### Flags ###
 

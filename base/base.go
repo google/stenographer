@@ -235,6 +235,7 @@ func (a Positions) Sort() {
 
 // Union returns the union of a and b.  a and b must be sorted in advance.
 // Returned slice will be sorted.
+// a or b may be returned by Union, but neither a nor b will be modified.
 func (a Positions) Union(b Positions) (out Positions) {
 	switch {
 	case a.IsAllPositions():
@@ -264,6 +265,7 @@ func (a Positions) Union(b Positions) (out Positions) {
 
 // Intersect returns the intersection of a and b.  a and b must be sorted in
 // advance.  Returned slice will be sorted.
+// a or b may be returned by Intersect, but neither a nor b will be modified.
 func (a Positions) Intersect(b Positions) (out Positions) {
 	switch {
 	case a.IsAllPositions():

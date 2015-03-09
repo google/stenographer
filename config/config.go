@@ -73,7 +73,7 @@ func ReadConfigFile(filename string) (*Config, error) {
 			out.Threads[i].DiskFreePercentage = defaultDiskSpacePercentage
 		}
 		if thread.MaxDirectoryFiles <= 0 {
-			thread.MaxDirectoryFiles = defaultMaxDirectoryFiles
+			out.Threads[i].MaxDirectoryFiles = defaultMaxDirectoryFiles
 		}
 	}
 	return &out, nil

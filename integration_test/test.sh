@@ -29,7 +29,7 @@ function PullDownTestData {
     Info "Pulling down pcap data"
     # Test data pulled from
     # http://www.ll.mit.edu/mission/communications/cyber/CSTcorpora/ideval/data/2000/LLS_DDOS_1.0.html
-    curl 'http://www.ll.mit.edu/mission/communications/cyber/CSTcorpora/ideval/data/2000/LLS_DDOS_1.0/data_and_labeling/tcpdump_inside/LLS_DDOS_1.0-inside.dump.gz' > $BASEDIR/steno_integration_test.pcap.gz
+    curl -L 'http://www.ll.mit.edu/mission/communications/cyber/CSTcorpora/ideval/data/2000/LLS_DDOS_1.0/data_and_labeling/tcpdump_inside/LLS_DDOS_1.0-inside.dump.gz' > $BASEDIR/steno_integration_test.pcap.gz
     gunzip $BASEDIR/steno_integration_test.pcap.gz
   fi
 }

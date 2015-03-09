@@ -100,9 +100,29 @@ class Block {
   DISALLOW_COPY_AND_ASSIGN(Block);
 };
 
+class Packets {
+ public:
+  Packets() {}
+  // Tear down this AF_PACKET socket.
+  virtual ~Packets() {}
+
+  // Get the next available Block, blocking until it's available.  Should not be
+  // used in conjunction with Next.  Note that there are a fixed number of
+  // blocks in each Packets... if you grab all of them without releasing any,
+  // you'll deadlock your system.
+  //
+  // This will block at least kMinPollMillis and at most poll_millis.
+  virtual Error NextBlock(Block* b, int poll_millis) = 0;
+  // Get all currently available statistics about operation so far.
+  virtual Error GetStats(Stats* stats) = 0;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(Packets);
+};
+
 // PacketsV3 wraps MMAP'd AF_PACKET TPACKET_V3 in a nice, easy(er) to use
 // object.  Not safe for concurrent operation.
-class PacketsV3 {
+class PacketsV3 : Packets {
  private:
   // State provides state common to PacketsV3 and PacketsV3::Builder.
   struct State {
@@ -119,9 +139,6 @@ class PacketsV3 {
   // Tear down this AF_PACKET socket.
   virtual ~PacketsV3();
 
-  // Get the next available packet.  This function should not be used in
-  // conjunction with NextBlock.  Blocks until packet is available.
-  Error Next(Packet* p);
   // Get the next available Block, blocking until it's available.  Should not be
   // used in conjunction with Next.  Note that there are a fixed number of
   // blocks in each PacketsV3... if you grab all of them without releasing any,
@@ -163,7 +180,7 @@ class PacketsV3 {
 
     // Bind must be the final method called by Builder.  It binds the created
     // socket to the given interface and returns a PacketsV3 object to wrap it.
-    Error Bind(const std::string& iface, PacketsV3** out);
+    Error Bind(const std::string& iface, Packets** out);
 
    private:
     Error BadState();

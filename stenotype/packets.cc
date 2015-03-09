@@ -178,7 +178,7 @@ Error PacketsV3::GetStats(Stats* stats) {
   return SUCCESS;
 }
 
-Error PacketsV3::Builder::Bind(const std::string& iface, PacketsV3** out) {
+Error PacketsV3::Builder::Bind(const std::string& iface, Packets** out) {
   RETURN_IF_ERROR(BadState(), "Builder");
 
   unsigned int ifindex = if_nametoindex(iface.c_str());
@@ -377,15 +377,6 @@ Error PacketsV3::NextBlock(Block* b, int poll_millis) {
     pos_.Swap(b);
   }
   return SUCCESS;
-}
-
-Error PacketsV3::Next(Packet* p) {
-  while (true) {
-    if (pos_.Next(p)) {
-      return SUCCESS;
-    }
-    RETURN_IF_ERROR(NextBlock(&pos_, false), "next block");
-  }
 }
 
 }  // namespace st

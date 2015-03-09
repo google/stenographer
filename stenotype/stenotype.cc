@@ -401,14 +401,14 @@ void HandleSignalsThread() {
 }
 
 void RunThread(int thread, st::ProducerConsumerQueue* write_index,
-               PacketsV3* v3) {
+               Packets* v3) {
   if (flag_threads > 1) {
     LOG_IF_ERROR(SetAffinity(thread), "set affinity");
   }
   Watchdog dog("Thread " + std::to_string(thread),
                (flag_watchdogs ? flag_fileage_sec * 2 : -1));
 
-  std::unique_ptr<PacketsV3> cleanup(v3);
+  std::unique_ptr<Packets> cleanup(v3);
 
   DropPacketThreadPrivileges();
   LOG(INFO) << "Thread " << thread << " starting to process packets";
@@ -537,7 +537,7 @@ int Main(int argc, char** argv) {
   options.tp_frame_nr = 0;           // computed for us.
   options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
 
-  std::vector<PacketsV3*> sockets;
+  std::vector<Packets*> sockets;
   for (int i = 0; i < flag_threads; i++) {
     // Set up AF_PACKET packet reading.
     PacketsV3::Builder builder;
@@ -552,7 +552,7 @@ int Main(int argc, char** argv) {
     if (!flag_filter.empty()) {
       CHECK_SUCCESS(builder.SetFilter(flag_filter));
     }
-    PacketsV3* v3;
+    Packets* v3;
     CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
     sockets.push_back(v3);
   }

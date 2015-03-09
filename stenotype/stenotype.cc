@@ -222,7 +222,7 @@ void DropPrivileges() {
   LOG(INFO) << "Dropping privileges";
   if (getgid() == 0 || flag_gid != "") {
     if (flag_gid == "") {
-      flag_gid = "nobody";
+      flag_gid = "nogroup";
     }
     LOG(INFO) << "Dropping priviledges from " << getgid() << " to GID "
               << flag_gid;

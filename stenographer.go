@@ -73,7 +73,7 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	v(1, "Using config:\n%v", conf)
+	v(1, "Using config:\n%+v", conf)
 	env, err := env.New(*conf)
 	if err != nil {
 		log.Fatalf("unable to set up stenographer environment: %v", err)

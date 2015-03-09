@@ -88,6 +88,26 @@ passed to *tcpdump*.  For example:
     # Request packets for any IPs in the range 1.1.1.0-1.1.1.255, writing them
     # out to a local PCAP file so they can be opened in Wireshark.
     $ stenoread 'net 1.1.1.0/24' -w /tmp/output_for_wireshark.pcap
+    
+
+Downloading
+-----------
+
+To download the source code, install Go locally, then run:
+
+    $ go get github.com/google/stenographer
+    
+Go will handle downloading and installing all Go libraries that `stenographer`
+depends on.  To build `stenotype`, go into the `stenotype` directory and run `make`.
+You may need to install the following Ubuntu packages (or their equivalents on
+other Linux distros):
+
+*   libaio-dev
+*   libleveldb-dev
+*   libsnappy-dev
+*   g++
+*   libcap2-bin
+*   libseccomp-dev
 
 
 Obligatory Fine Print

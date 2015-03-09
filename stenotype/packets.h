@@ -76,11 +76,12 @@ class Block {
 
  private:
   friend class PacketsV3;
+  typedef void (*Releaser)(struct tpacket_block_desc*);
   void UpdateStats(Stats* stats);
   bool ReadyForUser();
-  void ResetTo(char* data, size_t sz, std::mutex* mu);
+  void ResetTo(char* data, size_t sz, std::mutex* mu, Releaser r);
   void Done();
-  void ReturnToKernel();
+  void ReturnToKernel() { (*releaser_)(block_); }
   void MoveToNext();
   int Status();
   int64_t TimeNSecs();
@@ -94,6 +95,7 @@ class Block {
   struct tpacket3_hdr* packet_;
   uint32_t pkts_in_use_;
   std::mutex* mu_;
+  Releaser releaser_;
 
   DISALLOW_COPY_AND_ASSIGN(Block);
 };

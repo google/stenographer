@@ -84,16 +84,17 @@ void Block::Swap(Block* b) {
 
 leveldb::Slice Block::Data() { return leveldb::Slice(start_, size_); }
 
-void Block::Reset() { ResetTo(NULL, 0, NULL); }
+void Block::Reset() { ResetTo(NULL, 0, NULL, NULL); }
 
 bool Block::ReadyForUser() { return Status() & TP_STATUS_USER; }
 
-void Block::ResetTo(char* data, size_t sz, std::mutex* mu) {
+void Block::ResetTo(char* data, size_t sz, std::mutex* mu, Block::Releaser r) {
   Done();
   LOG(V2) << "New block " << reinterpret_cast<uintptr_t>(data);
   start_ = data;
   size_ = sz;
   mu_ = mu;
+  releaser_ = r;
   pkts_in_use_ = 0;
   if (mu_) {
     LOG(V3) << "BlockReset m" << int64_t(mu_) << " IN b" << int64_t(this);
@@ -119,9 +120,9 @@ void Block::Done() {
   }
 }
 
-void Block::ReturnToKernel() {
-  LOG(V2) << "Returning to kernel: " << reinterpret_cast<uintptr_t>(block_);
-  block_->hdr.bh1.block_status = TP_STATUS_KERNEL;
+static void LocalBlock_ReturnToKernel(struct tpacket_block_desc* block) {
+  LOG(V2) << "Returning to kernel: " << reinterpret_cast<uintptr_t>(block);
+  block->hdr.bh1.block_status = TP_STATUS_KERNEL;
 }
 
 void Block::MoveToNext() {
@@ -363,7 +364,7 @@ Error PacketsV3::NextBlock(Block* b, int poll_millis) {
     // This constructor locks the passed-in mu on creation, so it'll
     // wait for that mu to be unlocked by the last user of this block.
     pos_.ResetTo(state_.ring + offset_ * state_.block_size, state_.block_size,
-                 &block_mus_[offset_]);
+                 &block_mus_[offset_], &LocalBlock_ReturnToKernel);
   }
   if (!pos_.ReadyForUser()) {
     stats_.polls++;

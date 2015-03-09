@@ -204,7 +204,8 @@ void ParseOptions(int argc, char** argv) {
       {"preallocate_file_mb", 316, n, 0,
        "When creating new files, preallocate to this many MB"},
       {"no_watchdogs", 317, 0, 0, "Don't start any watchdogs"},
-      {0}, };
+      {0},
+  };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
 }

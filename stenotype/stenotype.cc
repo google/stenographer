@@ -568,9 +568,9 @@ int Main(int argc, char** argv) {
       CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
       sockets.push_back(v3);
     } else {
-      testimony* t = new testimony;
-      CHECK_SUCCESS(NegErrno(testimony_init(t, flag_testimony.c_str(), i)));
-      CHECK(t->block_size == 1 << 20);
+      testimony t;
+      CHECK_SUCCESS(NegErrno(testimony_init(&t, flag_testimony.c_str(), i)));
+      CHECK(testimony_block_size(t) == 1 << 20);
       sockets.push_back(new TestimonyPackets(t));
     }
   }

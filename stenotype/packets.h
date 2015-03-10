@@ -125,14 +125,14 @@ class Packets {
 
 class TestimonyPackets : public Packets {
  public:
-  TestimonyPackets(testimony* t);
+  TestimonyPackets(testimony t);
   virtual ~TestimonyPackets();
   Error NextBlock(Block* b, int poll_millis) override;
   Error GetStats(Stats* stats) override;
 
  private:
   static void TReturnToKernel(struct tpacket_block_desc*, void* ths);
-  testimony* t_;
+  testimony t_;
 };
 
 // PacketsV3 wraps MMAP'd AF_PACKET TPACKET_V3 in a nice, easy(er) to use

@@ -171,11 +171,10 @@ bool Block::Next(Packet* p) {
   return true;
 }
 
-TestimonyPackets::TestimonyPackets(testimony* t) : t_(t) {}
+TestimonyPackets::TestimonyPackets(testimony t) : t_(t) {}
 
 TestimonyPackets::~TestimonyPackets() {
   CHECK_SUCCESS(NegErrno(testimony_close(t_)));
-  free(t_);
 }
 
 void TestimonyPackets::TReturnToKernel(struct tpacket_block_desc* block,
@@ -186,9 +185,12 @@ void TestimonyPackets::TReturnToKernel(struct tpacket_block_desc* block,
 
 Error TestimonyPackets::NextBlock(Block* b, int poll_millis) {
   struct tpacket_block_desc* block;
-  CHECK_SUCCESS(NegErrno(testimony_get_block(t_, &block)));
+  LOG(INFO) << "Requesting block";
+  CHECK_SUCCESS(NegErrno(testimony_get_block(t_, poll_millis, &block)));
+  LOG(INFO) << "getblock returned";
+  if (block == NULL) { return SUCCESS; }  // timeout
   Block local;
-  local.ResetTo((char*)block, t_->block_size, NULL,
+  local.ResetTo((char*)block, testimony_block_size(t_), NULL,
                 &TestimonyPackets::TReturnToKernel, this);
   local.Swap(b);
   return SUCCESS;

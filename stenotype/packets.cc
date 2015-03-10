@@ -66,6 +66,7 @@ Block::Block() {
   block_ = NULL;
   packet_ = NULL;
   mu_ = NULL;
+  releaser_ = NULL;
   size_ = 0;
   pkts_in_use_ = 0;
 }
@@ -80,6 +81,7 @@ void Block::Swap(Block* b) {
   std::swap(mu_, b->mu_);
   std::swap(size_, b->size_);
   std::swap(pkts_in_use_, b->pkts_in_use_);
+  std::swap(releaser_, b->releaser_);
 }
 
 leveldb::Slice Block::Data() { return leveldb::Slice(start_, size_); }
@@ -109,9 +111,11 @@ void Block::ResetTo(char* data, size_t sz, std::mutex* mu, Block::Releaser r) {
 }
 
 void Block::Done() {
-  if (start_ != NULL) {
+  if (block_ != NULL) {
     ReturnToKernel();
+    block_ = NULL;
     start_ = NULL;
+    releaser_ = NULL;
   }
   if (mu_ != NULL) {
     LOG(V3) << "BlockDone m" << int64_t(mu_) << " IN b" << int64_t(this);
@@ -124,6 +128,8 @@ static void LocalBlock_ReturnToKernel(struct tpacket_block_desc* block) {
   LOG(V2) << "Returning to kernel: " << reinterpret_cast<uintptr_t>(block);
   block->hdr.bh1.block_status = TP_STATUS_KERNEL;
 }
+
+void Block::ReturnToKernel() { releaser_(block_); }
 
 void Block::MoveToNext() {
   pkts_in_use_++;

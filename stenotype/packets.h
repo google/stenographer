@@ -81,7 +81,7 @@ class Block {
   bool ReadyForUser();
   void ResetTo(char* data, size_t sz, std::mutex* mu, Releaser r);
   void Done();
-  void ReturnToKernel() { (*releaser_)(block_); }
+  void ReturnToKernel();
   void MoveToNext();
   int Status();
   int64_t TimeNSecs();

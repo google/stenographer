@@ -15,7 +15,7 @@
 DEPS=Makefile *.h
 
 SHARED_CFLAGS=-std=c++0x -g -Wall -fno-strict-aliasing
-SHARED_LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp
+SHARED_LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp -ltestimony
 
 GCC=g++
 GCC_CFLAGS_SEC=-fPIC -fPIE -pie -fstack-protector -D_FORTIFY_SOURCE=2

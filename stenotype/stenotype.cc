@@ -108,6 +108,7 @@ std::string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
 int flag_preallocate_file_mb = 0;
 bool flag_watchdogs = true;
+std::string flag_testimony = "/tmp/testimony.sock";
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
   switch (key) {
@@ -170,6 +171,10 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
       break;
     case 317:
       flag_watchdogs = false;
+      break;
+    case 318:
+      flag_testimony = arg;
+      break;
   }
   return 0;
 }
@@ -204,6 +209,7 @@ void ParseOptions(int argc, char** argv) {
       {"preallocate_file_mb", 316, n, 0,
        "When creating new files, preallocate to this many MB"},
       {"no_watchdogs", 317, 0, 0, "Don't start any watchdogs"},
+      {"testimony", 318, n, 0, "Testimony socket to use"},
       {0},
   };
   struct argp argp = {options, &ParseOptions};
@@ -342,6 +348,10 @@ void DropPacketThreadPrivileges() {
       SCMP_A2(SCMP_CMP_EQ, 0600));
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
+  if (!flag_testimony.empty()) {
+    SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(recvfrom), 0);
+    SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(sendto), 0);
+  }
   CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
   seccomp_release(ctx);
 }
@@ -538,23 +548,31 @@ int Main(int argc, char** argv) {
   options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
 
   std::vector<Packets*> sockets;
+  LOG(INFO) << "TESTIMONY:" << flag_testimony;
   for (int i = 0; i < flag_threads; i++) {
-    // Set up AF_PACKET packet reading.
-    PacketsV3::Builder builder;
-    CHECK_SUCCESS(builder.SetUp(socktype, options));
-    int fanout_id = getpid();
-    if (flag_fanout_id > 0) {
-      fanout_id = flag_fanout_id;
+    if (flag_testimony.empty()) {
+      // Set up AF_PACKET packet reading.
+      PacketsV3::Builder builder;
+      CHECK_SUCCESS(builder.SetUp(socktype, options));
+      int fanout_id = getpid();
+      if (flag_fanout_id > 0) {
+        fanout_id = flag_fanout_id;
+      }
+      if (flag_fanout_id > 0 || flag_threads > 1) {
+        CHECK_SUCCESS(builder.SetFanout(flag_fanout_type, fanout_id));
+      }
+      if (!flag_filter.empty()) {
+        CHECK_SUCCESS(builder.SetFilter(flag_filter));
+      }
+      Packets* v3;
+      CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
+      sockets.push_back(v3);
+    } else {
+      testimony* t = new testimony;
+      CHECK_SUCCESS(NegErrno(testimony_init(t, flag_testimony.c_str(), i)));
+      CHECK(t->block_size == 1 << 20);
+      sockets.push_back(new TestimonyPackets(t));
     }
-    if (flag_fanout_id > 0 || flag_threads > 1) {
-      CHECK_SUCCESS(builder.SetFanout(flag_fanout_type, fanout_id));
-    }
-    if (!flag_filter.empty()) {
-      CHECK_SUCCESS(builder.SetFilter(flag_filter));
-    }
-    Packets* v3;
-    CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
-    sockets.push_back(v3);
   }
 
   // To be safe, also set umask before any threads are created.

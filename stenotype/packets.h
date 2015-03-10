@@ -23,6 +23,7 @@
 #include <string>
 
 #include <leveldb/slice.h>
+#include <testimony.h>
 
 #include "util.h"
 
@@ -76,10 +77,11 @@ class Block {
 
  private:
   friend class PacketsV3;
-  typedef void (*Releaser)(struct tpacket_block_desc*);
+  friend class TestimonyPackets;
+  typedef void (*Releaser)(struct tpacket_block_desc*, void*);
   void UpdateStats(Stats* stats);
   bool ReadyForUser();
-  void ResetTo(char* data, size_t sz, std::mutex* mu, Releaser r);
+  void ResetTo(char* data, size_t sz, std::mutex* mu, Releaser r, void* rarg);
   void Done();
   void ReturnToKernel();
   void MoveToNext();
@@ -96,6 +98,7 @@ class Block {
   uint32_t pkts_in_use_;
   std::mutex* mu_;
   Releaser releaser_;
+  void* releaser_arg_;
 
   DISALLOW_COPY_AND_ASSIGN(Block);
 };
@@ -120,9 +123,21 @@ class Packets {
   DISALLOW_COPY_AND_ASSIGN(Packets);
 };
 
+class TestimonyPackets : public Packets {
+ public:
+  TestimonyPackets(testimony* t);
+  virtual ~TestimonyPackets();
+  Error NextBlock(Block* b, int poll_millis) override;
+  Error GetStats(Stats* stats) override;
+
+ private:
+  static void TReturnToKernel(struct tpacket_block_desc*, void* ths);
+  testimony* t_;
+};
+
 // PacketsV3 wraps MMAP'd AF_PACKET TPACKET_V3 in a nice, easy(er) to use
 // object.  Not safe for concurrent operation.
-class PacketsV3 : Packets {
+class PacketsV3 : public Packets {
  private:
   // State provides state common to PacketsV3 and PacketsV3::Builder.
   struct State {

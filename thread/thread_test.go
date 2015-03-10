@@ -15,6 +15,7 @@
 package thread
 
 import (
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,26 +26,34 @@ import (
 	"github.com/google/stenographer/config"
 )
 
-func createThreads(t *testing.T) []*Thread {
+const (
+	baseDir       = "/threadtest/"
+	pktDir        = "/threadtest/pkt/"
+	idxDir        = "/threadtest/idx/"
+	testBlockFile = "../testdata/PKT0/dhcp"
+	testIndexFile = "../testdata/IDX0/dhcp"
+)
+
+func createThreads(t *testing.T, tempDir string) []*Thread {
 	var tc = []config.ThreadConfig{
-		{"/tmp/threadtest/pkt/", "/tmp/threadtest/idx/", 10, 10},
+		{tempDir + pktDir, tempDir + idxDir, 10, 10},
 	}
-	threads, err := Threads(tc, "/tmp/threadtest/")
+	threads, err := Threads(tc, tempDir+baseDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return threads
 }
 
-func copyData(t *testing.T) {
-	dirs := [...]string{"/tmp/threadtest", "/tmp/threadtest/pkt", "/tmp/threadtest/idx"}
+func copyData(t *testing.T, tempDir string) {
+	dirs := [...]string{tempDir + pktDir, tempDir + idxDir}
 	testdata := map[string]string{
-		"../testdata/PKT0/dhcp": "/tmp/threadtest/pkt",
-		"../testdata/IDX0/dhcp": "/tmp/threadtest/idx",
+		testBlockFile: tempDir + pktDir,
+		testIndexFile: tempDir + idxDir,
 	}
-	for dir := range dirs {
-		mkdir := exec.Command("mkdir", dirs[dir])
-		if err := mkdir.Run(); err != nil {
+	for _, dir := range dirs {
+		err := os.MkdirAll(dir, os.FileMode(0755))
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -56,8 +65,8 @@ func copyData(t *testing.T) {
 	}
 }
 
-func rmData(t *testing.T) {
-	os.RemoveAll("/tmp/threadtest")
+func rmData(t *testing.T, tempDir string) {
+	os.RemoveAll(tempDir + baseDir)
 }
 
 type requestTest func(
@@ -93,10 +102,14 @@ func newRequestTest(t *testing.T, handle http.Handler) requestTest {
 }
 
 func TestExportDebugHandlers(t *testing.T) {
-	copyData(t)
-	defer rmData(t)
+	tempDir := os.TempDir()
+	copyData(t, tempDir)
+	defer rmData(t, tempDir)
 	m := http.DefaultServeMux
-	threads := createThreads(t)
+	threads := createThreads(t, tempDir)
+	if threadLen := len(threads); threadLen != 1 {
+		t.Errorf("wrong number of threads: want: %v\ngot: %v\n", 1, threadLen)
+	}
 	threads[0].SyncFiles()
 	threads[0].ExportDebugHandlers(m)
 	r := newRequestTest(t, m)
@@ -107,6 +120,7 @@ func TestExportDebugHandlers(t *testing.T) {
 		body    string
 		code    int
 		byteLen int
+		out     string
 	}{
 		{
 			"GET",
@@ -115,6 +129,7 @@ func TestExportDebugHandlers(t *testing.T) {
 			"",
 			200,
 			141,
+			"00\n0111\n013a\n020043\n020044\n0400000000\n04c0a80001\n04c0a8000a\n04ffffffff\n06fe800000000000003070b6fffe116f27\n06ff020000000000000000000000000002\n",
 		},
 		{
 			"GET",
@@ -123,6 +138,7 @@ func TestExportDebugHandlers(t *testing.T) {
 			"",
 			200,
 			1572,
+			"d4c3b2a10200040000000000000000000000010001000000eb00dc5452d90a004600000046000000",
 		},
 		{
 			"GET",
@@ -131,6 +147,7 @@ func TestExportDebugHandlers(t *testing.T) {
 			"port 67",
 			200,
 			51,
+			"POSITIONS:\n\t00100030\n\t001001c0\n\t00100368\n\t001004f8\n",
 		},
 	}
 	for _, test := range httpTests {
@@ -138,8 +155,20 @@ func TestExportDebugHandlers(t *testing.T) {
 		if got.Code != test.code {
 			t.Errorf("http request failed. want: %v\ngot: %v\n", test.code, got.Code)
 		}
-		if got.Body.Len() != test.byteLen {
-			t.Errorf("wrong number of bytes. want: %v\ngot: %v\n", got.Body.Len())
+		if test.header["Content-Type"] == "text/plain" {
+			if got.Body.String() != test.out {
+				t.Errorf("body mismatch. want: %v\ngot: %v\n", test.out, got.Body.String())
+			}
+		}
+		if test.header["Content-Type"] == "application/octet-stream" {
+			out := hex.EncodeToString(got.Body.Bytes())
+			if !strings.Contains(out, test.out) {
+				t.Errorf("body mismatch. want: %v in\ngot: %v\n", test.out, out)
+			}
+		}
+		byteLen := got.Body.Len()
+		if byteLen != test.byteLen {
+			t.Errorf("wrong number of bytes. want: %v\ngot: %v\n", test.byteLen, byteLen)
 		}
 	}
 }

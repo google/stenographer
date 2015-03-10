@@ -309,6 +309,9 @@ func PacketsToFile(in *PacketChan, out io.Writer) error {
 	w.WriteFileHeader(snapLen, layers.LinkTypeEthernet)
 	count := 0
 	defer in.Discard()
+	defer func() {
+		V(1, "wrote %d packets of %d input packets", count, len(in.C))
+	}()
 	for p := range in.Receive() {
 		if len(p.Data) > snapLen {
 			p.Data = p.Data[:snapLen]

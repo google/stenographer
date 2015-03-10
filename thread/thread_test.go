@@ -67,7 +67,7 @@ func copyData(t *testing.T, tempDir string) {
 }
 
 func rmData(t *testing.T, tempDir string) {
-	os.RemoveAll(tempDir + baseDir)
+	os.RemoveAll(tempDir)
 }
 
 type requestTest func(

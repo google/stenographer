@@ -108,7 +108,7 @@ std::string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
 int flag_preallocate_file_mb = 0;
 bool flag_watchdogs = true;
-std::string flag_testimony = "/tmp/testimony.sock";
+std::string flag_testimony;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
   switch (key) {

@@ -127,8 +127,8 @@ class TestimonyPackets : public Packets {
  public:
   TestimonyPackets(testimony t);
   virtual ~TestimonyPackets();
-  Error NextBlock(Block* b, int poll_millis) override;
-  Error GetStats(Stats* stats) override;
+  virtual Error NextBlock(Block* b, int poll_millis);
+  virtual Error GetStats(Stats* stats);
 
  private:
   static void TReturnToKernel(struct tpacket_block_desc*, void* ths);
@@ -160,9 +160,9 @@ class PacketsV3 : public Packets {
   // you'll deadlock your system.
   //
   // This will block at least kMinPollMillis and at most poll_millis.
-  Error NextBlock(Block* b, int poll_millis);
+  virtual Error NextBlock(Block* b, int poll_millis);
   // Get all currently available statistics about operation so far.
-  Error GetStats(Stats* stats);
+  virtual Error GetStats(Stats* stats);
 
   // Builder allows users to build a PacketsV3 object.
   //

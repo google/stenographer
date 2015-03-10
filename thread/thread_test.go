@@ -16,6 +16,7 @@ package thread
 
 import (
 	"encoding/hex"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -102,7 +103,10 @@ func newRequestTest(t *testing.T, handle http.Handler) requestTest {
 }
 
 func TestExportDebugHandlers(t *testing.T) {
-	tempDir := os.TempDir()
+	tempDir, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	copyData(t, tempDir)
 	defer rmData(t, tempDir)
 	m := http.DefaultServeMux

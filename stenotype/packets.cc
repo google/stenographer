@@ -190,7 +190,7 @@ Error TestimonyPackets::NextBlock(Block* b, int poll_millis) {
   LOG(INFO) << "getblock returned";
   if (block == NULL) { return SUCCESS; }  // timeout
   Block local;
-  local.ResetTo((char*)block, testimony_block_size(t_), NULL,
+  local.ResetTo((char*)block, testimony_conn(t_)->block_size, NULL,
                 &TestimonyPackets::TReturnToKernel, this);
   local.Swap(b);
   return SUCCESS;

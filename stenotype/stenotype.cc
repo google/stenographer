@@ -548,7 +548,6 @@ int Main(int argc, char** argv) {
   options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
 
   std::vector<Packets*> sockets;
-  LOG(INFO) << "TESTIMONY:" << flag_testimony;
   for (int i = 0; i < flag_threads; i++) {
     if (flag_testimony.empty()) {
       // Set up AF_PACKET packet reading.
@@ -569,8 +568,12 @@ int Main(int argc, char** argv) {
       sockets.push_back(v3);
     } else {
       testimony t;
-      CHECK_SUCCESS(NegErrno(testimony_init(&t, flag_testimony.c_str(), i)));
-      CHECK(testimony_block_size(t) == 1 << 20);
+      CHECK_SUCCESS(NegErrno(testimony_connect(&t, flag_testimony.c_str())));
+      CHECK(flag_threads == testimony_conn(t)->fanout_size)
+        << "--threads does not match testimony fanout size";
+      testimony_conn(t)->fanout_index = i;
+      CHECK_SUCCESS(NegErrno(testimony_init(t)));
+      CHECK(testimony_conn(t)->block_size == 1 << 20);
       sockets.push_back(new TestimonyPackets(t));
     }
   }

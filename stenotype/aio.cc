@@ -188,9 +188,9 @@ Error Output::Rotate(const std::string& dirname, int64_t micros,
   std::string name = HiddenFile(dirname, micros);
   int fd = open(name.c_str(), O_CREAT | O_WRONLY | O_DSYNC | O_DIRECT, 0600);
   LOG(INFO) << "Opening packet file " << name << ": " << fd;
-  RETURN_IF_ERROR(Errno(fd > 0), "open");
+  RETURN_IF_ERROR(Errno(fd), "open");
   if (initial_size > 0) {
-    LOG_IF_ERROR(Errno(0 <= fallocate(fd, 0, 0, initial_size)), "fallocate");
+    LOG_IF_ERROR(Errno(fallocate(fd, 0, 0, initial_size)), "fallocate");
   }
   current_ = new io::SingleFile(this, dirname, micros, fd);
   files_.insert(current_);

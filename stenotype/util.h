@@ -299,9 +299,9 @@ class ProducerConsumerQueue {
   DISALLOW_COPY_AND_ASSIGN(ProducerConsumerQueue);
 };
 
-// Errno returns a util::Status based on the current value of errno and the
-// success flag.  If success is true, returns OK.  Otherwise, returns a
-// FAILED_PRECONDITION error based on errno.
+// Errno returns an Error based on the current value of errno and the
+// return value of a standard syscall.  If ret is >= 0, returns OK.
+// Otherwise, returns an error based on errno.
 inline Error Errno(int ret = -1) {
   if (ret >= 0 || errno == 0) {
     return SUCCESS;

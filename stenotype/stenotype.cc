@@ -537,19 +537,20 @@ int Main(int argc, char** argv) {
   // Before we drop any privileges, set up our sniffing sockets.
   // We have to do this before calling DropPrivileges, which does a
   // setuid/setgid and could lose us the ability to do this at a later date.
-  LOG(INFO) << "Setting up AF_PACKET sockets for packet reading";
-  int socktype = SOCK_RAW;
-  struct tpacket_req3 options;
-  memset(&options, 0, sizeof(options));
-  options.tp_block_size = 1 << 20;  // it's very important this be 1MB
-  options.tp_block_nr = flag_blocks;
-  options.tp_frame_size = 16 << 10;  // does not matter at all
-  options.tp_frame_nr = 0;           // computed for us.
-  options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
 
   std::vector<Packets*> sockets;
   for (int i = 0; i < flag_threads; i++) {
     if (flag_testimony.empty()) {
+      LOG(INFO) << "Setting up AF_PACKET sockets for packet reading";
+      int socktype = SOCK_RAW;
+      struct tpacket_req3 options;
+      memset(&options, 0, sizeof(options));
+      options.tp_block_size = 1 << 20;  // it's very important this be 1MB
+      options.tp_block_nr = flag_blocks;
+      options.tp_frame_size = 16 << 10;  // does not matter at all
+      options.tp_frame_nr = 0;           // computed for us.
+      options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
+
       // Set up AF_PACKET packet reading.
       PacketsV3::Builder builder;
       CHECK_SUCCESS(builder.SetUp(socktype, options));
@@ -567,6 +568,7 @@ int Main(int argc, char** argv) {
       CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
       sockets.push_back(v3);
     } else {
+      LOG(INFO) << "Connecting to testimony socket for packet reading";
       testimony t;
       CHECK_SUCCESS(NegErrno(testimony_connect(&t, flag_testimony.c_str())));
       CHECK(flag_threads == testimony_conn(t)->fanout_size)

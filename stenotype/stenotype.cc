@@ -570,10 +570,11 @@ int Main(int argc, char** argv) {
       testimony t;
       CHECK_SUCCESS(NegErrno(testimony_connect(&t, flag_testimony.c_str())));
       CHECK(flag_threads == testimony_conn(t)->fanout_size)
-        << "--threads does not match testimony fanout size";
+          << "--threads does not match testimony fanout size";
+      CHECK(testimony_conn(t)->block_size == 1 << 20)
+          << "Testimony does not supply 1MB blocks";
       testimony_conn(t)->fanout_index = i;
       CHECK_SUCCESS(NegErrno(testimony_init(t)));
-      CHECK(testimony_conn(t)->block_size == 1 << 20);
       sockets.push_back(new TestimonyPackets(t));
     }
   }

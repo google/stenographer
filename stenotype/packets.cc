@@ -188,7 +188,9 @@ Error TestimonyPackets::NextBlock(Block* b, int poll_millis) {
   LOG(INFO) << "Requesting block";
   CHECK_SUCCESS(NegErrno(testimony_get_block(t_, poll_millis, &block)));
   LOG(INFO) << "getblock returned";
-  if (block == NULL) { return SUCCESS; }  // timeout
+  if (block == NULL) {
+    return SUCCESS;
+  }  // timeout
   Block local;
   local.ResetTo((char*)block, testimony_conn(t_)->block_size, NULL,
                 &TestimonyPackets::TReturnToKernel, this);

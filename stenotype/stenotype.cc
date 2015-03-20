@@ -427,7 +427,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
   int64_t blocks = 0;
   int64_t block_offset = 0;
   for (int64_t remaining = flag_count; remaining != 0 && run_threads;) {
-    CHECK_SUCCESS(output.CheckForCompletedOps(false), "check for completed");
+    CHECK_SUCCESS(output.CheckForCompletedOps(false));
     int64_t current_micros = GetCurrentTimeMicros();
 
     // Rotate file if necessary.

@@ -333,9 +333,7 @@ void DropPacketThreadPrivileges() {
       ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 2,
       SCMP_A1(SCMP_CMP_EQ, O_WRONLY | O_CREAT | O_DSYNC | O_DIRECT),
       SCMP_A2(SCMP_CMP_EQ, 0600));
-  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 2,
-                   SCMP_A1(SCMP_CMP_EQ, SOL_PACKET),
-                   SCMP_A2(SCMP_CMP_EQ, PACKET_STATISTICS));
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
   CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
   seccomp_release(ctx);

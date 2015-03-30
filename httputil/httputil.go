@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/stenographer/stats"
@@ -108,7 +109,7 @@ func (h *httpLog) String() string {
 		errstr = h.err.Error()
 	}
 	duration := time.Since(h.start)
-	prefix := "http_request_" + h.r.URL.Path + ":" + h.r.Method + "_"
+	prefix := "http_request_" + strings.Trim(h.r.URL.Path, "/") + "_" + h.r.Method + "_"
 	stats.S.Get(prefix + "completed").Increment()
 	stats.S.Get(prefix + "nanos").IncrementBy(duration.Nanoseconds())
 	stats.S.Get(prefix + "bytes").IncrementBy(int64(h.nBytes))

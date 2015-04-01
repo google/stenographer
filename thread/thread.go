@@ -174,23 +174,26 @@ func (t *Thread) trackNewFile(filename string) error {
 }
 
 func (t *Thread) cleanUpOnLowDiskSpace() {
+	if len(t.files) == 0 {
+		return // cannot clean up files if we don't have any.
+	}
 	for {
+		if len(t.files) > t.conf.MaxDirectoryFiles {
+			v(1, "Thread %v too many files. %d > %d, deleting", t.id, len(t.files), t.conf.MaxDirectoryFiles)
+			t.deleteOldestThreadFiles(len(t.files) - t.conf.MaxDirectoryFiles)
+			continue
+		}
 		df, err := base.PathDiskFreePercentage(t.packetPath)
 		if err != nil {
 			log.Printf("Thread %v could not get the free disk percentage for %q: %v", t.id, t.packetPath, err)
 			return
 		}
-		if df > t.conf.DiskFreePercentage && len(t.files) < t.conf.MaxDirectoryFiles {
+		if df > t.conf.DiskFreePercentage {
 			v(1, "Thread %v disk space is sufficient: %v > %v", t.id, df, t.conf.DiskFreePercentage)
 			return
 		}
-		v(0, "Thread %v disk usage is high (packet path=%q): %d%% < %d%% free, or %d > %d files\n", t.id, t.packetPath, df, t.conf.DiskFreePercentage, len(t.files), t.conf.MaxDirectoryFiles)
-		if len(t.files) == 0 {
-			log.Printf("Thread %v could not free up space:  no files available", t.id)
-		} else if err := t.deleteOldestThreadFile(); err != nil {
-			log.Printf("Thread %v could not free up space by deleting old files: %v", t.id, err)
-			return
-		}
+		v(0, "Thread %v disk usage is high (packet path=%q): %d%% < %d%% free\n", t.id, t.packetPath, df, t.conf.DiskFreePercentage)
+		t.deleteOldestThreadFiles(1)
 		// After deleting files, it may take a while for disk stats to be updated.
 		// We add this sleep so we don't accidentally delete WAY more files than
 		// we need to.
@@ -198,19 +201,30 @@ func (t *Thread) cleanUpOnLowDiskSpace() {
 	}
 }
 
+func tryToDeleteFile(filename string) {
+	v(2, "Deleting %q", filename)
+	if err := os.Remove(filename); err != nil {
+		log.Printf("Unable to delete file %q: %v", filename, err)
+	}
+}
+
 // deleteOldestThreadFile deletes the single oldest file held by this thread.
 // It should only be called if the thread has at least one file (should be
 // checked by the caller beforehand).
-func (t *Thread) deleteOldestThreadFile() error {
-	oldestFile := t.getSortedFiles()[0]
-	v(1, "Thread %v removing %q", t.id, oldestFile)
-	if err := os.Remove(t.getPacketFilePath(oldestFile)); err != nil {
-		return err
+func (t *Thread) deleteOldestThreadFiles(n int) {
+	files := t.getSortedFiles()
+	for i := 0; i < n && i < len(files); i++ {
+		toDelete := files[i]
+		v(1, "Thread %v removing %q", t.id, toDelete)
+		go tryToDeleteFile(t.getPacketFilePath(toDelete))
+		go tryToDeleteFile(t.getIndexFilePath(toDelete))
 	}
-	if err := os.Remove(t.getIndexFilePath(oldestFile)); err != nil {
-		return err
+	for i := 0; i < n && i < len(files); i++ {
+		toDelete := files[i]
+		if err := t.untrackFile(toDelete); err != nil {
+			log.Fatalf("Failure to untrack file: %v", err)
+		}
 	}
-	return t.untrackFile(oldestFile)
 }
 
 // getSortedFiles returns files frm the thread in the order they were created,
@@ -219,7 +233,7 @@ func (t *Thread) deleteOldestThreadFile() error {
 // This method should only be called once the t.mu has been acquired!
 func (t *Thread) getSortedFiles() []string {
 	var sortedFiles []string
-	for name, _ := range t.files {
+	for name := range t.files {
 		sortedFiles = append(sortedFiles, name)
 	}
 	sort.Strings(sortedFiles)
@@ -242,6 +256,8 @@ func (t *Thread) untrackFile(filename string) error {
 	return nil
 }
 
+// FileLastSeen returns the last timne this thread saw a new file from
+// stenotype.
 func (t *Thread) FileLastSeen() time.Time {
 	t.mu.RLock()
 	defer t.mu.RUnlock()

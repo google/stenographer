@@ -253,23 +253,7 @@ func (d *Env) removeOldFiles() {
 	}
 }
 
-// watchdog returns a function, and Fatals if that function isn't called within
-// the passed-in duration.
-//
-// Usage:
-//   func couldGetStuck() {
-//     defer watchdog(time.Minute * 5, "my description")()
-//     ... do stuff ...
-//   }
-func watchdog(d time.Duration, msg string) func() {
-	t := time.AfterFunc(d, func() {
-		log.Fatalf("watchdog failed after %v: %v", d, msg)
-	})
-	return func() { t.Stop() }
-}
-
 func (d *Env) syncFiles() {
-	defer watchdog(time.Minute*15, "syncing files")()
 	for _, t := range d.threads {
 		t.SyncFiles()
 	}

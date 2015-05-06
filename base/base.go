@@ -24,6 +24,7 @@ import (
 	"sort"
 	"sync"
 	"syscall"
+	"time"
 
 	"code.google.com/p/gopacket"
 	"code.google.com/p/gopacket/layers"
@@ -340,4 +341,30 @@ func ContextDone(ctx context.Context) bool {
 	default:
 		return false
 	}
+}
+
+// Watchdog returns a time.Timer which log.Fatals if it goes off.
+// The creator must call Stop before that time (to never die)
+// or Reset (to postpone the inevitable).
+//
+// Usage:
+//   func couldGetStuck() {
+//     defer base.Watchdog(time.Minute * 5, "my description").Stop()
+//     ... do stuff ...
+//   }
+//
+// Or:
+//   func couldGetStuckOnManyThings(things []thing) {
+//     fido := base.Watchdog(time.Second * 15)
+//     defer fido.Stop()
+//     initialize()  // can take up to 15 secs
+//     for _, thing := range things {
+//       fido.Reset(time.Second * 5)
+//       process(thing)  // can take up to 5 seconds each
+//     }
+//   }
+func Watchdog(d time.Duration, msg string) *time.Timer {
+	return time.AfterFunc(d, func() {
+		log.Fatalf("watchdog failed: %v", msg)
+	})
 }

@@ -125,8 +125,11 @@ func (t *Thread) getIndexFilePath(filename string) string {
 }
 
 func (t *Thread) syncFilesWithDisk() {
+	fido := base.Watchdog(time.Minute*5, "syncing files with disk") // 5 min for initial list of files
+	defer fido.Stop()
 	newFilesCnt := 0
 	for _, filename := range t.listPacketFilesOnDisk() {
+		fido.Reset(time.Minute) // 1 minute for opening each new file
 		if t.files[filename] != nil {
 			continue
 		}
@@ -177,7 +180,10 @@ func (t *Thread) cleanUpOnLowDiskSpace() {
 	if len(t.files) == 0 {
 		return // cannot clean up files if we don't have any.
 	}
+	fido := base.Watchdog(time.Minute, "cleaning up low disk space")
+	defer fido.Stop()
 	for {
+		fido.Reset(time.Minute)
 		if len(t.files) > t.conf.MaxDirectoryFiles {
 			v(1, "Thread %v too many files. %d > %d, deleting", t.id, len(t.files), t.conf.MaxDirectoryFiles)
 			t.deleteOldestThreadFiles(len(t.files) - t.conf.MaxDirectoryFiles)

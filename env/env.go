@@ -262,8 +262,8 @@ func (d *Env) removeOldFiles() {
 //     ... do stuff ...
 //   }
 func watchdog(d time.Duration, msg string) func() {
-  t := time.AfterFunc(d, func() {
-    log.Fatalf("watchdog failed after %v: %v", d, msg)
+	t := time.AfterFunc(d, func() {
+		log.Fatalf("watchdog failed after %v: %v", d, msg)
 	})
 	return func() { t.Stop() }
 }

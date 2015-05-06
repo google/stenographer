@@ -262,20 +262,10 @@ func (d *Env) removeOldFiles() {
 //     ... do stuff ...
 //   }
 func watchdog(d time.Duration, msg string) func() {
-	done := make(chan struct{})
-	go func() {
-		select {
-		case <-time.After(d):
-		case <-done:
-			return
-		}
-		select {
-		case <-done:
-		default:
-			log.Fatalf("watchdog failed after %v: %v", d, msg)
-		}
-	}()
-	return func() { close(done) }
+  t := time.AfterFunc(d, func() {
+    log.Fatalf("watchdog failed after %v: %v", d, msg)
+	})
+	return func() { t.Stop() }
 }
 
 func (d *Env) syncFiles() {

@@ -58,8 +58,8 @@ primitives:
     udp                   # equivalent to 'ip proto 17'
 
     # Stenographer-specific time additions:
-    before 2012-11-03T11:05:00      # Packets before a specific time (UTC)
-    after 2012-11-03T11:05:00-0700  # Packets after a specific time (with TZ)
+    before 2012-11-03T11:05:00Z      # Packets before a specific time (UTC)
+    after 2012-11-03T11:05:00-0700   # Packets after a specific time (with TZ)
     before 45m ago        # Packets before a relative time
     before 3h ago         # Packets after a relative time
 

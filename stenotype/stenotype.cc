@@ -266,7 +266,9 @@ void CommonPrivileges(scmp_filter_ctx ctx) {
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fallocate), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(ftruncate), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 0);
+#ifdef __NR_fstat64
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat64), 0);
+#endif
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(close), 0);
   // Signal handling and propagation to threads.
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 0);
@@ -275,7 +277,9 @@ void CommonPrivileges(scmp_filter_ctx ctx) {
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(tgkill), 0);
   // Malloc/ringbuffer.
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap), 0);
+#ifdef __NR_mmap2
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap2), 0);
+#endif
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(munmap), 0);
   // Malloc.
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mprotect), 0);
@@ -283,7 +287,9 @@ void CommonPrivileges(scmp_filter_ctx ctx) {
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(brk), 0);
   // Exiting threads.
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(exit), 0);
+#ifdef __NR_sigreturn
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(sigreturn), 0);
+#endif
 }
 
 scmp_filter_ctx kSkipSeccomp = scmp_filter_ctx(-1);

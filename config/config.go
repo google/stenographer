@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"net"
 
 	"github.com/google/stenographer/base"
 )
@@ -52,6 +53,7 @@ type Config struct {
 	Interface     string
 	Flags         []string
 	Port          int
+	Host		  string // Location to listen.
 	CertPath      string // Directory where client and server certs are stored.
 }
 
@@ -89,5 +91,10 @@ func (c Config) Validate() error {
 			return fmt.Errorf("invalid index directory %q in configuration: %v", thread.IndexDirectory, err)
 		}
 	}
+
+	if host := net.ParseIP(c.Host); host == nil {
+		return fmt.Errorf("invalid listening location %q in configuration", c.Host)
+	}
+
 	return nil
 }

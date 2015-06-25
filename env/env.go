@@ -76,7 +76,7 @@ func (e *Env) Serve() error {
 		return fmt.Errorf("cannot verify client cert: %v", err)
 	}
 	server := &http.Server{
-		Addr:      fmt.Sprintf("localhost:%d", e.conf.Port),
+		Addr:      fmt.Sprintf("%s:%d", e.conf.Host e.conf.Port),
 		TLSConfig: tlsConfig,
 	}
 	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {

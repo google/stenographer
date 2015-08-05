@@ -25,7 +25,7 @@ import (
 	"time"
 	"unsafe"
 
-	"code.google.com/p/gopacket"
+	"github.com/google/gopacket"
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"

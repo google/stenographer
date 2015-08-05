@@ -26,7 +26,7 @@ import (
 	"os"
 	"strings"
 
-	"code.google.com/p/leveldb-go/leveldb/table"
+	"github.com/golang/leveldb/table"
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"

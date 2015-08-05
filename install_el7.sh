@@ -3,10 +3,10 @@
 # Install Stenographer on CentOS 7.1
 #===============================================================#
 
-KILLCMD=/usr/bin/pkill
-BINDIR="${BINDIR-/usr/bin}"
-GOPATH=${HOME}/go
-PATH=${PATH}/usr/local/go/bin
+export KILLCMD=/usr/bin/pkill
+export BINDIR="${BINDIR-/usr/bin}"
+export GOPATH=${HOME}/go
+export PATH=${PATH}/usr/local/go/bin
 
 
 # Load support functions
@@ -30,6 +30,7 @@ stop_processes () {
 
 install_packages () {
 	Info "Installing stenographer package requirements...  "
+	sudo yum install -y epel-release; sudo yum makecache
 	sudo yum install -y libaio-devel leveldb-devel snappy-devel gcc-c++ make libcap-devel libseccomp-devel &>/dev/null
 
 	if [ $? -ne 0 ]; then
@@ -116,6 +117,7 @@ build_stenographer () {
 
 	if [ ! -x "$BINDIR/stenographer" ]; then
 		Info "Building/Installing stenographer"
+		/usr/local/go/bin/go get ./...
 		/usr/local/go/bin/go build
 		sudo cp -vf stenographer "$BINDIR/stenographer"
 		sudo chown stenographer:root "$BINDIR/stenographer"

@@ -26,9 +26,9 @@ import (
 	"syscall"
 	"time"
 
-	"code.google.com/p/gopacket"
-	"code.google.com/p/gopacket/layers"
-	"code.google.com/p/gopacket/pcapgo"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcapgo"
 	"golang.org/x/net/context"
 )
 

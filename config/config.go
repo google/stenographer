@@ -21,8 +21,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"net"
+	"os"
 
 	"github.com/google/stenographer/base"
 )
@@ -53,7 +53,7 @@ type Config struct {
 	Interface     string
 	Flags         []string
 	Port          int
-	Host		  string // Location to listen.
+	Host          string // Location to listen.
 	CertPath      string // Directory where client and server certs are stored.
 }
 

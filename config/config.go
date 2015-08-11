@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
-	"os"
 
 	"github.com/google/stenographer/base"
 )
@@ -83,12 +82,12 @@ func ReadConfigFile(filename string) (*Config, error) {
 
 // Validate checks the configuration for common errors.
 func (c Config) Validate() error {
-	for _, thread := range c.Threads {
-		if _, err := os.Stat(thread.PacketsDirectory); err != nil {
-			return fmt.Errorf("invalid packets directory %q in configuration: %v", thread.PacketsDirectory, err)
+	for n, thread := range c.Threads {
+		if thread.PacketsDirectory == "" {
+			return fmt.Errorf("No packet directory specified for thread %d in configuration", n)
 		}
-		if _, err := os.Stat(thread.IndexDirectory); err != nil {
-			return fmt.Errorf("invalid index directory %q in configuration: %v", thread.IndexDirectory, err)
+		if thread.IndexDirectory == "" {
+			return fmt.Errorf("No index directory specified for thread %d in configuration", n)
 		}
 	}
 

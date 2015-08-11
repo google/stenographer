@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/big"
+	"net"
 	"os"
 	"time"
 )
@@ -57,6 +58,7 @@ func WriteNewCerts(certFile, keyFile string, server bool) error {
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			Organization: []string{"Stenographer"},
+			CommonName:   "127.0.0.1",
 		},
 		NotBefore: time.Now(),
 		NotAfter:  time.Now().Add(validFor),
@@ -64,6 +66,7 @@ func WriteNewCerts(certFile, keyFile string, server bool) error {
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		BasicConstraintsValid: true,
 		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1)},
 		IsCA:                  true, // we're self-signed.
 	}
 	var keyFileMode os.FileMode

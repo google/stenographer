@@ -38,10 +38,13 @@ fi
 STENOQUERY="$1"
 shift
 
+TCPDUMP=$(PATH=$PATH:/usr/local/sbin:/usr/sbin:/sbin which tcpdump)
+STENOCURL=$(PATH=$(dirname "$0"):$PATH which stenocurl)
+
 echo "Running stenographer query '$STENOQUERY', piping to 'tcpdump $@'" >&2
-$(dirname $0)/stenocurl /query \
+"$STENOCURL" /query \
     -d "$STENOQUERY" \
     --silent \
     --max-time 890 \
     --show-error |
-    tcpdump -r /dev/stdin -s 0 "$@"
+    "$TCPDUMP" -r /dev/stdin -s 0 "$@"

@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"os"
+	"net"
 
 	"github.com/google/stenographer/base"
 )
@@ -52,6 +52,7 @@ type Config struct {
 	Interface     string
 	Flags         []string
 	Port          int
+	Host          string // Location to listen.
 	CertPath      string // Directory where client and server certs are stored.
 }
 
@@ -81,13 +82,18 @@ func ReadConfigFile(filename string) (*Config, error) {
 
 // Validate checks the configuration for common errors.
 func (c Config) Validate() error {
-	for _, thread := range c.Threads {
-		if _, err := os.Stat(thread.PacketsDirectory); err != nil {
-			return fmt.Errorf("invalid packets directory %q in configuration: %v", thread.PacketsDirectory, err)
+	for n, thread := range c.Threads {
+		if thread.PacketsDirectory == "" {
+			return fmt.Errorf("No packet directory specified for thread %d in configuration", n)
 		}
-		if _, err := os.Stat(thread.IndexDirectory); err != nil {
-			return fmt.Errorf("invalid index directory %q in configuration: %v", thread.IndexDirectory, err)
+		if thread.IndexDirectory == "" {
+			return fmt.Errorf("No index directory specified for thread %d in configuration", n)
 		}
 	}
+
+	if host := net.ParseIP(c.Host); host == nil {
+		return fmt.Errorf("invalid listening location %q in configuration", c.Host)
+	}
+
 	return nil
 }

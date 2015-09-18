@@ -21,11 +21,11 @@ are passed to TCPDump.
 
 Examples:
  # Print all packets for source IP 1.1.1.1 without DNS resolution (-n).
- $0 ip=1.1.1.1 -n src ip 1.1.1.1
+ $0 'host 1.1.1.1' -n src host 1.1.1.1
  # Print all PSH packets between 1.1.1.1 and 2.2.2.2:
- $0 'ip=1.1.1.1 ip=2.2.2.2' -n 'tcp[tcpflags] & tcp-push != 0'
+ $0 'host 1.1.1.1 and host 2.2.2.2' -n 'tcp[tcpflags] & tcp-push != 0'
  # Write all packets between 1.1.1.1 and 2.2.2.2 to disk.
- $0 'ip=1.1.1.1 ip=2.2.2.2' -w /tmp/out.pcap
+'host 1.1.1.1 and host 2.2.2.2' -w /tmp/out.pcap
 
 See README.md for more details on the Stenographer query language.
 
@@ -38,10 +38,13 @@ fi
 STENOQUERY="$1"
 shift
 
+TCPDUMP=$(PATH=$PATH:/usr/local/sbin:/usr/sbin:/sbin which tcpdump)
+STENOCURL=$(PATH=$(dirname "$0"):$PATH which stenocurl)
+
 echo "Running stenographer query '$STENOQUERY', piping to 'tcpdump $@'" >&2
-$(dirname $0)/stenocurl /query \
+"$STENOCURL" /query \
     -d "$STENOQUERY" \
     --silent \
     --max-time 890 \
     --show-error |
-    tcpdump -r /dev/stdin -s 0 "$@"
+    "$TCPDUMP" -r /dev/stdin -s 0 "$@"

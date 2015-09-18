@@ -25,7 +25,7 @@ if [ -z "$JQ" ]; then
   exit 1
 fi
 
-if [ "$#" -lt 1 -o ${1:0:1} != "/" ]; then
+if [ "$#" -lt 1 -o "${1:0:1}" != "/" ]; then
   /bin/cat >&2 <<EOF
 USAGE: $0 /<path> [curl args...]
 
@@ -53,13 +53,14 @@ EOF
   exit 1
 fi
 
-PORT="$(/bin/cat "$STENOGRAPHER_CONFIG" | $JQ -r '.Port')"
-CERTPATH="$(/bin/cat "$STENOGRAPHER_CONFIG" | $JQ -r '.CertPath')"
+HOST="$( < "$STENOGRAPHER_CONFIG" $JQ -r '.Host')"
+PORT="$( < "$STENOGRAPHER_CONFIG" $JQ -r '.Port')"
+CERTPATH="$( < "$STENOGRAPHER_CONFIG" $JQ -r '.CertPath')"
 if [ -z "$PORT" -o -z "$CERTPATH" ]; then
   echo "Unable to get port ($PORT) or certpath ($CERTPATH) from config ($STENOGRAPHER_CONFIG)" >&2
   exit 1
 fi
-URL="https://localhost:$PORT$PATH"  # PATH already starts with /
+URL="https://$HOST:$PORT$PATH"  # PATH already starts with /
 
 if [ ! -r "$CERTPATH/client_key.pem" ]; then
   echo "You do not have permission to access Stenographer data" >&2

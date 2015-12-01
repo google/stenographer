@@ -14,7 +14,13 @@
 
 DEPS=Makefile *.h
 
-SHARED_CFLAGS=-std=c++0x -g -Wall -fno-strict-aliasing
+DEFINES=
+ifneq (,$(wildcard /usr/include/testimony.h))
+DEFINES += -DTESTIMONY
+DEPS += /usr/include/testimony.h
+endif
+
+SHARED_CFLAGS=-std=c++0x -g -Wall -fno-strict-aliasing $(DEFINES)
 SHARED_LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp -ltestimony
 
 GCC=g++

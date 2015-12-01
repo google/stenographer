@@ -209,7 +209,11 @@ void ParseOptions(int argc, char** argv) {
       {"preallocate_file_mb", 316, n, 0,
        "When creating new files, preallocate to this many MB"},
       {"no_watchdogs", 317, 0, 0, "Don't start any watchdogs"},
+#ifdef TESTIMONY
       {"testimony", 318, n, 0, "Testimony socket to use"},
+#else
+      {"testimony", 318, n, 0, "TESTIMONY NOT COMPILED INTO THIS BINARY"},
+#endif
       {0},
   };
   struct argp argp = {options, &ParseOptions};
@@ -348,10 +352,12 @@ void DropPacketThreadPrivileges() {
       SCMP_A2(SCMP_CMP_EQ, 0600));
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
+#ifdef TESTIMONY
   if (!flag_testimony.empty()) {
     SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(recvfrom), 0);
     SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(sendto), 0);
   }
+#endif
   CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
   seccomp_release(ctx);
 }
@@ -568,6 +574,7 @@ int Main(int argc, char** argv) {
       CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
       sockets.push_back(v3);
     } else {
+#ifdef TESTIMONY
       LOG(INFO) << "Connecting to testimony socket for packet reading";
       testimony t;
       CHECK_SUCCESS(NegErrno(testimony_connect(&t, flag_testimony.c_str())));
@@ -578,6 +585,9 @@ int Main(int argc, char** argv) {
       testimony_conn(t)->fanout_index = i;
       CHECK_SUCCESS(NegErrno(testimony_init(t)));
       sockets.push_back(new TestimonyPackets(t));
+#else
+      LOG(FATAL) << "invalid --testimony flag, testimony not compiled in";
+#endif
     }
   }
 

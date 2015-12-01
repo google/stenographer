@@ -23,7 +23,10 @@
 #include <string>
 
 #include <leveldb/slice.h>
+
+#ifdef TESTIMONY
 #include <testimony.h>
+#endif
 
 #include "util.h"
 
@@ -77,7 +80,9 @@ class Block {
 
  private:
   friend class PacketsV3;
+#ifdef TESTIMONY
   friend class TestimonyPackets;
+#endif
   typedef void (*Releaser)(struct tpacket_block_desc*, void*);
   void UpdateStats(Stats* stats);
   bool ReadyForUser();
@@ -123,6 +128,7 @@ class Packets {
   DISALLOW_COPY_AND_ASSIGN(Packets);
 };
 
+#ifdef TESTIMONY
 class TestimonyPackets : public Packets {
  public:
   TestimonyPackets(testimony t);
@@ -134,6 +140,7 @@ class TestimonyPackets : public Packets {
   static void TReturnToKernel(struct tpacket_block_desc*, void* ths);
   testimony t_;
 };
+#endif
 
 // PacketsV3 wraps MMAP'd AF_PACKET TPACKET_V3 in a nice, easy(er) to use
 // object.  Not safe for concurrent operation.

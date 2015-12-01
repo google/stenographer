@@ -171,6 +171,7 @@ bool Block::Next(Packet* p) {
   return true;
 }
 
+#ifdef TESTIMONY
 TestimonyPackets::TestimonyPackets(testimony t) : t_(t) {}
 
 TestimonyPackets::~TestimonyPackets() {
@@ -197,6 +198,7 @@ Error TestimonyPackets::NextBlock(Block* b, int poll_millis) {
 }
 
 Error TestimonyPackets::GetStats(Stats* stats) { return SUCCESS; }
+#endif
 
 PacketsV3::PacketsV3(PacketsV3::State* state) {
   state_.Swap(state);

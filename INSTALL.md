@@ -168,5 +168,11 @@ binary.  Here are some flags which may prove particularly useful:
      when closed.  This should not be necessary unless you're really trying to
      eak out some extra speed on a file system that supports extents.
 
+     NOTE: If you are using xfs on 4.1+ kernel, setting "--preallocate_file_mb"
+           becomes crucial to performance.  This is in that when appending
+           to the end of file (i.e. EOF updates), kernel will serialize all
+           operations.  Please refer to commit (b9d5984 xfs: DIO write
+           completion size updates race).
+
 There's a number of other flags that `stenotype` supports, but most of them are
 for debugging purposes.

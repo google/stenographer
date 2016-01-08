@@ -66,6 +66,7 @@ Block::Block() {
   block_ = NULL;
   packet_ = NULL;
   mu_ = NULL;
+  releaser_ = NULL;
   size_ = 0;
   pkts_in_use_ = 0;
 }
@@ -80,20 +81,25 @@ void Block::Swap(Block* b) {
   std::swap(mu_, b->mu_);
   std::swap(size_, b->size_);
   std::swap(pkts_in_use_, b->pkts_in_use_);
+  std::swap(releaser_, b->releaser_);
+  std::swap(releaser_arg_, b->releaser_arg_);
 }
 
 leveldb::Slice Block::Data() { return leveldb::Slice(start_, size_); }
 
-void Block::Reset() { ResetTo(NULL, 0, NULL); }
+void Block::Reset() { ResetTo(NULL, 0, NULL, NULL, NULL); }
 
 bool Block::ReadyForUser() { return Status() & TP_STATUS_USER; }
 
-void Block::ResetTo(char* data, size_t sz, std::mutex* mu) {
+void Block::ResetTo(char* data, size_t sz, std::mutex* mu, Block::Releaser r,
+                    void* rarg) {
   Done();
   LOG(V2) << "New block " << reinterpret_cast<uintptr_t>(data);
   start_ = data;
   size_ = sz;
   mu_ = mu;
+  releaser_ = r;
+  releaser_arg_ = rarg;
   pkts_in_use_ = 0;
   if (mu_) {
     LOG(V3) << "BlockReset m" << int64_t(mu_) << " IN b" << int64_t(this);
@@ -108,9 +114,11 @@ void Block::ResetTo(char* data, size_t sz, std::mutex* mu) {
 }
 
 void Block::Done() {
-  if (start_ != NULL) {
+  if (block_ != NULL) {
     ReturnToKernel();
+    block_ = NULL;
     start_ = NULL;
+    releaser_ = NULL;
   }
   if (mu_ != NULL) {
     LOG(V3) << "BlockDone m" << int64_t(mu_) << " IN b" << int64_t(this);
@@ -119,10 +127,13 @@ void Block::Done() {
   }
 }
 
-void Block::ReturnToKernel() {
-  LOG(V2) << "Returning to kernel: " << reinterpret_cast<uintptr_t>(block_);
-  block_->hdr.bh1.block_status = TP_STATUS_KERNEL;
+static void LocalBlock_ReturnToKernel(struct tpacket_block_desc* block,
+                                      void* ths) {
+  LOG(V2) << "Returning to kernel: " << reinterpret_cast<uintptr_t>(block);
+  block->hdr.bh1.block_status = TP_STATUS_KERNEL;
 }
+
+void Block::ReturnToKernel() { releaser_(block_, releaser_arg_); }
 
 void Block::MoveToNext() {
   pkts_in_use_++;
@@ -160,6 +171,35 @@ bool Block::Next(Packet* p) {
   return true;
 }
 
+#ifdef TESTIMONY
+TestimonyPackets::TestimonyPackets(testimony t) : t_(t) {}
+
+TestimonyPackets::~TestimonyPackets() {
+  CHECK_SUCCESS(NegErrno(testimony_close(t_)));
+}
+
+void TestimonyPackets::TReturnToKernel(struct tpacket_block_desc* block,
+                                       void* ths) {
+  TestimonyPackets* t = reinterpret_cast<TestimonyPackets*>(ths);
+  CHECK_SUCCESS(NegErrno(testimony_return_block(t->t_, block)));
+}
+
+Error TestimonyPackets::NextBlock(Block* b, int poll_millis) {
+  struct tpacket_block_desc* block;
+  CHECK_SUCCESS(NegErrno(testimony_get_block(t_, poll_millis, &block)));
+  if (block == NULL) {
+    return SUCCESS;
+  }  // timeout
+  Block local;
+  local.ResetTo((char*)block, testimony_conn(t_)->block_size, NULL,
+                &TestimonyPackets::TReturnToKernel, this);
+  local.Swap(b);
+  return SUCCESS;
+}
+
+Error TestimonyPackets::GetStats(Stats* stats) { return SUCCESS; }
+#endif
+
 PacketsV3::PacketsV3(PacketsV3::State* state) {
   state_.Swap(state);
   offset_ = state_.num_blocks - 1;
@@ -177,7 +217,7 @@ Error PacketsV3::GetStats(Stats* stats) {
   return SUCCESS;
 }
 
-Error PacketsV3::Builder::Bind(const std::string& iface, PacketsV3** out) {
+Error PacketsV3::Builder::Bind(const std::string& iface, Packets** out) {
   RETURN_IF_ERROR(BadState(), "Builder");
 
   unsigned int ifindex = if_nametoindex(iface.c_str());
@@ -363,7 +403,7 @@ Error PacketsV3::NextBlock(Block* b, int poll_millis) {
     // This constructor locks the passed-in mu on creation, so it'll
     // wait for that mu to be unlocked by the last user of this block.
     pos_.ResetTo(state_.ring + offset_ * state_.block_size, state_.block_size,
-                 &block_mus_[offset_]);
+                 &block_mus_[offset_], &LocalBlock_ReturnToKernel, NULL);
   }
   if (!pos_.ReadyForUser()) {
     stats_.polls++;
@@ -376,15 +416,6 @@ Error PacketsV3::NextBlock(Block* b, int poll_millis) {
     pos_.Swap(b);
   }
   return SUCCESS;
-}
-
-Error PacketsV3::Next(Packet* p) {
-  while (true) {
-    if (pos_.Next(p)) {
-      return SUCCESS;
-    }
-    RETURN_IF_ERROR(NextBlock(&pos_, false), "next block");
-  }
 }
 
 }  // namespace st

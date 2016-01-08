@@ -108,6 +108,7 @@ std::string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
 int flag_preallocate_file_mb = 0;
 bool flag_watchdogs = true;
+std::string flag_testimony;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
   switch (key) {
@@ -170,6 +171,10 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
       break;
     case 317:
       flag_watchdogs = false;
+      break;
+    case 318:
+      flag_testimony = arg;
+      break;
   }
   return 0;
 }
@@ -204,7 +209,13 @@ void ParseOptions(int argc, char** argv) {
       {"preallocate_file_mb", 316, n, 0,
        "When creating new files, preallocate to this many MB"},
       {"no_watchdogs", 317, 0, 0, "Don't start any watchdogs"},
-      {0}, };
+#ifdef TESTIMONY
+      {"testimony", 318, n, 0, "Testimony socket to use"},
+#else
+      {"testimony", 318, n, 0, "TESTIMONY NOT COMPILED INTO THIS BINARY"},
+#endif
+      {0},
+  };
   struct argp argp = {options, &ParseOptions};
   argp_parse(&argp, argc, argv, 0, 0, 0);
 }
@@ -341,6 +352,12 @@ void DropPacketThreadPrivileges() {
       SCMP_A2(SCMP_CMP_EQ, 0600));
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getsockopt), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
+#ifdef TESTIMONY
+  if (!flag_testimony.empty()) {
+    SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(recvfrom), 0);
+    SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(sendto), 0);
+  }
+#endif
   CHECK_SUCCESS(NegErrno(seccomp_load(ctx)));
   seccomp_release(ctx);
 }
@@ -400,14 +417,14 @@ void HandleSignalsThread() {
 }
 
 void RunThread(int thread, st::ProducerConsumerQueue* write_index,
-               PacketsV3* v3) {
+               Packets* v3) {
   if (flag_threads > 1) {
     LOG_IF_ERROR(SetAffinity(thread), "set affinity");
   }
   Watchdog dog("Thread " + std::to_string(thread),
                (flag_watchdogs ? flag_fileage_sec * 2 : -1));
 
-  std::unique_ptr<PacketsV3> cleanup(v3);
+  std::unique_ptr<Packets> cleanup(v3);
 
   DropPacketThreadPrivileges();
   LOG(INFO) << "Thread " << thread << " starting to process packets";
@@ -422,7 +439,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
   Packet p;
   int64_t micros = GetCurrentTimeMicros();
   CHECK_SUCCESS(
-      output.Rotate(file_dirname, micros, flag_preallocate_file_mb << 10));
+      output.Rotate(file_dirname, micros, flag_preallocate_file_mb << 20));
   Index* index = NULL;
   if (flag_index) {
     index = new Index(index_dirname, micros);
@@ -449,7 +466,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
       micros = current_micros;
       block_offset = 0;
       CHECK_SUCCESS(
-          output.Rotate(file_dirname, micros, flag_preallocate_file_mb << 10));
+          output.Rotate(file_dirname, micros, flag_preallocate_file_mb << 20));
       if (flag_index) {
         write_index->Put(index);
         index = new Index(index_dirname, micros);
@@ -526,34 +543,52 @@ int Main(int argc, char** argv) {
   // Before we drop any privileges, set up our sniffing sockets.
   // We have to do this before calling DropPrivileges, which does a
   // setuid/setgid and could lose us the ability to do this at a later date.
-  LOG(INFO) << "Setting up AF_PACKET sockets for packet reading";
-  int socktype = SOCK_RAW;
-  struct tpacket_req3 options;
-  memset(&options, 0, sizeof(options));
-  options.tp_block_size = 1 << 20;  // it's very important this be 1MB
-  options.tp_block_nr = flag_blocks;
-  options.tp_frame_size = 16 << 10;  // does not matter at all
-  options.tp_frame_nr = 0;           // computed for us.
-  options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
 
-  std::vector<PacketsV3*> sockets;
+  std::vector<Packets*> sockets;
   for (int i = 0; i < flag_threads; i++) {
-    // Set up AF_PACKET packet reading.
-    PacketsV3::Builder builder;
-    CHECK_SUCCESS(builder.SetUp(socktype, options));
-    int fanout_id = getpid();
-    if (flag_fanout_id > 0) {
-      fanout_id = flag_fanout_id;
+    if (flag_testimony.empty()) {
+      LOG(INFO) << "Setting up AF_PACKET sockets for packet reading";
+      int socktype = SOCK_RAW;
+      struct tpacket_req3 options;
+      memset(&options, 0, sizeof(options));
+      options.tp_block_size = 1 << 20;  // it's very important this be 1MB
+      options.tp_block_nr = flag_blocks;
+      options.tp_frame_size = 16 << 10;  // does not matter at all
+      options.tp_frame_nr = 0;           // computed for us.
+      options.tp_retire_blk_tov = 10 * kNumMillisPerSecond;
+
+      // Set up AF_PACKET packet reading.
+      PacketsV3::Builder builder;
+      CHECK_SUCCESS(builder.SetUp(socktype, options));
+      int fanout_id = getpid();
+      if (flag_fanout_id > 0) {
+        fanout_id = flag_fanout_id;
+      }
+      if (flag_fanout_id > 0 || flag_threads > 1) {
+        CHECK_SUCCESS(builder.SetFanout(flag_fanout_type, fanout_id));
+      }
+      if (!flag_filter.empty()) {
+        CHECK_SUCCESS(builder.SetFilter(flag_filter));
+      }
+      Packets* v3;
+      CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
+      sockets.push_back(v3);
+    } else {
+#ifdef TESTIMONY
+      LOG(INFO) << "Connecting to testimony socket for packet reading";
+      testimony t;
+      CHECK_SUCCESS(NegErrno(testimony_connect(&t, flag_testimony.c_str())));
+      CHECK(flag_threads == testimony_conn(t)->fanout_size)
+          << "--threads does not match testimony fanout size";
+      CHECK(testimony_conn(t)->block_size == 1 << 20)
+          << "Testimony does not supply 1MB blocks";
+      testimony_conn(t)->fanout_index = i;
+      CHECK_SUCCESS(NegErrno(testimony_init(t)));
+      sockets.push_back(new TestimonyPackets(t));
+#else
+      LOG(FATAL) << "invalid --testimony flag, testimony not compiled in";
+#endif
     }
-    if (flag_fanout_id > 0 || flag_threads > 1) {
-      CHECK_SUCCESS(builder.SetFanout(flag_fanout_type, fanout_id));
-    }
-    if (!flag_filter.empty()) {
-      CHECK_SUCCESS(builder.SetFilter(flag_filter));
-    }
-    PacketsV3* v3;
-    CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
-    sockets.push_back(v3);
   }
 
   // To be safe, also set umask before any threads are created.

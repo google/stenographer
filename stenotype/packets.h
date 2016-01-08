@@ -24,6 +24,10 @@
 
 #include <leveldb/slice.h>
 
+#ifdef TESTIMONY
+#include <testimony.h>
+#endif
+
 #include "util.h"
 
 namespace st {
@@ -76,9 +80,13 @@ class Block {
 
  private:
   friend class PacketsV3;
+#ifdef TESTIMONY
+  friend class TestimonyPackets;
+#endif
+  typedef void (*Releaser)(struct tpacket_block_desc*, void*);
   void UpdateStats(Stats* stats);
   bool ReadyForUser();
-  void ResetTo(char* data, size_t sz, std::mutex* mu);
+  void ResetTo(char* data, size_t sz, std::mutex* mu, Releaser r, void* rarg);
   void Done();
   void ReturnToKernel();
   void MoveToNext();
@@ -94,13 +102,49 @@ class Block {
   struct tpacket3_hdr* packet_;
   uint32_t pkts_in_use_;
   std::mutex* mu_;
+  Releaser releaser_;
+  void* releaser_arg_;
 
   DISALLOW_COPY_AND_ASSIGN(Block);
 };
 
+class Packets {
+ public:
+  Packets() {}
+  // Tear down this AF_PACKET socket.
+  virtual ~Packets() {}
+
+  // Get the next available Block, blocking until it's available.  Should not be
+  // used in conjunction with Next.  Note that there are a fixed number of
+  // blocks in each Packets... if you grab all of them without releasing any,
+  // you'll deadlock your system.
+  //
+  // This will block at least kMinPollMillis and at most poll_millis.
+  virtual Error NextBlock(Block* b, int poll_millis) = 0;
+  // Get all currently available statistics about operation so far.
+  virtual Error GetStats(Stats* stats) = 0;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(Packets);
+};
+
+#ifdef TESTIMONY
+class TestimonyPackets : public Packets {
+ public:
+  TestimonyPackets(testimony t);
+  virtual ~TestimonyPackets();
+  virtual Error NextBlock(Block* b, int poll_millis);
+  virtual Error GetStats(Stats* stats);
+
+ private:
+  static void TReturnToKernel(struct tpacket_block_desc*, void* ths);
+  testimony t_;
+};
+#endif
+
 // PacketsV3 wraps MMAP'd AF_PACKET TPACKET_V3 in a nice, easy(er) to use
 // object.  Not safe for concurrent operation.
-class PacketsV3 {
+class PacketsV3 : public Packets {
  private:
   // State provides state common to PacketsV3 and PacketsV3::Builder.
   struct State {
@@ -117,18 +161,15 @@ class PacketsV3 {
   // Tear down this AF_PACKET socket.
   virtual ~PacketsV3();
 
-  // Get the next available packet.  This function should not be used in
-  // conjunction with NextBlock.  Blocks until packet is available.
-  Error Next(Packet* p);
   // Get the next available Block, blocking until it's available.  Should not be
   // used in conjunction with Next.  Note that there are a fixed number of
   // blocks in each PacketsV3... if you grab all of them without releasing any,
   // you'll deadlock your system.
   //
   // This will block at least kMinPollMillis and at most poll_millis.
-  Error NextBlock(Block* b, int poll_millis);
+  virtual Error NextBlock(Block* b, int poll_millis);
   // Get all currently available statistics about operation so far.
-  Error GetStats(Stats* stats);
+  virtual Error GetStats(Stats* stats);
 
   // Builder allows users to build a PacketsV3 object.
   //
@@ -161,7 +202,7 @@ class PacketsV3 {
 
     // Bind must be the final method called by Builder.  It binds the created
     // socket to the given interface and returns a PacketsV3 object to wrap it.
-    Error Bind(const std::string& iface, PacketsV3** out);
+    Error Bind(const std::string& iface, Packets** out);
 
    private:
     Error BadState();

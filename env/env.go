@@ -50,6 +50,8 @@ const (
 	fileSyncFrequency = 15 * time.Second
 
 	// These files will be generated in Config.CertPath.
+	caCertFilename     = "ca_cert.pem"
+        caKeyFilename      = "ca_key.pem"
 	clientCertFilename = "client_cert.pem"
 	clientKeyFilename  = "client_key.pem"
 	serverCertFilename = "server_cert.pem"
@@ -60,18 +62,23 @@ const (
 // requests.  This server will server over TLS, using the certs
 // stored in c.CertPath to verify itself to clients and verify clients.
 func (e *Env) Serve() error {
-	clientCert, clientKey, serverCert, serverKey :=
+	caCert, caKey, clientCert, clientKey, serverCert, serverKey :=
+		filepath.Join(e.conf.CertPath, caCertFilename),
+		filepath.Join(e.conf.CertPath, caKeyFilename),
 		filepath.Join(e.conf.CertPath, clientCertFilename),
 		filepath.Join(e.conf.CertPath, clientKeyFilename),
 		filepath.Join(e.conf.CertPath, serverCertFilename),
 		filepath.Join(e.conf.CertPath, serverKeyFilename)
-	if err := certs.WriteNewCerts(clientCert, clientKey, false); err != nil {
+	if err := certs.WriteNewCerts(caCert, caKey, "", false, true); err != nil {
+		return fmt.Errorf("cannot write ca certs: %v", err)
+	}
+	if err := certs.WriteNewCerts(clientCert, clientKey, caKey, false, false); err != nil {
 		return fmt.Errorf("cannot write client certs: %v", err)
 	}
-	if err := certs.WriteNewCerts(serverCert, serverKey, true); err != nil {
+	if err := certs.WriteNewCerts(serverCert, serverKey, caKey, true, false); err != nil {
 		return fmt.Errorf("cannot write server certs: %v", err)
 	}
-	tlsConfig, err := certs.ClientVerifyingTLSConfig(clientCert)
+	tlsConfig, err := certs.ClientVerifyingTLSConfig(caCert)
 	if err != nil {
 		return fmt.Errorf("cannot verify client cert: %v", err)
 	}

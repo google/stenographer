@@ -41,12 +41,9 @@ const (
 // locally authorizing clients.  If 'server' is true, it writes out certs
 // which can be used to verify the server, otherwise it writes out certs
 // clients can use to authorize themselves to the server.
-func WriteNewCerts(certFile, keyFile string, server bool) error {
-	// Implementation mostly taken from http://golang.org/src/pkg/crypto/tls/generate_cert.go
-	priv, err := rsa.GenerateKey(rand.Reader, bits)
-	if err != nil {
-		return fmt.Errorf("failed to generate private key: %v", err)
-	}
+func WriteNewCerts(certFile, keyFile string, caCertFile string, server bool, is_ca bool ) error {
+
+	var caCert *x509.Certificate
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
@@ -67,9 +64,27 @@ func WriteNewCerts(certFile, keyFile string, server bool) error {
 		BasicConstraintsValid: true,
 		DNSNames:              []string{"localhost"},
 		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1)},
-		IsCA:                  true, // we're self-signed.
+		IsCA:                  false, // we're not self-signed.
 	}
+
+	caCert = template
+
+	if (caCertFile != "") {
+		if certBytes, err := ioutil.ReadFile(caCertFile); err != nil {
+			return nil, fmt.Errorf("could not ca read cert file: %v", err)
+		} else if block, _ := pem.Decode(certBytes); block == nil {
+			return nil, fmt.Errorf("could not get cert pem block: %v", err)
+		} else if caCert, err = x509.ParseCertificate(block.Bytes); err != nil {
+			return nil, fmt.Errorf("could not parse cert: %v", err)
+		}
+	}
+
+
 	var keyFileMode os.FileMode
+	if is_ca {
+		keyFileMode = 0600
+		template.IsCA = true
+	}
 	if server {
 		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 		keyFileMode = 0600
@@ -78,7 +93,7 @@ func WriteNewCerts(certFile, keyFile string, server bool) error {
 		keyFileMode = 0640
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &caCert, &priv.PublicKey, priv)
 	if err != nil {
 		return fmt.Errorf("Failed to create certificate: %v", err)
 	}

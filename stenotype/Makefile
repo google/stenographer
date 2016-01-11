@@ -21,7 +21,10 @@ DEPS += /usr/include/testimony.h
 endif
 
 SHARED_CFLAGS=-std=c++0x -g -Wall -fno-strict-aliasing $(DEFINES)
-SHARED_LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp -ltestimony
+SHARED_LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp
+ifneq (,$(wildcard /usr/include/testimony.h))
+SHARED_LDFLAGS += -ltestimony
+endif
 
 GCC=g++
 GCC_CFLAGS_SEC=-fPIC -fPIE -pie -fstack-protector -D_FORTIFY_SOURCE=2

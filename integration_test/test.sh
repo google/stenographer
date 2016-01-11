@@ -108,6 +108,7 @@ cat > $OUTDIR/config << EOF
   , "StenotypePath": "$STENOTYPE_BIN"
   , "Interface": "$DUMMY"
   , "Port": $PORT
+  , "Host": "127.0.0.1"
   , "Flags": ["-v", "-v", "-v"]
   , "CertPath": "$OUTDIR/certs"
 }

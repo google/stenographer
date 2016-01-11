@@ -439,7 +439,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
   Packet p;
   int64_t micros = GetCurrentTimeMicros();
   CHECK_SUCCESS(
-      output.Rotate(file_dirname, micros, flag_preallocate_file_mb << 10));
+      output.Rotate(file_dirname, micros, flag_preallocate_file_mb << 20));
   Index* index = NULL;
   if (flag_index) {
     index = new Index(index_dirname, micros);
@@ -466,7 +466,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
       micros = current_micros;
       block_offset = 0;
       CHECK_SUCCESS(
-          output.Rotate(file_dirname, micros, flag_preallocate_file_mb << 10));
+          output.Rotate(file_dirname, micros, flag_preallocate_file_mb << 20));
       if (flag_index) {
         write_index->Put(index);
         index = new Index(index_dirname, micros);

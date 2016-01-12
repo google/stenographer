@@ -202,7 +202,7 @@ typedef std::unique_ptr<std::string> Error;
     if (!SUCCEEDED(__return_if_error_status__)) {   \
       __return_if_error_status__->append(" <- ");   \
       __return_if_error_status__->append(msg);      \
-      return std::move(__return_if_error_status__); \
+      return __return_if_error_status__; \
     }                                               \
   } while (false)
 

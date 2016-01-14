@@ -1,0 +1,15 @@
+language: go
+sudo: required
+dist: trusty
+before_install:
+  - sudo apt-get update -qq
+  - sudo apt-get install -y libaio-dev
+  - sudo apt-get install -y libleveldb-dev
+  - sudo apt-get install -y libsnappy-dev
+  - sudo apt-get install -y g++
+  - sudo apt-get install -y libcap2-bin
+  - sudo apt-get install -y libseccomp-dev
+  - sudo apt-get install -y jq
+script:
+  - go test ./...
+  - bash integration_test/test.sh

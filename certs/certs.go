@@ -37,11 +37,19 @@ const (
 	validFor = 365 * 24 * time.Hour
 )
 
+type CertType int
+
+const (
+	CA CertType = iota
+	Server
+	Client
+)
+
 // WriteNewCerts generates a self-signed certificate pair for use in
 // locally authorizing clients.  If 'server' is true, it writes out certs
 // which can be used to verify the server, otherwise it writes out certs
 // clients can use to authorize themselves to the server.
-func WriteNewCerts(certFile, keyFile string, caCertFile string, server bool, is_ca bool ) error {
+func WriteNewCerts(certFile, keyFile string, caCertFile string, crtType CertType) error {
 
 	var caCert *x509.Certificate
 
@@ -69,7 +77,7 @@ func WriteNewCerts(certFile, keyFile string, caCertFile string, server bool, is_
 
 	caCert = template
 
-	if (caCertFile != "") {
+	if caCertFile != "" {
 		if certBytes, err := ioutil.ReadFile(caCertFile); err != nil {
 			return nil, fmt.Errorf("could not ca read cert file: %v", err)
 		} else if block, _ := pem.Decode(certBytes); block == nil {
@@ -79,16 +87,16 @@ func WriteNewCerts(certFile, keyFile string, caCertFile string, server bool, is_
 		}
 	}
 
-
 	var keyFileMode os.FileMode
-	if is_ca {
+
+	switch crtType {
+	case CA:
 		keyFileMode = 0600
 		template.IsCA = true
-	}
-	if server {
+	case Server:
 		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 		keyFileMode = 0600
-	} else {
+	case Client:
 		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
 		keyFileMode = 0640
 	}

@@ -51,7 +51,7 @@ const (
 
 	// These files will be generated in Config.CertPath.
 	caCertFilename     = "ca_cert.pem"
-        caKeyFilename      = "ca_key.pem"
+	caKeyFilename      = "ca_key.pem"
 	clientCertFilename = "client_cert.pem"
 	clientKeyFilename  = "client_key.pem"
 	serverCertFilename = "server_cert.pem"
@@ -69,13 +69,13 @@ func (e *Env) Serve() error {
 		filepath.Join(e.conf.CertPath, clientKeyFilename),
 		filepath.Join(e.conf.CertPath, serverCertFilename),
 		filepath.Join(e.conf.CertPath, serverKeyFilename)
-	if err := certs.WriteNewCerts(caCert, caKey, "", false, true); err != nil {
+	if err := certs.WriteNewCerts(caCert, caKey, "", CA); err != nil {
 		return fmt.Errorf("cannot write ca certs: %v", err)
 	}
-	if err := certs.WriteNewCerts(clientCert, clientKey, caKey, false, false); err != nil {
+	if err := certs.WriteNewCerts(clientCert, clientKey, caKey, Client); err != nil {
 		return fmt.Errorf("cannot write client certs: %v", err)
 	}
-	if err := certs.WriteNewCerts(serverCert, serverKey, caKey, true, false); err != nil {
+	if err := certs.WriteNewCerts(serverCert, serverKey, caKey, Server); err != nil {
 		return fmt.Errorf("cannot write server certs: %v", err)
 	}
 	tlsConfig, err := certs.ClientVerifyingTLSConfig(caCert)

@@ -71,7 +71,7 @@ Info "Writing output to directory '$OUTDIR'"
 mkdir $OUTDIR/{pkt,idx,certs}
 Info "Setting up $DUMMY interface"
 sudo /sbin/modprobe dummy
-sudo ip link add dummy0 type dummy || Error "$DUMMY may already exist"
+sudo ip link add $DUMMY type dummy || Error "$DUMMY may already exist"
 sudo ifconfig $DUMMY promisc up
 set +e
 
@@ -108,6 +108,7 @@ cat > $OUTDIR/config << EOF
   , "StenotypePath": "$STENOTYPE_BIN"
   , "Interface": "$DUMMY"
   , "Port": $PORT
+  , "Host": "127.0.0.1"
   , "Flags": ["-v", "-v", "-v"]
   , "CertPath": "$OUTDIR/certs"
 }

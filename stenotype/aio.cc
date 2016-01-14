@@ -91,7 +91,7 @@ Error PWrite::Done(io_event* event) {
   }
   file->RemoveOutstanding(this);
   delete this;
-  return move(result);
+  return result;
 }
 
 SingleFile::~SingleFile() {

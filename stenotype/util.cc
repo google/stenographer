@@ -110,7 +110,7 @@ void Watchdog::Watch() {
     if (done_) {
       return;
     } else if (last != ctr_) {
-      LOG(V2) << "Fed watchdog: " << description_;
+      VLOG(2) << "Fed watchdog: " << description_;
       last = ctr_;
       continue;
     }

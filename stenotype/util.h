@@ -163,22 +163,24 @@ class LogLine {
 };
 
 extern int logging_verbose_level;
+
+typedef std::unique_ptr<std::string> Error;
+
+}  // namespace st
+// Define macros OUTSIDE of the 'st' namespace.
+
 #define LOGGING_FATAL_CRASH true
 #define LOGGING_ERROR_CRASH false
 #define LOGGING_INFO_CRASH false
-#define LOGGING_V1_CRASH false
-#define LOGGING_V2_CRASH false
-#define LOGGING_V3_CRASH false
-#define LOGGING_V4_CRASH false
 
 #define LOGGING_FATAL_LOG true
 #define LOGGING_ERROR_LOG true
 #define LOGGING_INFO_LOG (logging_verbose_level > 0)
-#define LOGGING_V1_LOG (logging_verbose_level > 1)
-#define LOGGING_V2_LOG (logging_verbose_level > 2)
-#define LOGGING_V3_LOG (logging_verbose_level > 3)
-#define LOGGING_V4_LOG (logging_verbose_level > 4)
 
+#ifndef VLOG
+#define VLOG(x) if (logging_verbose_level > (x)) \
+  ::st::LogLine(false, __FILE__, __LINE__)
+#endif
 #ifndef LOG
 #define LOG(level)           \
   if (LOGGING_##level##_LOG) \
@@ -189,26 +191,24 @@ extern int logging_verbose_level;
   if (!(expr)) LOG(FATAL) << "CHECK(" #expr ") "
 #endif
 
-typedef std::unique_ptr<std::string> Error;
-
 #define SUCCEEDED(x) ((x).get() == NULL)
 #define SUCCESS NULL
 
-#define ERROR(x) Error(new std::string(x))
+#define ERROR(x) ::st::Error(new std::string(x))
 
-#define RETURN_IF_ERROR(status, msg)                \
-  do {                                              \
-    Error __return_if_error_status__ = (status);    \
-    if (!SUCCEEDED(__return_if_error_status__)) {   \
-      __return_if_error_status__->append(" <- ");   \
-      __return_if_error_status__->append(msg);      \
-      return __return_if_error_status__; \
-    }                                               \
+#define RETURN_IF_ERROR(status, msg)                   \
+  do {                                                 \
+    ::st::Error __return_if_error_status__ = (status); \
+    if (!SUCCEEDED(__return_if_error_status__)) {      \
+      __return_if_error_status__->append(" <- ");      \
+      __return_if_error_status__->append(msg);         \
+      return __return_if_error_status__;               \
+    }                                                  \
   } while (false)
 
 #define LOG_IF_ERROR(status, msg)                            \
   do {                                                       \
-    Error __log_if_error_status__ = (status);                \
+    ::st::Error __log_if_error_status__ = (status);          \
     if (!SUCCEEDED(__log_if_error_status__)) {               \
       LOG(ERROR) << msg << ": " << *__log_if_error_status__; \
     }                                                        \
@@ -216,14 +216,14 @@ typedef std::unique_ptr<std::string> Error;
 
 #define CHECK_SUCCESS(x)                                                   \
   do {                                                                     \
-    Error __check_success_error__ = (x);                                   \
+    ::st::Error __check_success_error__ = (x);                             \
     CHECK(SUCCEEDED(__check_success_error__)) << #x << ": "                \
                                               << *__check_success_error__; \
   } while (false)
 
 #define REPLACE_IF_ERROR(initial, replacement)         \
   do {                                                 \
-    Error __replacement_error__ = (replacement);       \
+    ::st::Error __replacement_error__ = (replacement); \
     if (!SUCCEEDED(__replacement_error__)) {           \
       if (!SUCCEEDED(initial)) {                       \
         LOG(ERROR) << "replacing error: " << *initial; \
@@ -231,6 +231,8 @@ typedef std::unique_ptr<std::string> Error;
       initial = std::move(__replacement_error__);      \
     }                                                  \
   } while (false)
+
+namespace st {
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Synchronization primitives

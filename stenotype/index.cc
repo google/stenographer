@@ -269,7 +269,7 @@ Error Index::Flush() {
   LOG(INFO) << "Wrote all index files for " << filename << ", moving to "
             << unhidden;
   RETURN_IF_ERROR(Errno(rename(filename.c_str(), unhidden.c_str())), "rename");
-  LOG(V1) << "Stored " << packets_ << " with " << ip4_.size() << " IP4 "
+  VLOG(1) << "Stored " << packets_ << " with " << ip4_.size() << " IP4 "
           << ip6_.size() << " IP6 " << proto_.size() << " protos "
           << port_.size() << " ports " << vlan_.size() << " vlan "
           << mpls_.size() << " mpls";

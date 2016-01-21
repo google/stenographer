@@ -32,12 +32,12 @@ class SingleFile;
 class PWrite {
  public:
   PWrite(Block* b, SingleFile* f) {
-    LOG(V3) << "PWriteBlockConstructor b" << int64_t(b) << " INTO b"
+    VLOG(3) << "PWriteBlockConstructor b" << int64_t(b) << " INTO b"
             << int64_t(&block);
     block.Swap(b);
     file = f;
   }
-  ~PWrite() { LOG(V3) << "PWriteBLockDestructor b" << int64_t(&block); }
+  ~PWrite() { VLOG(3) << "PWriteBLockDestructor b" << int64_t(&block); }
 
   Error Done(io_event* evt);
 
@@ -63,7 +63,7 @@ class SingleFile {
   int Outstanding() { return outstanding_.size(); }
   void RemoveOutstanding(PWrite* write) {
     CHECK(outstanding_.erase(write) == 1);
-    LOG(V2) << "File has " << outstanding_.size() << " remaining ops";
+    VLOG(2) << "File has " << outstanding_.size() << " remaining ops";
   }
   void RequestClose() { truncate_ = offset_; }
   bool Closable() { return outstanding_.size() == 0 && truncate_ >= 0; }
@@ -145,7 +145,7 @@ Error Output::SetUp() {
       break;
     }
     SleepForSeconds(1);
-    LOG(V1) << "io_setup retrying";
+    VLOG(1) << "io_setup retrying";
   }
   return NegErrno(ret);
 }

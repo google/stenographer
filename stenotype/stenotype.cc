@@ -241,7 +241,7 @@ void DropPrivileges() {
     CHECK(group != NULL) << "Unable to get info for group " << flag_gid;
     CHECK_SUCCESS(Errno(setgid(group->gr_gid)));
   } else {
-    LOG(V1) << "Staying with GID=" << getgid();
+    VLOG(1) << "Staying with GID=" << getgid();
   }
   if (getuid() == 0 || flag_uid != "") {
     if (flag_uid == "") {
@@ -255,7 +255,7 @@ void DropPrivileges() {
     CHECK_SUCCESS(Errno(initgroups(flag_uid.c_str(), getgid())));
     CHECK_SUCCESS(Errno(setuid(passwd->pw_uid)));
   } else {
-    LOG(V1) << "Staying with UID=" << getuid();
+    VLOG(1) << "Staying with UID=" << getuid();
   }
 }
 
@@ -372,7 +372,7 @@ Error SetAffinity(int cpu) {
 }
 
 void WriteIndexes(int thread, st::ProducerConsumerQueue* write_index) {
-  LOG(V1) << "Starting WriteIndexes thread " << thread;
+  VLOG(1) << "Starting WriteIndexes thread " << thread;
   Watchdog dog("WriteIndexes thread " + std::to_string(thread),
                (flag_watchdogs ? flag_fileage_sec * 3 : -1));
   pid_t tid = syscall(SYS_gettid);
@@ -380,18 +380,18 @@ void WriteIndexes(int thread, st::ProducerConsumerQueue* write_index) {
                "setpriority");
   DropIndexThreadPrivileges();
   while (true) {
-    LOG(V1) << "Waiting for index";
+    VLOG(1) << "Waiting for index";
     Index* i = reinterpret_cast<Index*>(write_index->Get());
-    LOG(V1) << "Got index " << int64_t(i);
+    VLOG(1) << "Got index " << int64_t(i);
     if (i == NULL) {
       break;
     }
     LOG_IF_ERROR(i->Flush(), "index flush");
-    LOG(V1) << "Wrote index " << int64_t(i);
+    VLOG(1) << "Wrote index " << int64_t(i);
     delete i;
     dog.Feed();
   }
-  LOG(V1) << "Exiting write index thread";
+  VLOG(1) << "Exiting write index thread";
 }
 
 bool run_threads = true;
@@ -404,7 +404,7 @@ void HandleSignals(int sig) {
 }
 
 void HandleSignalsThread() {
-  LOG(V1) << "Handling signals";
+  VLOG(1) << "Handling signals";
   struct sigaction handler;
   handler.sa_handler = &HandleSignals;
   sigemptyset(&handler.sa_mask);
@@ -413,7 +413,7 @@ void HandleSignalsThread() {
   sigaction(SIGTERM, &handler, NULL);
   DropCommonThreadPrivileges();
   main_complete.WaitForNotification();
-  LOG(V1) << "Signal handling done";
+  VLOG(1) << "Signal handling done";
 }
 
 void RunThread(int thread, st::ProducerConsumerQueue* write_index,
@@ -460,7 +460,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
         (current_micros - micros) / kNumMicrosPerSecond;
     if (block_offset == flag_filesize_mb ||
         current_file_age_secs > flag_fileage_sec) {
-      LOG(V1) << "Rotating file " << micros << " with " << block_offset
+      VLOG(1) << "Rotating file " << micros << " with " << block_offset
               << " blocks";
       // File size got too big, rotate file.
       micros = current_micros;
@@ -509,7 +509,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
     CHECK_SUCCESS(output.Write(&b));
     dog.Feed();
   }
-  LOG(V1) << "Finishing thread " << thread;
+  VLOG(1) << "Finishing thread " << thread;
   // Write out the last index.
   if (flag_index) {
     write_index->Put(index);
@@ -522,9 +522,9 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
 int Main(int argc, char** argv) {
   LOG_IF_ERROR(Errno(prctl(PR_SET_PDEATHSIG, SIGTERM)), "prctl PDEATHSIG");
   ParseOptions(argc, argv);
-  LOG(V1) << "Stenotype running with these arguments:";
+  VLOG(1) << "Stenotype running with these arguments:";
   for (int i = 0; i < argc; i++) {
-    LOG(V1) << i << ":\t\"" << argv[i] << "\"";
+    VLOG(1) << i << ":\t\"" << argv[i] << "\"";
   }
   LOG(INFO) << "Starting...";
 
@@ -621,10 +621,10 @@ int Main(int argc, char** argv) {
   // Now, we can finally start the threads that read in packets, index them, and
   // write them to disk.
   auto write_indexes = new st::ProducerConsumerQueue[flag_threads];
-  LOG(V1) << "Starting writing threads";
+  VLOG(1) << "Starting writing threads";
   std::vector<std::thread*> threads;
   for (int i = 0; i < flag_threads; i++) {
-    LOG(V1) << "Starting thread " << i;
+    VLOG(1) << "Starting thread " << i;
     threads.push_back(
         new std::thread(&RunThread, i, &write_indexes[i], sockets[i]));
   }
@@ -635,7 +635,7 @@ int Main(int argc, char** argv) {
   // TODO(gconnell):  Move index writing thread creation into RunThread.
   std::vector<std::thread*> index_threads;
   if (flag_index) {
-    LOG(V1) << "Starting indexing threads";
+    VLOG(1) << "Starting indexing threads";
     for (int i = 0; i < flag_threads; i++) {
       std::thread* t = new std::thread(&WriteIndexes, i, &write_indexes[i]);
       index_threads.push_back(t);
@@ -649,20 +649,20 @@ int Main(int argc, char** argv) {
   DropCommonThreadPrivileges();
 
   for (auto thread : threads) {
-    LOG(V1) << "===============Waiting for thread==============";
+    VLOG(1) << "===============Waiting for thread==============";
     CHECK(thread->joinable());
     thread->join();
-    LOG(V1) << "Thread finished";
+    VLOG(1) << "Thread finished";
     delete thread;
   }
-  LOG(V1) << "Finished all threads";
+  VLOG(1) << "Finished all threads";
   if (flag_index) {
     for (int i = 0; i < flag_threads; i++) {
-      LOG(V1) << "Closing write index queue " << i << ", waiting for thread";
+      VLOG(1) << "Closing write index queue " << i << ", waiting for thread";
       write_indexes[i].Close();
       CHECK(index_threads[i]->joinable());
       index_threads[i]->join();
-      LOG(V1) << "Index thread finished";
+      VLOG(1) << "Index thread finished";
       delete index_threads[i];
     }
   }

@@ -331,7 +331,7 @@ func PacketsToFile(in *PacketChan, out io.Writer, limit Limit) error {
 			return fmt.Errorf("error writing packet: %v", err)
 		}
 		count++
-		if limit.ShouldStopAfter(Limit{Bytes: len(p.Data) + pcapHeaderSize, Packets: 1}) {
+		if limit.ShouldStopAfter(Limit{Bytes: int64(len(p.Data) + pcapHeaderSize), Packets: 1}) {
 			return nil
 		}
 	}
@@ -382,10 +382,10 @@ func Watchdog(d time.Duration, msg string) *time.Timer {
 // Limit is the amount of data we want to return, or the amount taken by a
 // single upload.
 type Limit struct {
-	Bytes, Packets int
+	Bytes, Packets int64
 }
 
-func dec(a *int, b int) bool {
+func dec(a *int64, b int64) bool {
 	if *a != 0 && b != 0 {
 		*a -= b
 		return *a <= 0
@@ -404,12 +404,12 @@ func (a *Limit) ShouldStopAfter(b Limit) bool {
 // LimitFromHeaders returns a Limit based on HTTP headers.
 func LimitFromHeaders(h http.Header) (a Limit, err error) {
 	if limitStr := h.Get("Steno-Limit-Bytes"); limitStr != "" {
-		if a.Bytes, err = strconv.Atoi(limitStr); err != nil {
+		if a.Bytes, err = strconv.ParseInt(limitStr, 0, 64); err != nil {
 			return
 		}
 	}
 	if limitStr := h.Get("Steno-Limit-Packets"); limitStr != "" {
-		if a.Packets, err = strconv.Atoi(limitStr); err != nil {
+		if a.Packets, err = strconv.ParseInt(limitStr, 0, 64); err != nil {
 			return
 		}
 	}

@@ -31,12 +31,37 @@ See README.md for more details on the Stenographer query language.
 
 Set the STENOGRAPHER_CONFIG environmental variable to point to your stenographer
 config if it's in a nonstandard place (defaults to /etc/stenographer/config).
+
+$0 arguments are given before the filter.  These include:
+  --limit-bytes X    :  Stop output once we've exceeded X bytes
+  --limit-packets X  :  Stop output once we've exceeded X packets
+
+For example:
+  # Print first 6 packets or 2K bytes, whichever comes first,
+  # from source IP 1.1.1.1
+  $0 --limit-packets 6 --limit-bytes 2048 'host 1.1.1.1'
 EOF
   exit 1
 fi
 
-STENOQUERY="$1"
-shift
+HEADERS=""
+while true; do
+  case "$1" in
+    --limit-packets)
+      HEADERS="$HEADERS --header Steno-Limit-Packets:$2"
+      shift 2
+      ;;
+    --limit-bytes)
+      HEADERS="$HEADERS --header Steno-Limit-Bytes:$2"
+      shift 2
+      ;;
+    *)
+      STENOQUERY="$1"
+      shift
+      break
+      ;;
+  esac
+done
 
 TCPDUMP=$(PATH=$PATH:/usr/local/sbin:/usr/sbin:/sbin which tcpdump)
 STENOCURL=$(PATH=$(dirname "$0"):$PATH which stenocurl)
@@ -46,5 +71,5 @@ echo "Running stenographer query '$STENOQUERY', piping to 'tcpdump $@'" >&2
     -d "$STENOQUERY" \
     --silent \
     --max-time 890 \
-    --show-error |
+    --show-error $HEADERS |
     "$TCPDUMP" -r /dev/stdin -s 0 "$@"

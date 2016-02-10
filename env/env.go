@@ -88,7 +88,7 @@ func (e *Env) handleQuery(w http.ResponseWriter, r *http.Request) {
 	w = httputil.Log(w, r, true)
 	defer log.Print(w)
 
-	limit, err := base.LimitFromHeaders(w.Header())
+	limit, err := base.LimitFromHeaders(r.Header)
 	if err != nil {
 		http.Error(w, "Invalid Limit Headers", http.StatusBadRequest)
 		return

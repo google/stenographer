@@ -358,7 +358,7 @@ func (t *Thread) ExportDebugHandlers(mux *http.ServeMux) {
 	mux.HandleFunc(prefix+"/packets", func(w http.ResponseWriter, r *http.Request) {
 		w = httputil.Log(w, r, false)
 		defer log.Print(w)
-		limit, err := base.LimitFromHeaders(w.Header())
+		limit, err := base.LimitFromHeaders(r.Header)
 		if err != nil {
 			http.Error(w, "Bad limit headers", http.StatusBadRequest)
 			return

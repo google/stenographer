@@ -168,19 +168,24 @@ func TestPacketsToFile(t *testing.T) {
 		0x03, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
 		0x01, 0x02, 0x03,
 	}
-	PacketsToFile(pc, &out)
+	PacketsToFile(pc, &out, Limit{})
 	if got := out.Bytes(); !bytes.Equal(want, got) {
 		t.Errorf("wrong packets:\nwant: %+v\ngot:  %+v", want, got)
 	}
 }
 
 func TestContextDone(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx := NewContext(0)
 	if ContextDone(ctx) {
 		t.Fatal("shouldn't be done yet")
 	}
-	cancel()
+	ctx.Cancel()
 	if !ContextDone(ctx) {
 		t.Fatal("should be done now")
+	}
+	ctx = NewContext(time.Microsecond)
+	time.Sleep(time.Millisecond)
+	if !ContextDone(ctx) {
+		t.Fatal("should have timed out by now")
 	}
 }

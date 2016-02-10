@@ -79,27 +79,36 @@ func (e *Env) Serve() error {
 		Addr:      fmt.Sprintf("%s:%d", e.conf.Host, e.conf.Port),
 		TLSConfig: tlsConfig,
 	}
-	http.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
-		w = httputil.Log(w, r, true)
-		defer log.Print(w)
-		queryBytes, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "could not read request body", http.StatusBadRequest)
-			return
-		}
-		q, err := query.NewQuery(string(queryBytes))
-		if err != nil {
-			http.Error(w, "could not parse query", http.StatusBadRequest)
-			return
-		}
-		ctx, cancel := httputil.Context(w, r, time.Minute*15)
-		defer cancel()
-		packets := e.Lookup(ctx, q)
-		w.Header().Set("Content-Type", "appliation/octet-stream")
-		base.PacketsToFile(packets, w)
-	})
+	http.HandleFunc("/query", e.handleQuery)
 	http.Handle("/debug/stats", stats.S)
 	return server.ListenAndServeTLS(serverCert, serverKey)
+}
+
+func (e *Env) handleQuery(w http.ResponseWriter, r *http.Request) {
+	w = httputil.Log(w, r, true)
+	defer log.Print(w)
+
+	limit, err := base.LimitFromHeaders(w.Header())
+	if err != nil {
+		http.Error(w, "Invalid Limit Headers", http.StatusBadRequest)
+		return
+	}
+
+	queryBytes, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "could not read request body", http.StatusBadRequest)
+		return
+	}
+	q, err := query.NewQuery(string(queryBytes))
+	if err != nil {
+		http.Error(w, "could not parse query", http.StatusBadRequest)
+		return
+	}
+	ctx := httputil.Context(w, r, time.Minute*15)
+	defer ctx.Cancel()
+	packets := e.Lookup(ctx, q)
+	w.Header().Set("Content-Type", "appliation/octet-stream")
+	base.PacketsToFile(packets, w, limit)
 }
 
 // New returns a new Env for use in running Stenotype.

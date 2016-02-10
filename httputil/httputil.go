@@ -25,31 +25,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/stats"
-	"golang.org/x/net/context"
 )
 
 // Context returns a new context.Content that cancels when the
 // underlying http.ResponseWriter closes.
-func Context(w http.ResponseWriter, r *http.Request, timeout time.Duration) (context.Context, context.CancelFunc) {
-	var ctx context.Context
-	var cancel context.CancelFunc
-	if timeout != 0 {
-		ctx, cancel = context.WithTimeout(context.Background(), timeout)
-	} else {
-		ctx, cancel = context.WithCancel(context.Background())
-	}
+func Context(w http.ResponseWriter, r *http.Request, timeout time.Duration) base.Context {
+	ctx := base.NewContext(timeout)
 	if closer, ok := w.(http.CloseNotifier); ok {
 		go func() {
 			select {
 			case <-closer.CloseNotify():
 				log.Printf("Detected closed HTTP connection, canceling query")
-				cancel()
+				ctx.Cancel()
 			case <-ctx.Done():
 			}
 		}()
 	}
-	return ctx, cancel
+	return ctx
 }
 
 type httpLog struct {

@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -305,7 +307,7 @@ const snapLen = 65536
 
 // PacketsToFile writes all packets from 'in' to 'out', writing out all packets
 // in a valid PCAP file format.
-func PacketsToFile(in *PacketChan, out io.Writer) error {
+func PacketsToFile(in *PacketChan, out io.Writer, limit Limit) error {
 	w := pcapgo.NewWriter(out)
 	w.WriteFileHeader(snapLen, layers.LinkTypeEthernet)
 	count := 0
@@ -313,6 +315,11 @@ func PacketsToFile(in *PacketChan, out io.Writer) error {
 	defer func() {
 		V(1, "wrote %d packets of %d input packets", count, len(in.C))
 	}()
+	const pcapHeaderSize = 16 // same for file header and per-packet header
+	// If someone REALLY wants an empty pcap file, we'll give it to them :P
+	if limit.ShouldStopAfter(Limit{Bytes: pcapHeaderSize}) {
+		return nil
+	}
 	for p := range in.Receive() {
 		if len(p.Data) > snapLen {
 			p.Data = p.Data[:snapLen]
@@ -324,6 +331,9 @@ func PacketsToFile(in *PacketChan, out io.Writer) error {
 			return fmt.Errorf("error writing packet: %v", err)
 		}
 		count++
+		if limit.ShouldStopAfter(Limit{Bytes: len(p.Data) + pcapHeaderSize, Packets: 1}) {
+			return nil
+		}
 	}
 	return in.Err()
 }
@@ -367,4 +377,71 @@ func Watchdog(d time.Duration, msg string) *time.Timer {
 	return time.AfterFunc(d, func() {
 		log.Fatalf("watchdog failed: %v", msg)
 	})
+}
+
+// Limit is the amount of data we want to return, or the amount taken by a
+// single upload.
+type Limit struct {
+	Bytes, Packets int
+}
+
+func dec(a *int, b int) bool {
+	if *a != 0 && b != 0 {
+		*a -= b
+		return *a <= 0
+	}
+	return false
+}
+
+// ShouldStopAfter returns true if output should stop after the next update,
+// where the next update is of size 'b'.
+func (a *Limit) ShouldStopAfter(b Limit) bool {
+	bytes := dec(&a.Bytes, b.Bytes)
+	packets := dec(&a.Packets, b.Packets)
+	return bytes || packets
+}
+
+// LimitFromHeaders returns a Limit based on HTTP headers.
+func LimitFromHeaders(h http.Header) (a Limit, err error) {
+	if limitStr := h.Get("Steno-Limit-Bytes"); limitStr != "" {
+		if a.Bytes, err = strconv.Atoi(limitStr); err != nil {
+			return
+		}
+	}
+	if limitStr := h.Get("Steno-Limit-Packets"); limitStr != "" {
+		if a.Packets, err = strconv.Atoi(limitStr); err != nil {
+			return
+		}
+	}
+	return
+}
+
+// Context wraps a context.Context with its cancel function.
+type Context interface {
+	context.Context
+	Cancel()
+}
+
+type contextWithCancel struct {
+	context.Context
+	cancel context.CancelFunc
+}
+
+// Cancel cancels this context.
+func (c *contextWithCancel) Cancel() {
+	c.cancel()
+}
+
+// WrapContext wraps a context.Context in our type of Context.
+// Timeout of zero means never time out.
+// Cancel function should be called when operation is completed.
+func NewContext(timeout time.Duration) Context {
+	var c context.Context
+	var cancel context.CancelFunc
+	if timeout == 0 {
+		c, cancel = context.WithCancel(context.Background())
+	} else {
+		c, cancel = context.WithTimeout(context.Background(), timeout)
+	}
+	return &contextWithCancel{c, cancel}
 }

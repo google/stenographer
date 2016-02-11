@@ -15,6 +15,8 @@
 DEPS=Makefile *.h
 
 DEFINES=
+SHARED_LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp
+
 ifneq (,$(wildcard /usr/include/testimony.h))
 DEFINES += -DTESTIMONY
 DEPS += /usr/include/testimony.h

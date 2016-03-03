@@ -70,10 +70,6 @@ OUTDIR="$(mktemp -d $BASEDIR/steno.XXXXXXXXXX)"
 Info "Writing output to directory '$OUTDIR'"
 
 mkdir $OUTDIR/{pkt,idx,certs}
-Info "Setting up certs"
-CURR_USR="$(id -u -n)"
-CURR_GRP="$(id -g -n)"
-../stenokeys.sh $OUTDIR/certs $CURR_USR $CURR_GRP
 
 Info "Setting up $DUMMY interface"
 sudo /sbin/modprobe dummy
@@ -120,6 +116,12 @@ cat > $OUTDIR/config << EOF
   , "CertPath": "$OUTDIR/certs"
 }
 EOF
+
+Info "Setting up certs"
+CURR_USR="$(id -u -n)"
+CURR_GRP="$(id -g -n)"
+STENOGRAPHER_CONFIG="$OUTDIR/config" ../stenokeys.sh $OUTDIR/certs $CURR_USR $CURR_GRP
+
 Info "Starting stenographer"
 ../stenographer --config=$OUTDIR/config --syslog=false --v=4 >$OUTDIR/log 2>&1 &
 STENOGRAPHER_PID="$!"

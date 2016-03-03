@@ -72,13 +72,14 @@ function server_common {
 }
 
 function client_common {
-  echo "client.steno"
+  echo "client$(date +%s).steno"
 }
 
 function gencert {
   if [ -f ${1}_cert.pem ]; then
     echo "Skipping generation of '${1}' key/cert, ${1}_cert.pem already exists" >&2
   else
+    echo "Generating key/cert for '${1}'"
     cat > ${CONFIG} <<EOF
 $(sslconfig_common $(${1}_common))
 [ client_ext ]
@@ -119,6 +120,15 @@ function ch {
   chown $CHOWN $@
   chmod $CHMOD $@
 }
+
+function onexit {
+  if [ -f errs ]; then
+    cat errs >&2
+    rm -f errs
+  fi
+}
+
+trap onexit EXIT
 
 set -e
 

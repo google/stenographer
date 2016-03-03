@@ -91,11 +91,13 @@ function CleanUp {
       KILLCMD=kill ReallyKill $STENOTYPE_PID
     fi
     Info "Deleting $DUMMY interface"
-    Info "Removing $OUTDIR"
-    sudo find $OUTDIR -ls
-    rm -rfv $OUTDIR
     sudo ifconfig $DUMMY down
     sudo ip link del dummy0
+    Info "--- LOG ---"
+    /bin/cat "$OUTDIR/log"
+    Info "Removing $OUTDIR"
+    sudo find "$OUTDIR" -ls
+    rm -rfv "$OUTDIR"
   fi
 }
 trap CleanUp EXIT

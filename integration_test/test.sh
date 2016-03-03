@@ -66,9 +66,15 @@ popd
 
 Info "Setting up output directory"
 OUTDIR="$(mktemp -d $BASEDIR/steno.XXXXXXXXXX)"
+/bin/chmod g+rx "$OUTDIR"
 Info "Writing output to directory '$OUTDIR'"
 
 mkdir $OUTDIR/{pkt,idx,certs}
+Info "Setting up certs"
+CURR_USR="$(id -u -n)"
+CURR_GRP="$(id -g -n)"
+../stenokeys.sh $OUTDIR/certs $CURR_USR $CURR_GRP
+
 Info "Setting up $DUMMY interface"
 sudo /sbin/modprobe dummy
 sudo ip link add $DUMMY type dummy || Error "$DUMMY may already exist"
@@ -90,6 +96,7 @@ function CleanUp {
     fi
     Info "Deleting $DUMMY interface"
     Info "Removing $OUTDIR"
+    sudo find $OUTDIR -ls
     rm -rfv $OUTDIR
     sudo ifconfig $DUMMY down
     sudo ip link del dummy0

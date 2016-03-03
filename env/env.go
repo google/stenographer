@@ -49,9 +49,9 @@ var (
 const (
 	fileSyncFrequency = 15 * time.Second
 
-	// These files will be generated in Config.CertPath.
-	clientCertFilename = "client_cert.pem"
-	clientKeyFilename  = "client_key.pem"
+	// These files will be read from Config.CertPath.
+	// Use stenokeys.sh to generate them.
+	caCertFilename     = "ca_cert.pem"
 	serverCertFilename = "server_cert.pem"
 	serverKeyFilename  = "server_key.pem"
 )
@@ -60,18 +60,7 @@ const (
 // requests.  This server will server over TLS, using the certs
 // stored in c.CertPath to verify itself to clients and verify clients.
 func (e *Env) Serve() error {
-	clientCert, clientKey, serverCert, serverKey :=
-		filepath.Join(e.conf.CertPath, clientCertFilename),
-		filepath.Join(e.conf.CertPath, clientKeyFilename),
-		filepath.Join(e.conf.CertPath, serverCertFilename),
-		filepath.Join(e.conf.CertPath, serverKeyFilename)
-	if err := certs.WriteNewCerts(clientCert, clientKey, false); err != nil {
-		return fmt.Errorf("cannot write client certs: %v", err)
-	}
-	if err := certs.WriteNewCerts(serverCert, serverKey, true); err != nil {
-		return fmt.Errorf("cannot write server certs: %v", err)
-	}
-	tlsConfig, err := certs.ClientVerifyingTLSConfig(clientCert)
+	tlsConfig, err := certs.ClientVerifyingTLSConfig(filepath.Join(e.conf.CertPath, caCertFilename))
 	if err != nil {
 		return fmt.Errorf("cannot verify client cert: %v", err)
 	}
@@ -81,7 +70,9 @@ func (e *Env) Serve() error {
 	}
 	http.HandleFunc("/query", e.handleQuery)
 	http.Handle("/debug/stats", stats.S)
-	return server.ListenAndServeTLS(serverCert, serverKey)
+	return server.ListenAndServeTLS(
+		filepath.Join(e.conf.CertPath, serverCertFilename),
+		filepath.Join(e.conf.CertPath, serverKeyFilename))
 }
 
 func (e *Env) handleQuery(w http.ResponseWriter, r *http.Request) {

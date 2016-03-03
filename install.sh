@@ -27,20 +27,30 @@ source lib.sh
 set -e
 Info "Making sure we have sudo access"
 sudo cat /dev/null
-set +e
 
-Info "Killing aleady-running processes"
-sudo service stenographer stop
-ReallyKill stenographer
-ReallyKill stenotype
-
-set -e
 InstallPackage libaio-dev
 InstallPackage libleveldb-dev
 InstallPackage libsnappy-dev
 InstallPackage g++
 InstallPackage libcap2-bin
 InstallPackage libseccomp-dev
+InstallPackage jq
+InstallPackage openssl
+
+Info "Building stenographer"
+go build
+
+Info "Building stenotype"
+pushd stenotype
+make
+popd
+
+set +e
+Info "Killing aleady-running processes"
+sudo service stenographer stop
+ReallyKill stenographer
+ReallyKill stenotype
+set -e
 
 if ! id stenographer >/dev/null 2>&1; then
   Info "Setting up stenographer user"
@@ -65,7 +75,7 @@ fi
 if [ ! -d /etc/stenographer/certs ]; then
   Info "Setting up stenographer /etc directory"
   sudo mkdir -p /etc/stenographer/certs
-  sudo chown -R stenographer:stenographer /etc/stenographer/certs
+  sudo chown -R root:root /etc/stenographer/certs
   if [ ! -f /etc/stenographer/config ]; then
     sudo cp -vf configs/steno.conf /etc/stenographer/config
     sudo chown root:root /etc/stenographer/config
@@ -80,16 +90,12 @@ if grep -q /path/to /etc/stenographer/config; then
   exit 1
 fi
 
-Info "Building stenographer"
-go build
+sudo ./stenokeys.sh /etc/stenographer/certs stenographer stenographer
+
+Info "Copying stenographer/stenotype"
 sudo cp -vf stenographer "$BINDIR/stenographer"
 sudo chown stenographer:root "$BINDIR/stenographer"
 sudo chmod 0700 "$BINDIR/stenographer"
-
-Info "Building stenotype"
-pushd stenotype
-make
-popd
 sudo cp -vf stenotype/stenotype "$BINDIR/stenotype"
 sudo chown stenographer:root "$BINDIR/stenotype"
 sudo chmod 0500 "$BINDIR/stenotype"

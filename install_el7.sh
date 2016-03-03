@@ -25,7 +25,7 @@
 export KILLCMD=/usr/bin/pkill
 export BINDIR="${BINDIR-/usr/bin}"
 export GOPATH=${HOME}/go
-export PATH=${PATH}/usr/local/go/bin
+export PATH=${PATH}:/usr/local/go/bin
 
 
 # Load support functions
@@ -101,7 +101,7 @@ install_configs () {
 	Info "Setting up stenographer conf directory"
 	if [ ! -d /etc/stenographer/certs ]; then
 		sudo mkdir -p /etc/stenographer/certs
-		sudo chown -R stenographer:stenographer /etc/stenographer/certs
+		sudo chown -R root:root /etc/stenographer/certs
 	fi
 	if [ ! -f /etc/stenographer/config ]; then
 		sudo cp -vf configs/steno.conf /etc/stenographer/config
@@ -115,6 +115,12 @@ install_configs () {
 		Error "/etc/stenographer/config"
 		exit 1
 	fi
+}
+
+install_certs () {
+	cd $_scriptDir
+
+  sudo ./stenokeys.sh /etc/stenographer/certs stenographer stenographer
 }
 
 install_service () {
@@ -195,14 +201,15 @@ start_service () {
 }
 
 check_sudo
-stop_processes
 install_packages
 install_golang
+build_stenographer
+build_stenotype
 install_jq
 add_accounts
 install_configs
+install_certs
 install_service
-build_stenographer
-build_stenotype
 install_stenoread
+stop_processes
 start_service

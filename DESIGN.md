@@ -77,29 +77,36 @@ user requests.
 
 #### Access Control ####
 
-Access to raw packet data is, of course, sensitive.  We wanted to find a way to
-provide and revoke access easily, using simple POSIX permissions.  Here's the
-system we came up with on very short notice:
+Access to the server is controlled with client certificates.  On install, a
+script, `stenokeys.sh`, is run to generate a CA certificate and use it to
+create/sign a client and server certificate.  The client and server authenticate
+each other on every request using the CA certificate as a source of truth.
+POSIX permissions are used locally to control access to the certs... the
+`stenographer` user which runs steno has read access to the server key
+(`steno:root -r--------`).  The `stenographer` group as read access to the
+client key (`root:steno ----r-----`).  Key usage extensions specify that the
+server key must be used as a TLS server, and the client key must be used as a
+TLS client.
 
-   * On startup, stenographer creates a server cert/key pair and client cert/key
-     pair in a certificate directory.  The server key is readable only by
-     the analyst running stenographer.  The server cert and client cert/key are
-     readable by the POSIX `stenographer` group.
-   * The server uses the server cert/key as its TLS cert/key when serving data.
-     The client, when issuing TLS requests, verifies the server is valid by
-     checking against the server cert it can read in the cerficates directory.
-   * The server does client verification using the client cert, which it can
-     read from the certificate directory.  In order to create a valid TLS
-     connection, then, the client must have access to the client key, which is
-     only visible to the stenographer POSIX group.
+Due to the file permissions mentioned above, giving steno access to a local user
+simply requires adding that user to the local `stenographer` group, thus giving
+them access to `client_key.pem`.
 
-Granting access to stenographer on a local machine is as simple as adding a
-analyst to the `stenographer` POSIX group, thus allowing them read access to the
-client key in the certificate directory.  Revoking access involves removing the
-analyst from the POSIX group, then restarting stenographer in order to generate
-new certs/keys (and thus invalidate any old keys the analyst may have copied to
-other locations).
+Once keys are created on install, they're currently NEVER REVOKED.  Thus, if
+someone gets access to a client cert, they'll have access to the server ad
+infinitum.  Should you have problems with a key being released, the current best
+way to handle this is by deleting all data in the `/etc/stenographer/certs`
+directory and rerunning `stenokeys.sh` to generate an entirely new set of keys
+rooted to a new CA.
 
+`stenokeys.sh` will not modify keys/certs that already exist in
+`/etc/stenographer/certs`.  Thus, if you have more complex topologies, you can
+overwrite these values and they'll happily be used by Stenographer.  If, for
+example, you already have a CA in your organization, you can copy its cert into
+the `ca_cert.pem` file, then create `{client,server}_{key,cert}.pem` files
+rooted in that CA and copy them in.  This also allows folks to use a single CA
+cert over multiple stenographer instances, allowing a single client cert to
+access multiple servers over the network.
 
 ### Stenotype ###
 

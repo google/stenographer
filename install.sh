@@ -90,7 +90,7 @@ if grep -q /path/to /etc/stenographer/config; then
   exit 1
 fi
 
-sudo ./stenokeys.sh /etc/stenographer/certs stenographer stenographer
+sudo ./stenokeys.sh stenographer stenographer
 
 Info "Copying stenographer/stenotype"
 sudo cp -vf stenographer "$BINDIR/stenographer"

@@ -122,7 +122,7 @@ EOF
 Info "Setting up certs"
 CURR_USR="$(id -u -n)"
 CURR_GRP="$(id -g -n)"
-STENOGRAPHER_CONFIG="$OUTDIR/config" ../stenokeys.sh $OUTDIR/certs $CURR_USR $CURR_GRP
+STENOGRAPHER_CONFIG="$OUTDIR/config" ../stenokeys.sh $CURR_USR $CURR_GRP
 
 Info "Starting stenographer"
 ../stenographer --config=$OUTDIR/config --syslog=false --v=4 >$OUTDIR/log 2>&1 &

@@ -120,7 +120,7 @@ install_configs () {
 install_certs () {
 	cd $_scriptDir
 
-  sudo ./stenokeys.sh /etc/stenographer/certs stenographer stenographer
+  sudo ./stenokeys.sh stenographer stenographer
 }
 
 install_service () {

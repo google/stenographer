@@ -17,13 +17,12 @@
 # This script sets up stenographer keys for client/server auth.
 
 set -e
-if [[ $# != 3 ]]; then
-  echo "USAGE: $0 <directory> <stenouser> <stenogroup>" >&2
+if [[ $# != 2 ]]; then
+  echo "USAGE: $0 <stenouser> <stenogroup>" >&2
   exit 1
 fi
-USR=$2
-GRP=$3
-cd $1
+USR=$1
+GRP=$2
 CONFIG=$(mktemp -t stenossl.XXXXXXXXXXXX)
 
 function sslconfig_common {
@@ -42,7 +41,7 @@ EOF
 }
 
 function genca {
-  if [ ! -f ca_cert.pem ]; then
+  if [ ! -e ca_cert.pem ]; then
     echo "Generating CA state"
     cat > ${CONFIG} <<EOF
 $(sslconfig_common *.steno)
@@ -54,7 +53,7 @@ EOF
     mkdir -p ca
     chmod 700 ca
     touch ca/index.txt
-    if [ ! -f ca/serial ]; then
+    if [ ! -e ca/serial ]; then
       echo 1000 > ca/serial
     fi
     openssl genrsa -out ca_key.pem 4096 2>>errs
@@ -64,24 +63,32 @@ EOF
   fi
 }
 
-function server_common {
+function getvar {
   STENOGRAPHER_CONFIG="${STENOGRAPHER_CONFIG-/etc/stenographer/config}"
   JQ="$(which jq)"
-  HOST="$( < "$STENOGRAPHER_CONFIG" $JQ -r '.Host')"
-  echo "$HOST"
+  echo "$( < "$STENOGRAPHER_CONFIG" $JQ -r "$1")"
+}
+
+function server_common {
+  echo "$(getvar .Host)"
 }
 
 function client_common {
-  echo "client$(date +%s).steno"
+  echo "$(getvar .Host)_client"
 }
 
+cd "$(getvar .CertPath)"
+
 function gencert {
-  if [ -f ${1}_cert.pem ]; then
-    echo "Skipping generation of '${1}' key/cert, ${1}_cert.pem already exists" >&2
+  TYP="$1"
+  CN="$2"
+  NAME="${TYP}_${CN}"
+  if [ -e ${TYP}_cert.pem ]; then
+    echo "Skipping generation of '${NAME}' key/cert, ${NAME}_cert.pem already exists" >&2
   else
     echo "Generating key/cert for '${1}'"
     cat > ${CONFIG} <<EOF
-$(sslconfig_common $(${1}_common))
+$(sslconfig_common "${CN}")
 [ client_ext ]
 keyUsage = critical,digitalSignature
 basicConstraints = CA:false
@@ -107,9 +114,11 @@ organizationName = match
 countryName = match
 commonName = supplied
 EOF
-    openssl genrsa -out ${1}_key.pem 4096 2>>errs
-    openssl req -new -config ${CONFIG} -key ${1}_key.pem -out ${1}.csr -reqexts ${1}_ext -days 9999 2>>errs
-    openssl ca -config ${CONFIG} -name ca_config -batch -out ${1}_cert.pem -infiles ${1}.csr 2>>errs
+    openssl genrsa -out ${NAME}_key.pem 4096 2>>errs
+    openssl req -new -config ${CONFIG} -key ${NAME}_key.pem -out ${NAME}.csr -reqexts ${TYP}_ext -days 9999 2>>errs
+    openssl ca -config ${CONFIG} -name ca_config -batch -out ${NAME}_cert.pem -infiles ${NAME}.csr 2>>errs
+    ln -s -f ${NAME}_key.pem ${TYP}_key.pem
+    ln -s -f ${NAME}_cert.pem ${TYP}_cert.pem
   fi
 }
 
@@ -122,7 +131,7 @@ function ch {
 }
 
 function onexit {
-  if [ -f errs ]; then
+  if [ -e errs ]; then
     cat errs >&2
     rm -f errs
   fi
@@ -132,15 +141,15 @@ trap onexit EXIT
 
 set -e
 
-if [ ! -f ca_cert.pem ]; then
+if [ ! -e ca_cert.pem ]; then
   # If we're upgrading an old instance of steno, without a CA cert, we'll need
   # to kill their existing certs/keys.
-  rm -f {ca,client,server}_{cert,key}.pem
+  rm -f *.pem
 fi
 
 genca
-gencert client
-gencert server
+gencert client "$(client_common)"
+gencert server "$(server_common)"
 
 CURR_USR="$(id -u -n)"  # probably 'root'
 CURR_GRP="$(id -g -n)"  # probably 'root'
@@ -151,4 +160,4 @@ ch $CURR_USR:$GRP      440 client_key.pem
 ch $USR:$CURR_GRP      400 server_key.pem
 ch $CURR_USR:$CURR_GRP 444 *_cert.pem
 
-rm -f {client,server}.csr ${CONFIG} errs
+rm -f *.csr ${CONFIG} errs

@@ -16,11 +16,13 @@
 
 # This script sets up stenographer keys for client/server auth.
 
-set -e
 if [[ $# != 2 ]]; then
   echo "USAGE: $0 <stenouser> <stenogroup>" >&2
   exit 1
 fi
+
+set -e
+
 USR=$1
 GRP=$2
 CONFIG=$(mktemp -t stenossl.XXXXXXXXXXXX)
@@ -76,8 +78,6 @@ function server_common {
 function client_common {
   echo "$(getvar .Host)_client"
 }
-
-cd "$(getvar .CertPath)"
 
 function gencert {
   TYP="$1"
@@ -139,11 +139,13 @@ function onexit {
 
 trap onexit EXIT
 
-set -e
+# Create (if necessary) and enter the certificate directory.
+mkdir -p "$(getvar .CertPath)"
+cd "$(getvar .CertPath)"
 
+# If we're upgrading an old instance of steno, without a CA cert, we'll need
+# to kill their existing certs/keys.
 if [ ! -e ca_cert.pem ]; then
-  # If we're upgrading an old instance of steno, without a CA cert, we'll need
-  # to kill their existing certs/keys.
   rm -f *.pem
 fi
 

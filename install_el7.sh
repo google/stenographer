@@ -63,12 +63,15 @@ install_golang () {
 
 	if (! which go &>/dev/null ); then
 		Info "Installing golang ..."
+		TMP="$(mktemp -d)"
+		pushd $TMP
 		curl -L -O -J -s $_url
 		sudo tar -C /usr/local -zxf $(basename $_url)
 		sudo tee /etc/profile.d/golang.sh >/dev/null << EOF
 pathmunge /usr/local/go/bin
 export GOPATH=\${HOME}/go
 EOF
+		popd
 	fi
 
 }

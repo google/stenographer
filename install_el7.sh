@@ -63,13 +63,15 @@ install_golang () {
 
 	if (! which go &>/dev/null ); then
 		Info "Installing golang ..."
-		cd /tmp
+		TMP="$(mktemp -d)"
+		pushd $TMP
 		curl -L -O -J -s $_url
 		sudo tar -C /usr/local -zxf $(basename $_url)
 		sudo tee /etc/profile.d/golang.sh >/dev/null << EOF
 pathmunge /usr/local/go/bin
 export GOPATH=\${HOME}/go
 EOF
+		popd
 	fi
 
 }
@@ -119,8 +121,7 @@ install_configs () {
 
 install_certs () {
 	cd $_scriptDir
-
-  sudo ./stenokeys.sh stenographer stenographer
+    sudo ./stenokeys.sh stenographer stenographer
 }
 
 install_service () {
@@ -203,10 +204,10 @@ start_service () {
 check_sudo
 install_packages
 install_golang
+add_accounts
 build_stenographer
 build_stenotype
 install_jq
-add_accounts
 install_configs
 install_certs
 install_service

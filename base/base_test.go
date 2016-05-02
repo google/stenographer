@@ -20,20 +20,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/gopacket"
 	"golang.org/x/net/context"
 )
 
 var ctx = context.Background()
 
 func testPacketData(t *testing.T) []*Packet {
-	var ci = []struct {
-		Timestamp     time.Time
-		CaptureLength int
-		Length        int
-	}{
-		{time.Unix(123, 123), 3, 3},
-		{time.Unix(456, 456), 3, 3},
-		{time.Unix(789, 789), 3, 3},
+	var ci = []gopacket.CaptureInfo{
+		{Timestamp: time.Unix(123, 123), CaptureLength: 3, Length: 3},
+		{Timestamp: time.Unix(456, 456), CaptureLength: 3, Length: 3},
+		{Timestamp: time.Unix(789, 789), CaptureLength: 3, Length: 3},
 	}
 
 	out := []*Packet{&Packet{[]byte{1, 2, 3}, ci[0]},

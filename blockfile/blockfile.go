@@ -125,7 +125,7 @@ func (b *BlockFile) Close() (err error) {
 // allPacketsIter implements Iter.
 type allPacketsIter struct {
 	*BlockFile
-	blockData        [1 << 20]byte
+	blockData        []byte
 	block            *C.struct_tpacket_hdr_v1
 	pkt              *C.struct_tpacket3_hdr
 	blockPacketsRead int
@@ -142,6 +142,7 @@ func (a *allPacketsIter) Next() bool {
 	}
 	for a.block == nil || a.blockPacketsRead == int(a.block.num_pkts) {
 		packetBlocksRead.Increment()
+		a.blockData = make([]byte, 1 << 20)
 		_, err := a.f.ReadAt(a.blockData[:], a.blockOffset)
 		if err == io.EOF {
 			a.done = true

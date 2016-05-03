@@ -33,6 +33,7 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/certs"
 	"github.com/google/stenographer/config"
+	"github.com/google/stenographer/filecache"
 	"github.com/google/stenographer/httputil"
 	"github.com/google/stenographer/query"
 	"github.com/google/stenographer/stats"
@@ -117,7 +118,7 @@ func New(c config.Config) (_ *Env, returnedErr error) {
 			os.RemoveAll(dirname)
 		}
 	}()
-	threads, err := thread.Threads(c.Threads, dirname)
+	threads, err := thread.Threads(c.Threads, dirname, filecache.NewCache(c.MaxOpenFiles))
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +155,7 @@ type Env struct {
 	name    string
 	threads []*thread.Thread
 	done    chan bool
+	fc      *filecache.Cache
 	// StenotypeOutput is the writer that stenotype STDOUT/STDERR will be
 	// redirected to.
 	StenotypeOutput io.Writer

@@ -531,7 +531,7 @@ int Main(int argc, char** argv) {
   // Sanity check flags and setup options.
   CHECK(flag_filesize_mb <= 4 << 10);
   CHECK(flag_filesize_mb > 1);
-  CHECK(flag_filesize_mb > flag_aiops);
+  CHECK(flag_filesize_mb >= flag_aiops);
   CHECK(flag_blocks >= 16);  // arbitrary lower limit.
   CHECK(flag_threads >= 1);
   CHECK(flag_aiops <= flag_blocks);

@@ -32,6 +32,7 @@ import (
 	"github.com/google/stenographer/base"
 	"github.com/google/stenographer/blockfile"
 	"github.com/google/stenographer/config"
+	"github.com/google/stenographer/filecache"
 	"github.com/google/stenographer/httputil"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
@@ -63,10 +64,11 @@ type Thread struct {
 	files        map[string]*blockfile.BlockFile
 	mu           sync.RWMutex
 	fileLastSeen time.Time
+	fc           *filecache.Cache
 }
 
 // Threads creates a set of thread objects based on a set of ThreadConfigs.
-func Threads(configs []config.ThreadConfig, baseDir string) ([]*Thread, error) {
+func Threads(configs []config.ThreadConfig, baseDir string, fc *filecache.Cache) ([]*Thread, error) {
 	threads := make([]*Thread, len(configs))
 	for i, conf := range configs {
 		thread := &Thread{
@@ -76,6 +78,7 @@ func Threads(configs []config.ThreadConfig, baseDir string) ([]*Thread, error) {
 			packetPath:   filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
 			files:        map[string]*blockfile.BlockFile{},
 			fileLastSeen: time.Now(),
+			fc:           fc,
 		}
 		if err := thread.createSymlinks(); err != nil {
 			return nil, err
@@ -166,7 +169,7 @@ func (t *Thread) listPacketFilesOnDisk() (out []string) {
 // This method should only be called once the t.mu has been acquired!
 func (t *Thread) trackNewFile(filename string) error {
 	filepath := filepath.Join(t.packetPath, filename)
-	bf, err := blockfile.NewBlockFile(filepath)
+	bf, err := blockfile.NewBlockFile(filepath, t.fc)
 	if err != nil {
 		return fmt.Errorf("could not open blockfile %q: %v", filepath, err)
 	}

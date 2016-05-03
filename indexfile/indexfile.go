@@ -23,11 +23,11 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"strings"
 
 	"github.com/golang/leveldb/table"
 	"github.com/google/stenographer/base"
+	"github.com/google/stenographer/filecache"
 	"github.com/google/stenographer/stats"
 	"golang.org/x/net/context"
 )
@@ -61,13 +61,9 @@ func BlockfilePathFromIndexPath(p string) string {
 }
 
 // NewIndexFile returns a new handle to the named index file.
-func NewIndexFile(filename string) (*IndexFile, error) {
+func NewIndexFile(filename string, fc *filecache.Cache) (*IndexFile, error) {
 	v(1, "opening index %q", filename)
-	f, err := os.Open(filename)
-	if err != nil {
-		return nil, fmt.Errorf("error opening file %q: %v", filename, err)
-	}
-	ss := table.NewReader(f, nil)
+	ss := table.NewReader(fc.Open(filename), nil)
 	if versions, err := ss.Get([]byte{0}, nil); err != nil {
 		return nil, fmt.Errorf("invalid index file %q missing versions record: %v", filename, err)
 	} else if len(versions) != 8 {

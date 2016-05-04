@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/google/stenographer/config"
+	"github.com/google/stenographer/filecache"
 )
 
 const (
@@ -39,7 +40,7 @@ func createThreads(t *testing.T, tempDir string) []*Thread {
 	var tc = []config.ThreadConfig{
 		{tempDir + pktDir, tempDir + idxDir, 10, 10},
 	}
-	threads, err := Threads(tc, tempDir+baseDir)
+	threads, err := Threads(tc, tempDir+baseDir, filecache.NewCache(10))
 	if err != nil {
 		t.Fatal(err)
 	}

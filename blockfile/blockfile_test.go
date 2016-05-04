@@ -15,11 +15,14 @@
 package blockfile
 
 import (
-	"github.com/google/stenographer/base"
-	"github.com/google/stenographer/query"
-	"golang.org/x/net/context"
 	"reflect"
 	"testing"
+
+	"golang.org/x/net/context"
+
+	"github.com/google/stenographer/base"
+	"github.com/google/stenographer/filecache"
+	"github.com/google/stenographer/query"
 )
 
 var ctx = context.Background()
@@ -29,7 +32,7 @@ const (
 )
 
 func testBlockFile(t *testing.T, filename string) *BlockFile {
-	blk, err := NewBlockFile(filename)
+	blk, err := NewBlockFile(filename, filecache.NewCache(10))
 	if err != nil {
 		t.Fatal(err)
 	}

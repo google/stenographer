@@ -12,7 +12,7 @@ Summary:        A high-speed packet capture solution that provides indexed acces
 
 License:       	Apache License, 2.0 
 URL:            https://github.com/google/stenographer
-Source0:        https://github.com/google/%{name}/archive/%{commit0}.tar.gz
+Source0:        https://github.com/google/%{name}/archive/%{commit0}.tar.gz#/%{name}-%{commit0}.tar.gz
 
 
 BuildRequires:  libaio-devel, leveldb-devel, snappy-devel, gcc-c++, make
@@ -20,7 +20,7 @@ BuildRequires:  libpcap-devel, libseccomp-devel, git
 BuildRequires:  golang
 
 Requires:       libaio, leveldb, snappy, libpcap, libseccomp
-Requires: 	tcpdump, curl, rpmlib(FileCaps)
+Requires: 	tcpdump, curl, rpmlib(FileCaps), jq
 Requires(pre):  shadow-utils
 
 %description
@@ -65,6 +65,7 @@ install -p -m 755 %{name} %{buildroot}%{_bindir}
 install -p -m 755 stenotype/stenotype %{buildroot}%{_bindir}
 install -p -m 755 stenoread %{buildroot}%{_bindir}
 install -p -m 755 stenocurl %{buildroot}%{_bindir}
+install -p -m 755 stenokeys.sh %{buildroot}%{_bindir}
 
 # Install configuration and service files
 install -d %{buildroot}%{_sysconfdir}/%{name}/certs
@@ -83,6 +84,7 @@ install -p -m 644 configs/systemd.conf %{buildroot}%{_prefix}/lib/systemd/system
 %attr(0500, stenographer, root) %caps(cap_net_admin,cap_net_raw,cap_ipc_lock=ep) %{_bindir}/stenotype
 %{_bindir}/stenoread
 %{_bindir}/stenocurl
+%{_binder}/stenokeys.sh
 
 %{_sysconfdir}/stenographer
 %attr(0750, stenographer, stenographer) %{_sysconfdir}/stenographer/certs

@@ -11,7 +11,7 @@ mv ~/stenographer-$commit.tar.gz ~/rpmbuild/SOURCES/
 tar -xzf ~/rpmbuild/SOURCES/stenographer-$commit.tar.gz -C ~/rpmbuild/SOURCES/
 
 # copy current spec file into the expected folder
-#cp ~/rpmbuild/SOURCES/stenographer-$commit/stenographer.spec ~/rpmbuild/SPECS/ 
+cp ~/rpmbuild/SOURCES/stenographer-$commit/stenographer.spec ~/rpmbuild/SPECS/ 
 
 # run rpmbuild to create source rpm
 rpmbuild -bs ~/rpmbuild/SPECS/stenographer.spec

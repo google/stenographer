@@ -1,4 +1,4 @@
-%global commit0 89a9b664ba8ef2953abbc8bcf5908211e762d5ec
+%global commit0 %(curl https://api.github.com/repos/google/stenographer/commits/master | awk 'NR==2{print $0}' | awk -F'"' '{print $4}')
 %global shortcommit0 %(c=%{commit0}; echo ${c:0:7})
 
 # https://bugzilla.redhat.com/show_bug.cgi?id=995136#c12
@@ -84,7 +84,7 @@ install -p -m 644 configs/systemd.conf %{buildroot}%{_prefix}/lib/systemd/system
 %attr(0500, stenographer, root) %caps(cap_net_admin,cap_net_raw,cap_ipc_lock=ep) %{_bindir}/stenotype
 %{_bindir}/stenoread
 %{_bindir}/stenocurl
-%{_binder}/stenokeys.sh
+%{_bindir}/stenokeys.sh
 
 %{_sysconfdir}/stenographer
 %attr(0750, stenographer, stenographer) %{_sysconfdir}/stenographer/certs

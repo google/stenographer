@@ -17,16 +17,19 @@ package indexfile
 import (
 	"bytes"
 	"encoding/hex"
-	"github.com/google/stenographer/base"
-	"golang.org/x/net/context"
 	"reflect"
 	"testing"
+
+	"golang.org/x/net/context"
+
+	"github.com/google/stenographer/base"
+	"github.com/google/stenographer/filecache"
 )
 
 var ctx = context.Background()
 
 func testIndexFile(t *testing.T, filename string) *IndexFile {
-	idx, err := NewIndexFile(filename)
+	idx, err := NewIndexFile(filename, filecache.NewCache(10))
 	if err != nil {
 		t.Fatal(err)
 	}

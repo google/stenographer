@@ -114,7 +114,7 @@ cat > $OUTDIR/config << EOF
   , "Interface": "$DUMMY"
   , "Port": $PORT
   , "Host": "127.0.0.1"
-  , "Flags": ["-v", "-v", "-v"]
+  , "Flags": ["-v", "-v", "-v", "--filesize_mb=16", "--aiops=16"]
   , "CertPath": "$OUTDIR/certs"
 }
 EOF

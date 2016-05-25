@@ -33,6 +33,8 @@ const (
 	// By default, ext3 has issues with >32k files, so we go for something less
 	// than that.
 	defaultMaxDirectoryFiles = 30000
+
+	defaultMaxOpenFiles = 100000
 )
 
 // ThreadConfig is a json-decoded configuration for each stenotype thread,
@@ -54,6 +56,7 @@ type Config struct {
 	Port          int
 	Host          string // Location to listen.
 	CertPath      string // Directory where client and server certs are stored.
+	MaxOpenFiles  int    // Max number of file descriptors opened at once
 }
 
 // ReadConfigFile reads in the given JSON encoded configuration file and returns
@@ -68,6 +71,9 @@ func ReadConfigFile(filename string) (*Config, error) {
 	var out Config
 	if err := dec.Decode(&out); err != nil {
 		return nil, fmt.Errorf("could not decode config file %q: %v", filename, err)
+	}
+	if out.MaxOpenFiles <= 0 {
+		out.MaxOpenFiles = defaultMaxOpenFiles
 	}
 	for i, thread := range out.Threads {
 		if thread.DiskFreePercentage <= 0 {

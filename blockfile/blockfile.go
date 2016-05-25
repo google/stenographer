@@ -20,13 +20,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 	"time"
 	"unsafe"
 
 	"github.com/google/gopacket"
 	"github.com/google/stenographer/base"
+	"github.com/google/stenographer/filecache"
 	"github.com/google/stenographer/indexfile"
 	"github.com/google/stenographer/query"
 	"github.com/google/stenographer/stats"
@@ -49,7 +49,7 @@ var (
 // associated index.
 type BlockFile struct {
 	name string
-	f    *os.File
+	f    *filecache.CachedFile
 	i    *indexfile.IndexFile
 	mu   sync.RWMutex // Stops Close() from invalidating a file before a current query is done with it.
 	done chan struct{}
@@ -57,19 +57,14 @@ type BlockFile struct {
 
 // NewBlockFile opens up a named block file (and its index), returning a handle
 // which can be used to look up packets.
-func NewBlockFile(filename string) (*BlockFile, error) {
+func NewBlockFile(filename string, fc *filecache.Cache) (*BlockFile, error) {
 	v(1, "Blockfile opening: %q", filename)
-	f, err := os.Open(filename)
+	i, err := indexfile.NewIndexFile(indexfile.IndexPathFromBlockfilePath(filename), fc)
 	if err != nil {
-		return nil, fmt.Errorf("could not open %q: %v", filename, err)
-	}
-	i, err := indexfile.NewIndexFile(indexfile.IndexPathFromBlockfilePath(filename))
-	if err != nil {
-		f.Close()
 		return nil, fmt.Errorf("could not open index for %q: %v", filename, err)
 	}
 	return &BlockFile{
-		f:    f,
+		f:    fc.Open(filename),
 		i:    i,
 		name: filename,
 		done: make(chan struct{}),

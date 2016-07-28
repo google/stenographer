@@ -24,6 +24,9 @@ curl -L -J -O https://github.com/google/stenographer/archive/$commit.tar.gz
 # create working directory for rpmbuild to use
 mkdir -p $TMP/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
+# copy current source
+cp stenographer-$commit.tar.gz $TMP/rpmbuild/SOURCES
+
 # untar to pull latest specfile for use
 tar -xzf stenographer-$commit.tar.gz 
 

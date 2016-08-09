@@ -59,7 +59,7 @@ install_packages () {
 }
 
 install_golang () {
-	local _url="https://storage.googleapis.com/golang/go1.4.2.linux-amd64.tar.gz"
+	local _url="https://storage.googleapis.com/golang/go1.6.3.linux-amd64.tar.gz"
 
 	if (! which go &>/dev/null ); then
 		Info "Installing golang ..."

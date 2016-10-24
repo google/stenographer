@@ -287,7 +287,9 @@ void CommonPrivileges(scmp_filter_ctx ctx) {
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigreturn), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(tgkill), 0);
   // Malloc/ringbuffer.
+#ifdef __NR_mmap
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap), 0);
+#endif
 #ifdef __NR_mmap2
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap2), 0);
 #endif

@@ -180,11 +180,11 @@ func (a timeQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (bp
 	// Note, we add a minute when doing 'before' queries and subtract a minute
 	// when doing 'after' queries, to make sure we actually get the time
 	// specified.
-	if !a[0].IsZero() && t.Before(a[0].Add(time.Minute)) {
+	if !a[0].IsZero() && t.Before(a[0].Add(-time.Minute)) {
 		v(2, "time query skipping %q", index.Name())
 		return base.NoPositions, nil
 	}
-	if !a[1].IsZero() && t.After(a[1].Add(-time.Minute)) {
+	if !a[1].IsZero() && t.After(a[1].Add(time.Minute)) {
 		v(2, "time query skipping %q", index.Name())
 		return base.NoPositions, nil
 	}

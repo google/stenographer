@@ -136,6 +136,7 @@ func (t *Thread) syncFilesWithDisk() {
 	newFilesCnt := int64(0)
 	var wg sync.WaitGroup
 	for _, filename := range t.listPacketFilesOnDisk() {
+		filename := filename
 		wg.Add(1)
 		go func() {
 			newFileThrottle <- true

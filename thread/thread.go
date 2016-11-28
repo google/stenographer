@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/stenographer/base"
@@ -127,22 +128,35 @@ func (t *Thread) getIndexFilePath(filename string) string {
 	return filepath.Join(t.indexPath, filename)
 }
 
+var newFileThrottle = make(chan bool, 32)
+
 func (t *Thread) syncFilesWithDisk() {
 	fido := base.Watchdog(time.Minute*5, "syncing files with disk") // 5 min for initial list of files
 	defer fido.Stop()
-	newFilesCnt := 0
+	newFilesCnt := int64(0)
+	var wg sync.WaitGroup
 	for _, filename := range t.listPacketFilesOnDisk() {
-		fido.Reset(time.Minute) // 1 minute for opening each new file
-		if t.files[filename] != nil {
-			continue
-		}
-		if err := t.trackNewFile(filename); err != nil {
-			log.Printf("Thread %v error tracking %q: %v", t.id, filename, err)
-			continue
-		}
-		newFilesCnt++
-		t.fileLastSeen = time.Now()
+		wg.Add(1)
+		go func() {
+			newFileThrottle <- true
+			defer func() {
+				<-newFileThrottle
+				wg.Done()
+			}()
+			t.mu.Lock()
+			current := t.files[filename]
+			t.mu.Unlock()
+			if current != nil {
+				return
+			}
+			if err := t.trackNewFile(filename); err != nil {
+				log.Printf("Thread %v error tracking %q: %v", t.id, filename, err)
+				return
+			}
+			atomic.AddInt64(&newFilesCnt, 1)
+		}()
 	}
+	wg.Wait()
 	if newFilesCnt > 0 {
 		v(0, "Thread %v found %d new blockfiles", t.id, newFilesCnt)
 	}
@@ -174,8 +188,11 @@ func (t *Thread) trackNewFile(filename string) error {
 		return fmt.Errorf("could not open blockfile %q: %v", filepath, err)
 	}
 	v(1, "new blockfile %q", filepath)
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.files[filename] = bf
 	currentFiles.Increment()
+	t.fileLastSeen = time.Now()
 	return nil
 }
 
@@ -307,8 +324,8 @@ func (t *Thread) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 // SyncFiles checks the disk to see if stenotype has created any new files, or
 // if old files should be deleted.
 func (t *Thread) SyncFiles() {
-	t.mu.Lock()
 	t.syncFilesWithDisk()
+	t.mu.Lock()
 	t.cleanUpOnLowDiskSpace()
 	t.mu.Unlock()
 }

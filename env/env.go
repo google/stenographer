@@ -28,6 +28,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/stenographer/base"
@@ -256,9 +257,15 @@ func (d *Env) removeOldFiles() {
 }
 
 func (d *Env) syncFiles() {
+	var wg sync.WaitGroup
 	for _, t := range d.threads {
-		t.SyncFiles()
+		wg.Add(1)
+		go func() {
+			t.SyncFiles()
+			wg.Done()
+		}()
 	}
+	wg.Wait()
 }
 
 // Path returns the underlying directory path for the given Env.

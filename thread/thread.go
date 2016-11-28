@@ -58,14 +58,15 @@ const (
 // Thread object server-side which watches for file changes, cleans up old/dead
 // files, etc.
 type Thread struct {
-	id           int
-	conf         config.ThreadConfig
-	indexPath    string
-	packetPath   string
-	files        map[string]*blockfile.BlockFile
-	mu           sync.RWMutex
-	fileLastSeen time.Time
-	fc           *filecache.Cache
+	id              int
+	conf            config.ThreadConfig
+	indexPath       string
+	packetPath      string
+	files           map[string]*blockfile.BlockFile
+	mu              sync.RWMutex
+	fileLastSeen    time.Time
+	fc              *filecache.Cache
+	newFileThrottle chan bool
 }
 
 // Threads creates a set of thread objects based on a set of ThreadConfigs.
@@ -73,13 +74,14 @@ func Threads(configs []config.ThreadConfig, baseDir string, fc *filecache.Cache)
 	threads := make([]*Thread, len(configs))
 	for i, conf := range configs {
 		thread := &Thread{
-			id:           i,
-			conf:         conf,
-			indexPath:    filepath.Join(baseDir, indexPrefix+strconv.Itoa(i)),
-			packetPath:   filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
-			files:        map[string]*blockfile.BlockFile{},
-			fileLastSeen: time.Now(),
-			fc:           fc,
+			id:              i,
+			conf:            conf,
+			indexPath:       filepath.Join(baseDir, indexPrefix+strconv.Itoa(i)),
+			packetPath:      filepath.Join(baseDir, packetPrefix+strconv.Itoa(i)),
+			files:           map[string]*blockfile.BlockFile{},
+			fileLastSeen:    time.Now(),
+			fc:              fc,
+			newFileThrottle: make(chan bool, 32),
 		}
 		if err := thread.createSymlinks(); err != nil {
 			return nil, err
@@ -128,8 +130,6 @@ func (t *Thread) getIndexFilePath(filename string) string {
 	return filepath.Join(t.indexPath, filename)
 }
 
-var newFileThrottle = make(chan bool, 32)
-
 func (t *Thread) syncFilesWithDisk() {
 	fido := base.Watchdog(time.Minute*5, "syncing files with disk") // 5 min for initial list of files
 	defer fido.Stop()
@@ -139,9 +139,9 @@ func (t *Thread) syncFilesWithDisk() {
 		filename := filename
 		wg.Add(1)
 		go func() {
-			newFileThrottle <- true
+			t.newFileThrottle <- true
 			defer func() {
-				<-newFileThrottle
+				<-t.newFileThrottle
 				wg.Done()
 			}()
 			t.mu.Lock()

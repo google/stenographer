@@ -129,7 +129,7 @@ func New(c config.Config) (_ *Env, returnedErr error) {
 		threads: threads,
 		done:    make(chan bool),
 	}
-	go d.callEvery(d.syncFiles, fileSyncFrequency)
+	d.callEvery(d.syncFiles, fileSyncFrequency)
 	return d, nil
 }
 
@@ -172,14 +172,16 @@ func (d *Env) callEvery(cb func(), freq time.Duration) {
 	ticker := time.NewTicker(freq)
 	defer ticker.Stop()
 	cb() // Call function immediately the first time around.
-	for {
-		select {
-		case <-d.done:
-			return
-		case <-ticker.C:
-			cb()
+	go func() {
+		for {
+			select {
+			case <-d.done:
+				return
+			case <-ticker.C:
+				cb()
+			}
 		}
-	}
+	}()
 }
 
 func removeHiddenFilesFrom(dir string) {

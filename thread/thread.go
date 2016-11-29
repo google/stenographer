@@ -140,6 +140,7 @@ func (t *Thread) syncFilesWithDisk() {
 		wg.Add(1)
 		go func() {
 			t.newFileThrottle <- true
+			fido.Reset(time.Minute)
 			defer func() {
 				<-t.newFileThrottle
 				wg.Done()

@@ -129,7 +129,9 @@ func New(c config.Config) (_ *Env, returnedErr error) {
 		threads: threads,
 		done:    make(chan bool),
 	}
+	v(2, "Starting first file sync")
 	d.callEvery(d.syncFiles, fileSyncFrequency)
+	v(2, "First file sync complete")
 	return d, nil
 }
 
@@ -170,9 +172,9 @@ func (d *Env) Close() error {
 
 func (d *Env) callEvery(cb func(), freq time.Duration) {
 	ticker := time.NewTicker(freq)
-	defer ticker.Stop()
 	cb() // Call function immediately the first time around.
 	go func() {
+		defer ticker.Stop()
 		for {
 			select {
 			case <-d.done:

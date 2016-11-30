@@ -263,6 +263,7 @@ func (d *Env) removeOldFiles() {
 func (d *Env) syncFiles() {
 	var wg sync.WaitGroup
 	for _, t := range d.threads {
+		t := t
 		wg.Add(1)
 		go func() {
 			t.SyncFiles()

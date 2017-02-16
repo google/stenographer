@@ -188,7 +188,7 @@ func (t *Thread) cleanUpOnLowDiskSpace() {
 	for {
 		fido.Reset(time.Minute)
 		if len(t.files) > t.conf.MaxDirectoryFiles {
-			v(1, "Thread %v too many files. %d > %d, deleting", t.id, len(t.files), t.conf.MaxDirectoryFiles)
+			v(1, "Thread %v has too many files. %d > %d, deleting", t.id, len(t.files), t.conf.MaxDirectoryFiles)
 			t.deleteOldestThreadFiles(len(t.files) - t.conf.MaxDirectoryFiles)
 			continue
 		}
@@ -198,10 +198,10 @@ func (t *Thread) cleanUpOnLowDiskSpace() {
 			return
 		}
 		if df > t.conf.DiskFreePercentage {
-			v(1, "Thread %v disk space is sufficient: %v > %v", t.id, df, t.conf.DiskFreePercentage)
+			v(1, "Thread %v disk space is sufficient (packet path=%q): %d%% free > %d%% threshold", t.id, t.packetPath, df, t.conf.DiskFreePercentage)
 			return
 		}
-		v(0, "Thread %v disk usage is high (packet path=%q): %d%% < %d%% free\n", t.id, t.packetPath, df, t.conf.DiskFreePercentage)
+		v(0, "Thread %v disk usage is high (packet path=%q): %d%% free <= %d%% threshold", t.id, t.packetPath, df, t.conf.DiskFreePercentage)
 		t.deleteOldestThreadFiles(1)
 		// After deleting files, it may take a while for disk stats to be updated.
 		// We add this sleep so we don't accidentally delete WAY more files than
@@ -236,7 +236,7 @@ func (t *Thread) deleteOldestThreadFiles(n int) {
 	}
 }
 
-// getSortedFiles returns files frm the thread in the order they were created,
+// getSortedFiles returns files from the thread in the order they were created,
 // and thus in the order their packets should appear.
 //
 // This method should only be called once the t.mu has been acquired!
@@ -245,6 +245,7 @@ func (t *Thread) getSortedFiles() []string {
 	for name := range t.files {
 		sortedFiles = append(sortedFiles, name)
 	}
+	// We guarantee elsewhere that filename ordering corresponds to creation ordering
 	sort.Strings(sortedFiles)
 	return sortedFiles
 }

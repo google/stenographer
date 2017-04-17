@@ -94,6 +94,7 @@ int64_t flag_filesize_mb = 4 << 10;
 int32_t flag_threads = 1;
 int64_t flag_fileage_sec = 60;
 int64_t flag_blockage_sec = 10;
+int64_t flag_blocksize_kb = 1024;
 uint16_t flag_fanout_type =
 // Use rollover as the default if it's available.
 #ifdef PACKET_FANOUT_FLAG_ROLLOVER
@@ -177,7 +178,10 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
       flag_testimony = arg;
       break;
     case 319:
-      flag_fileage_sec = atoi(arg);
+      flag_blockage_sec = atoi(arg);
+      break;
+    case 320:
+      flag_blocksize_kb = atoll(arg);
       break;
   }
   return 0;
@@ -219,6 +223,7 @@ void ParseOptions(int argc, char** argv) {
       {"testimony", 318, n, 0, "TESTIMONY NOT COMPILED INTO THIS BINARY"},
 #endif
       {"blockage_sec", 319, n, 0, "A block is written at least every N secs"},
+      {"blocksize_kb", 320, n, 0, "Size of a block, in KB"},
       {0},
   };
   struct argp argp = {options, &ParseOptions};
@@ -546,6 +551,7 @@ int Main(int argc, char** argv) {
   CHECK(flag_blockage_sec <= flag_fileage_sec);
   CHECK(flag_blockage_sec > 0);
   CHECK(flag_fileage_sec % flag_blockage_sec == 0);
+  CHECK(flag_blocksize_kb >= 10);
   if (flag_dir[flag_dir.size() - 1] != '/') {
     flag_dir += "/";
   }

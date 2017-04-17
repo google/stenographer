@@ -67,7 +67,7 @@
 #include <sys/socket.h>       // socket()
 #include <sys/stat.h>         // umask()
 #include <sys/syscall.h>      // syscall(), SYS_gettid
-#include <unistd.h>           // setuid(), setgid()
+#include <unistd.h>           // setuid(), setgid(), getpagesize()
 
 #include <string>
 #include <sstream>
@@ -94,7 +94,7 @@ int64_t flag_filesize_mb = 4 << 10;
 int32_t flag_threads = 1;
 int64_t flag_fileage_sec = 60;
 int64_t flag_blockage_sec = 10;
-int64_t flag_blocksize_kb = 1024;
+uint64_t flag_blocksize_kb = 1024;
 uint16_t flag_fanout_type =
 // Use rollover as the default if it's available.
 #ifdef PACKET_FANOUT_FLAG_ROLLOVER
@@ -494,7 +494,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
     // Index all packets if necessary.
     if (flag_index) {
       for (; remaining != 0 && b.Next(&p); remaining--) {
-        index->Process(p, block_offset << 20);
+        index->Process(p, block_offset * flag_blocksize_kb * 1024);
       }
     }
     blocks++;
@@ -538,7 +538,7 @@ int Main(int argc, char** argv) {
   for (int i = 0; i < argc; i++) {
     VLOG(1) << i << ":\t\"" << argv[i] << "\"";
   }
-  LOG(INFO) << "Starting...";
+  LOG(INFO) << "Starting, page size is " << getpagesize();
 
   // Sanity check flags and setup options.
   CHECK(flag_filesize_mb <= 4 << 10);
@@ -552,6 +552,8 @@ int Main(int argc, char** argv) {
   CHECK(flag_blockage_sec > 0);
   CHECK(flag_fileage_sec % flag_blockage_sec == 0);
   CHECK(flag_blocksize_kb >= 10);
+  CHECK(flag_blocksize_kb * 1024 >= (uint64_t)(getpagesize()));
+  CHECK((flag_blocksize_kb * 1024) % (uint64_t)(getpagesize()) == 0);
   if (flag_dir[flag_dir.size() - 1] != '/') {
     flag_dir += "/";
   }
@@ -567,10 +569,10 @@ int Main(int argc, char** argv) {
       int socktype = SOCK_RAW;
       struct tpacket_req3 options;
       memset(&options, 0, sizeof(options));
-      options.tp_block_size = 1 << 20;  // it's very important this be 1MB
+      options.tp_block_size = flag_blocksize_kb * 1024;
       options.tp_block_nr = flag_blocks;
-      options.tp_frame_size = 16 << 10;  // does not matter at all
-      options.tp_frame_nr = 0;           // computed for us.
+      options.tp_frame_size = flag_blocksize_kb * 1024;  // doesn't matter
+      options.tp_frame_nr = 0;                           // computed for us.
       options.tp_retire_blk_tov = flag_blockage_sec * kNumMillisPerSecond - 1;
 
       // Set up AF_PACKET packet reading.
@@ -596,8 +598,9 @@ int Main(int argc, char** argv) {
       CHECK_SUCCESS(NegErrno(testimony_connect(&t, flag_testimony.c_str())));
       CHECK(flag_threads == testimony_conn(t)->fanout_size)
           << "--threads does not match testimony fanout size";
-      CHECK(testimony_conn(t)->block_size == 1 << 20)
-          << "Testimony does not supply 1MB blocks";
+      CHECK(testimony_conn(t)->block_size == flag_blocksize_kb)
+          << "Testimony does not supply blocks of size " << flag_blocksize_kb
+          << "KB";
       testimony_conn(t)->fanout_index = i;
       CHECK_SUCCESS(NegErrno(testimony_init(t)));
       sockets.push_back(new TestimonyPackets(t));

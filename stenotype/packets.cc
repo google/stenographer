@@ -185,7 +185,7 @@ void TestimonyPackets::TReturnToKernel(struct tpacket_block_desc* block,
 }
 
 Error TestimonyPackets::NextBlock(Block* b, int poll_millis) {
-  struct tpacket_block_desc* block;
+  const struct tpacket_block_desc* block;
   CHECK_SUCCESS(NegErrno(testimony_get_block(t_, poll_millis, &block)));
   if (block == NULL) {
     return SUCCESS;

@@ -250,6 +250,21 @@ func (t *Thread) getSortedFiles() []string {
 	return sortedFiles
 }
 
+// OldestFileTimestamp returns timestamp of the oldest file we have.
+func (t *Thread) OldestFileTimestamp() time.Time {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	files := t.getSortedFiles()
+	if len(files) == 0 {
+		return time.Time{}
+	}
+	ts, err := strconv.ParseInt(files[0], 10, 64)
+	if err != nil {
+		return time.Time{}
+	}
+	return time.Unix(0, ts*1000 /* micros to nanos */)
+}
+
 // This method should only be called once the t.mu has been acquired!
 func (t *Thread) untrackFile(filename string) error {
 	v(1, "Thread %v untracking %q", t.id, filename)

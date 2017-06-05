@@ -598,7 +598,7 @@ int Main(int argc, char** argv) {
       CHECK_SUCCESS(NegErrno(testimony_connect(&t, flag_testimony.c_str())));
       CHECK(flag_threads == testimony_conn(t)->fanout_size)
           << "--threads does not match testimony fanout size";
-      CHECK(testimony_conn(t)->block_size == flag_blocksize_kb)
+      CHECK(testimony_conn(t)->block_size == flag_blocksize_kb * 1024)
           << "Testimony does not supply blocks of size " << flag_blocksize_kb
           << "KB";
       testimony_conn(t)->fanout_index = i;

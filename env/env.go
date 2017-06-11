@@ -99,7 +99,7 @@ func (e *Env) handleQuery(w http.ResponseWriter, r *http.Request) {
 	ctx := httputil.Context(w, r, time.Minute*15)
 	defer ctx.Cancel()
 	packets := e.Lookup(ctx, q)
-	w.Header().Set("Content-Type", "appliation/octet-stream")
+	w.Header().Set("Content-Type", "application/octet-stream")
 	base.PacketsToFile(packets, w, limit)
 }
 

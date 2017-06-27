@@ -205,7 +205,7 @@ func (t *Thread) cleanUpOnLowDiskSpace() {
 		}
 		v(0, "Thread %v disk usage is high (packet path=%q): %d%% free <= %d%% threshold", t.id, t.packetPath, df, t.conf.DiskFreePercentage)
 		if lastdf > df {
-			deleteFileCnt *= 2
+			delFileCnt *= 2
 			v(0, "Thread %v file deletion didn't surpass write speed. Increasing file deletion rate to %d", t.id, delFileCnt)
 		}
 		t.deleteOldestThreadFiles(delFileCnt)

@@ -185,6 +185,8 @@ func (t *Thread) cleanUpOnLowDiskSpace() {
 	}
 	fido := base.Watchdog(time.Minute, "cleaning up low disk space")
 	defer fido.Stop()
+	delFileCnt := 1
+	lastdf := 0
 	for {
 		fido.Reset(time.Minute)
 		if len(t.files) > t.conf.MaxDirectoryFiles {
@@ -202,7 +204,12 @@ func (t *Thread) cleanUpOnLowDiskSpace() {
 			return
 		}
 		v(0, "Thread %v disk usage is high (packet path=%q): %d%% free <= %d%% threshold", t.id, t.packetPath, df, t.conf.DiskFreePercentage)
-		t.deleteOldestThreadFiles(1)
+		if lastdf > df {
+			deleteFileCnt *= 2
+			v(0, "Thread %v file deletion didn't surpass write speed. Increasing file deletion rate to %d", t.id, delFileCnt)
+		}
+		t.deleteOldestThreadFiles(delFileCnt)
+		lastdf = df
 		// After deleting files, it may take a while for disk stats to be updated.
 		// We add this sleep so we don't accidentally delete WAY more files than
 		// we need to.

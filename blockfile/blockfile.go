@@ -67,6 +67,7 @@ func NewBlockFile(filename string, fc *filecache.Cache) (*BlockFile, error) {
 	f := fc.Open(filename)
 	s, err := f.Stat()
 	if err != nil {
+		f.Close()
 		return nil, fmt.Errorf("could not stat file %q: %v", filename, err)
 	}
 	return &BlockFile{

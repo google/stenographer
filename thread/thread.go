@@ -230,7 +230,7 @@ func (t *Thread) pruneOldestThreadFiles() {
 	firstSize := t.files[firstName].Size()
 	var delSize int64 = 0
 	delCnt := 0
-	for delSize < firstSize {
+	for delSize <= firstSize {
 		bf := t.files[files[delCnt]]
 		delSize += bf.Size()
 		delCnt++

@@ -185,13 +185,11 @@ func (t *Thread) cleanUpOnLowDiskSpace() {
 	}
 	fido := base.Watchdog(time.Minute, "cleaning up low disk space")
 	defer fido.Stop()
-	delFileCnt := 1
-	lastdf := 0
 	for {
 		fido.Reset(time.Minute)
 		if len(t.files) > t.conf.MaxDirectoryFiles {
 			v(1, "Thread %v has too many files. %d > %d, deleting", t.id, len(t.files), t.conf.MaxDirectoryFiles)
-			t.deleteOldestThreadFiles(len(t.files) - t.conf.MaxDirectoryFiles)
+			t.deleteOldestThreadFiles(len(t.files)-t.conf.MaxDirectoryFiles, nil)
 			continue
 		}
 		df, err := base.PathDiskFreePercentage(t.packetPath)
@@ -204,12 +202,8 @@ func (t *Thread) cleanUpOnLowDiskSpace() {
 			return
 		}
 		v(0, "Thread %v disk usage is high (packet path=%q): %d%% free <= %d%% threshold", t.id, t.packetPath, df, t.conf.DiskFreePercentage)
-		if lastdf > df {
-			delFileCnt *= 2
-			v(0, "Thread %v file deletion didn't surpass write speed. Increasing file deletion rate to %d", t.id, delFileCnt)
-		}
-		t.deleteOldestThreadFiles(delFileCnt)
-		lastdf = df
+		// Delete enough files to match newest file size.
+		t.pruneOldestThreadFiles()
 		// After deleting files, it may take a while for disk stats to be updated.
 		// We add this sleep so we don't accidentally delete WAY more files than
 		// we need to.
@@ -224,11 +218,35 @@ func tryToDeleteFile(filename string) {
 	}
 }
 
-// deleteOldestThreadFile deletes the single oldest file held by this thread.
+// pruneOldestThreadFiles deletes enough of the oldest files held by this
+// thread to free up bytes >= the size of the newest file.
+// It should only exceed the newest size by no more than the size of the last
+// deleted file.
 // It should only be called if the thread has at least one file (should be
 // checked by the caller beforehand).
-func (t *Thread) deleteOldestThreadFiles(n int) {
+func (t *Thread) pruneOldestThreadFiles() {
 	files := t.getSortedFiles()
+	firstName := files[len(files)-1]
+	firstSize := t.files[firstName].Size()
+	var delSize int64 = 0
+	delCnt := 0
+	for delSize < firstSize {
+		bf := t.files[files[delCnt]]
+		delSize += bf.Size()
+		delCnt++
+	}
+	v(1, "Thread %v deleting %v files to free up %v bytes.", t.id, delCnt, delSize)
+	t.deleteOldestThreadFiles(delCnt, files)
+}
+
+// deleteOldestThreadFiles deletes n of the oldest files held by this thread.
+// It should only be called if the thread has at least one file (should be
+// checked by the caller beforehand).
+// The list of sorted files can be passed if it has already been generated.
+func (t *Thread) deleteOldestThreadFiles(n int, files []string) {
+	if files == nil {
+		files = t.getSortedFiles()
+	}
 	for i := 0; i < n && i < len(files); i++ {
 		toDelete := files[i]
 		v(1, "Thread %v removing %q", t.id, toDelete)

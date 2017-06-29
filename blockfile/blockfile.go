@@ -53,6 +53,7 @@ type BlockFile struct {
 	i    *indexfile.IndexFile
 	mu   sync.RWMutex // Stops Close() from invalidating a file before a current query is done with it.
 	done chan struct{}
+	size int64
 }
 
 // NewBlockFile opens up a named block file (and its index), returning a handle
@@ -63,17 +64,28 @@ func NewBlockFile(filename string, fc *filecache.Cache) (*BlockFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open index for %q: %v", filename, err)
 	}
+	f := fc.Open(filename)
+	s, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("could not stat file %q: %v", filename, err)
+	}
 	return &BlockFile{
-		f:    fc.Open(filename),
+		f:    f,
 		i:    i,
 		name: filename,
 		done: make(chan struct{}),
+		size: s.Size(),
 	}, nil
 }
 
 // Name returns the name of the file underlying this blockfile.
 func (b *BlockFile) Name() string {
 	return b.name
+}
+
+// Size returns the size of the blockfile in bytes.
+func (b *BlockFile) Size() int64 {
+	return b.size
 }
 
 // readPacket reads a single packet from the file at the given position.

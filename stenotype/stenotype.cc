@@ -339,6 +339,9 @@ void DropIndexThreadPrivileges() {
   if (ctx == kSkipSeccomp) return;
   CHECK(ctx != NULL);
   CommonPrivileges(ctx);
+#ifdef __NR_getrlimit
+  SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getrlimit), 0);
+#endif
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rename), 0);
   SECCOMP_RULE_ADD(ctx, SCMP_ACT_ALLOW, SCMP_SYS(open), 1,
                    SCMP_A1(SCMP_CMP_EQ, O_WRONLY | O_CREAT | O_TRUNC));

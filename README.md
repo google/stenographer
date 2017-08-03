@@ -28,6 +28,7 @@ It is NOT designed for:
        alone can take >75% of a single core.
    *   Processing the data by reading it back from disk also doesn’t work:  see
        next bullet point.
+
 *   Reading back large amounts of packets (> 1% of packets written)
    *   The key concept here is that disk reads compete with disk writes… you can
        write at 90% of disk speed, but that only gives you 10% of your disk’s
@@ -62,6 +63,9 @@ primitives:
     after 2012-11-03T11:05:00-07:00  # Packets after a specific time (with TZ)
     before 45m ago        # Packets before a relative time
     before 3h ago         # Packets after a relative time
+
+**NOTE**: Relative times must be measured in integer values of hours or minutes
+as demonstrated above.
 
 Primitives can be combined with and/&& and with or/||, which have equal
 precendence and evaluate left-to-right.  Parens can also be used to group.

@@ -226,6 +226,9 @@ func tryToDeleteFile(filename string) {
 // checked by the caller beforehand).
 func (t *Thread) pruneOldestThreadFiles() {
 	files := t.getSortedFiles()
+	if len(files) == 0 {
+		return
+	}
 	firstName := files[len(files)-1]
 	firstSize := t.files[firstName].Size()
 	var delSize int64 = 0

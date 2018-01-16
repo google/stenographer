@@ -155,6 +155,7 @@ class PacketsV3 : public Packets {
     char* ring;         // pointer to start of mmap'd region.
     size_t block_size;  // size of each block.
     size_t num_blocks;  // total number of blocks.
+    const char* iface;  // Interface
   };
 
  public:
@@ -210,6 +211,8 @@ class PacketsV3 : public Packets {
     Error SetRingOptions(void* options, socklen_t size);
     Error MMapRing();
     Error CreateSocket(int socktype);
+    Error SetPromisc();
+    Error DisablePromisc();
 
     // State contains the state the builder sets up.  This state will be passed
     // to the PacketsV3 object created by Bind.

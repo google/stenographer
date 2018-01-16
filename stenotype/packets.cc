@@ -26,6 +26,7 @@
 #include <sys/mman.h>         // mmap(), munmap()
 #include <sys/socket.h>       // socket()
 #include <unistd.h>           // close(), getpid()
+#include <sys/ioctl.h>        // ioctl()
 
 #include <memory>
 #include <string>
@@ -221,6 +222,7 @@ Error PacketsV3::Builder::Bind(const std::string& iface, Packets** out) {
   RETURN_IF_ERROR(BadState(), "Builder");
 
   unsigned int ifindex = if_nametoindex(iface.c_str());
+  state_.iface = iface.c_str();
   if (ifindex == 0) {
     return Errno();
   }
@@ -238,6 +240,7 @@ Error PacketsV3::Builder::Bind(const std::string& iface, Packets** out) {
                                      &fanout_, sizeof(fanout_))),
                     "setting fanout");
   }
+  RETURN_IF_ERROR(SetPromisc(), "SetPromisc");
   *out = new PacketsV3(&state_);
   return SUCCESS;
 }
@@ -303,6 +306,35 @@ Error PacketsV3::Builder::SetFanout(uint16_t fanout_type, uint16_t fanout_id) {
   fanout_ = fanout_type;
   fanout_ <<= 16;
   fanout_ |= fanout_id;
+  return SUCCESS;
+}
+
+Error PacketsV3::Builder::SetPromisc() {
+  struct ifreq ifopts;
+  memset(&ifopts, 0, sizeof(ifopts));
+
+  VLOG(1) << "Setting promiscuous mode for " << state_.iface;
+	strncpy(ifopts.ifr_name, state_.iface, IFNAMSIZ-1);
+	ioctl(state_.fd, SIOCGIFFLAGS, &ifopts);
+	ifopts.ifr_flags |= IFF_PROMISC;
+	if (ioctl(state_.fd, SIOCSIFFLAGS, &ifopts) == -1) {
+    return Errno();
+  }
+
+  return SUCCESS;
+}
+
+Error PacketsV3::Builder::DisablePromisc() {
+  struct ifreq ifopts;
+
+  VLOG(1) << "Disabling promiscuous mode for " << state_.iface;
+	strncpy(ifopts.ifr_name, state_.iface, IFNAMSIZ-1);
+	ioctl(state_.fd, SIOCGIFFLAGS, &ifopts);
+	ifopts.ifr_flags &= ~IFF_PROMISC;
+	if (ioctl(state_.fd, SIOCSIFFLAGS, &ifopts) == -1) {
+    return Errno();
+  }
+
   return SUCCESS;
 }
 

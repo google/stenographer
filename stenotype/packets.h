@@ -205,14 +205,15 @@ class PacketsV3 : public Packets {
     // socket to the given interface and returns a PacketsV3 object to wrap it.
     Error Bind(const std::string& iface, Packets** out);
 
+    Error SetPromisc(const std::string& iface);
+    Error DisablePromisc();
+
    private:
     Error BadState();
     Error SetVersion();
     Error SetRingOptions(void* options, socklen_t size);
     Error MMapRing();
     Error CreateSocket(int socktype);
-    Error SetPromisc();
-    Error DisablePromisc();
 
     // State contains the state the builder sets up.  This state will be passed
     // to the PacketsV3 object created by Bind.

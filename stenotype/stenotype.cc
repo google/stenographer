@@ -110,6 +110,7 @@ std::string flag_seccomp = "kill";
 int flag_index_nicelevel = 0;
 int flag_preallocate_file_mb = 0;
 bool flag_watchdogs = true;
+bool flag_promisc = true;
 std::string flag_testimony;
 
 int ParseOptions(int key, char* arg, struct argp_state* state) {
@@ -183,6 +184,9 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
     case 320:
       flag_blocksize_kb = atoll(arg);
       break;
+    case 321:
+      flag_promisc = false;
+      break;
   }
   return 0;
 }
@@ -224,6 +228,7 @@ void ParseOptions(int argc, char** argv) {
 #endif
       {"blockage_sec", 319, n, 0, "A block is written at least every N secs"},
       {"blocksize_kb", 320, n, 0, "Size of a block, in KB"},
+      {"no_promisc", 321, 0, 0, "Don't set promiscuous mode"},
       {0},
   };
   struct argp argp = {options, &ParseOptions};
@@ -581,6 +586,9 @@ int Main(int argc, char** argv) {
       // Set up AF_PACKET packet reading.
       PacketsV3::Builder builder;
       CHECK_SUCCESS(builder.SetUp(socktype, options));
+      if (flag_promisc) {
+        CHECK_SUCCESS(builder.SetPromisc(flag_iface));
+      }
       int fanout_id = getpid();
       if (flag_fanout_id > 0) {
         fanout_id = flag_fanout_id;

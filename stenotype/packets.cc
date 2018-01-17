@@ -225,6 +225,24 @@ Error PacketsV3::Builder::Bind(const std::string& iface, Packets** out) {
   if (ifindex == 0) {
     return Errno();
   }
+  if (promisc_) {
+    VLOG(1) << "Setting promiscuous mode for " << iface;
+    struct ifreq ifopts;
+    memset(&ifopts, 0, sizeof(ifopts));
+    strncpy(ifopts.ifr_name, iface.c_str(), IFNAMSIZ-1);
+    RETURN_IF_ERROR(
+        Errno(ioctl(state_.fd, SIOCGIFFLAGS, &ifopts)),
+        "getting current interface flags");
+    if (ifopts.ifr_flags & IFF_PROMISC) {
+      VLOG(1) << "Interface " << iface << " already in promisc mode";
+    } else {
+      ifopts.ifr_flags |= IFF_PROMISC;
+      RETURN_IF_ERROR(
+          Errno(ioctl(state_.fd, SIOCSIFFLAGS, &ifopts)),
+          "turning on promisc");
+    }
+  }
+
   struct sockaddr_ll ll;
   memset(&ll, 0, sizeof(ll));
   ll.sll_family = AF_PACKET;
@@ -307,26 +325,9 @@ Error PacketsV3::Builder::SetFanout(uint16_t fanout_type, uint16_t fanout_id) {
   return SUCCESS;
 }
 
-Error PacketsV3::Builder::SetPromisc(const std::string& iface) {
-  struct ifreq ifopts;
-  memset(&ifopts, 0, sizeof(ifopts));
-
-  state_.iface = iface.c_str();
-  VLOG(1) << "Setting promiscuous mode for " << state_.iface;
-  strncpy(ifopts.ifr_name, state_.iface, IFNAMSIZ-1);
-  ioctl(state_.fd, SIOCGIFFLAGS, &ifopts);
-  ifopts.ifr_flags |= IFF_PROMISC;
-  return Errno(ioctl(state_.fd, SIOCSIFFLAGS, &ifopts));
-}
-
-Error PacketsV3::Builder::DisablePromisc() {
-  struct ifreq ifopts;
-
-  VLOG(1) << "Disabling promiscuous mode for " << state_.iface;
-  strncpy(ifopts.ifr_name, state_.iface, IFNAMSIZ-1);
-  ioctl(state_.fd, SIOCGIFFLAGS, &ifopts);
-  ifopts.ifr_flags &= ~IFF_PROMISC;
-  return Errno(ioctl(state_.fd, SIOCSIFFLAGS, &ifopts));
+Error PacketsV3::Builder::SetPromisc(bool promisc) {
+  promisc_ = promisc;
+  return SUCCESS;
 }
 
 Error PacketsV3::Builder::SetRingOptions(void* options, socklen_t size) {

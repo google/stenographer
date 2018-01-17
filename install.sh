@@ -86,7 +86,8 @@ fi
 
 if grep -q /path/to /etc/stenographer/config; then
   Error "Create directories to output packets/indexes to, then update"
-  Error "/etc/stenographer/config to point to them"
+  Error "/etc/stenographer/config to point to them."
+  Error "Directories should be owned by stenographer:stenographer."
   exit 1
 fi
 

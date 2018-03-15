@@ -209,7 +209,6 @@ class PacketsV3 : public Packets {
     // socket to the given interface and returns a PacketsV3 object to wrap it.
     Error Bind(const std::string& iface, Packets** out);
 
-    Error SetPromisc(const std::string& iface);
     Error DisablePromisc();
 
    private:

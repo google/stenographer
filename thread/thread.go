@@ -224,12 +224,6 @@ func tryToDeleteFile(filename string) {
 // deleted file.
 // It should only be called if the thread has at least one file (should be
 // checked by the caller beforehand).
-// pruneOldestThreadFiles deletes enough of the oldest files held by this
-// thread to free up bytes >= the size of the newest file.
-// It should only exceed the newest size by no more than the size of the last
-// deleted file.
-// It should only be called if the thread has at least one file (should be
-// checked by the caller beforehand).
 func (t *Thread) pruneOldestThreadFiles() {
 	files := t.getSortedFiles()
 	v(2, "pruneOldestThreadFiles - files count %v, t.files count %v", len(files), len(t.files))

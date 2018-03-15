@@ -155,7 +155,6 @@ class PacketsV3 : public Packets {
     char* ring;         // pointer to start of mmap'd region.
     size_t block_size;  // size of each block.
     size_t num_blocks;  // total number of blocks.
-    const char* iface;  // Interface
   };
 
  public:
@@ -208,8 +207,6 @@ class PacketsV3 : public Packets {
     // Bind must be the final method called by Builder.  It binds the created
     // socket to the given interface and returns a PacketsV3 object to wrap it.
     Error Bind(const std::string& iface, Packets** out);
-
-    Error DisablePromisc();
 
    private:
     Error BadState();

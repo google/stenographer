@@ -224,22 +224,31 @@ func tryToDeleteFile(filename string) {
 // deleted file.
 // It should only be called if the thread has at least one file (should be
 // checked by the caller beforehand).
+// pruneOldestThreadFiles deletes enough of the oldest files held by this
+// thread to free up bytes >= the size of the newest file.
+// It should only exceed the newest size by no more than the size of the last
+// deleted file.
+// It should only be called if the thread has at least one file (should be
+// checked by the caller beforehand).
 func (t *Thread) pruneOldestThreadFiles() {
 	files := t.getSortedFiles()
 	v(2, "pruneOldestThreadFiles - files count %v, t.files count %v", len(files), len(t.files))
-	if len(files) == 1 || len(t.files) == 1 {
+	if len(files) == 0 || len(t.files) == 0 {
 		return
 	}
 	firstName := files[len(files)-1]
+	v(3, "pruneOldestThreadFiles - firstName %v", firstName)
+	if len(firstName) == 0 {
+		return
+	}
 	firstSize := t.files[firstName].Size()
+	v(3, "pruneOldestThreadFiles - firstSize %v", firstSize)
 	var delSize int64
-
-	firstName := files[len(files)-1]
-	firstSize := t.files[firstName].Size()
-	var delSize int64 = 0
 	delCnt := 0
-	for delSize <= firstSize {
+	for delSize <= firstSize && delCnt < len(files) {
+		v(3, "pruneOldestThreadFiles - size loop - delCnt %v, len(files) %v", delCnt, len(files))
 		bf := t.files[files[delCnt]]
+		v(3, "pruneOldestThreadFiles - size loop - bf %v", bf)
 		delSize += bf.Size()
 		delCnt++
 	}

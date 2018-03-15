@@ -20,21 +20,22 @@ DEFINES += -DTESTIMONY
 DEPS += /usr/include/testimony.h
 endif
 
+ifneq (,$(wildcard /usr/bin/c++))
+CXX=/usr/bin/c++
+endif
 SHARED_CFLAGS=-std=c++0x -g -Wall -fno-strict-aliasing $(DEFINES)
 SHARED_LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp
 ifneq (,$(wildcard /usr/include/testimony.h))
 SHARED_LDFLAGS += -ltestimony
 endif
 
-GCC=g++
-GCC_CFLAGS_SEC=-fPIC -fPIE -pie -fstack-protector -D_FORTIFY_SOURCE=2
-GCC_CFLAGS=-rdynamic -O2 $(GCC_CFLAGS_SEC)
-GCC_LDFLAGS_SEC=-Wl,-z,now -Wl,-z,relro
-GCC_LDFLAGS=$(GCC_LDFLAGS_SEC)
+OPT_CFLAGS_SEC=-fPIC -fPIE -fstack-protector -D_FORTIFY_SOURCE=2
+OPT_CFLAGS=-O2 $(OPT_CFLAGS_SEC)
+OPT_LDFLAGS_SEC=-Wl,-z,now -Wl,-z,relro
+OPT_LDFLAGS=$(OPT_LDFLAGS_SEC)
 
-CLANG=clang++
-CLANG_CFLAGS=-fno-omit-frame-pointer -O1 -fno-optimize-sibling-calls
-CLANG_LDFLAGS=
+DBG_CFLAGS=-fno-omit-frame-pointer -O1 -fno-optimize-sibling-calls
+DBG_LDFLAGS=
 
 FILES=util packets index aio stenotype
 
@@ -48,19 +49,18 @@ FUZZ_FILES=util index index_bin
 #   make SANITIZE=address
 #   make SANITIZE=memory
 #   make SANITIZE=thread
-# NOTE:  When clang is used, many security options are NOT.  Clang should be
-# used just for testing, NOT for production systems.
+# NOTE:  When sanitize is used, many security options are NOT.  Sanitize should
+# be used just for testing, NOT for production systems.
 SANITIZE=
 ifndef SANITIZE
-	OBJECTS=$(foreach file,$(FILES),$(file)_gcc.o)
-	CFLAGS=$(SHARED_CFLAGS) $(GCC_CFLAGS)
-	LDFLAGS=$(SHARED_LDFLAGS) $(GCC_LDFLAGS)
-	CC=$(GCC)
+	OBJECTS=$(foreach file,$(FILES),$(file)_opt.o)
+	CFLAGS=$(SHARED_CFLAGS) $(OPT_CFLAGS)
+	LDFLAGS=$(SHARED_LDFLAGS) $(OPT_LDFLAGS)
 else
-	OBJECTS=$(foreach file,$(FILES),$(file)_$(SANITIZE)_clang.o)
-	CFLAGS=$(SHARED_CFLAGS) $(CLANG_CFLAGS) -fsanitize=$(SANITIZE)
-	LDFLAGS=$(SHARED_LDFLAGS) $(CLANG_LDFLAGS)
-	CC=$(CLANG)
+	OBJECTS=$(foreach file,$(FILES),$(file)_$(SANITIZE)_dbg.o)
+	CFLAGS=$(SHARED_CFLAGS) $(DBG_CFLAGS) -fsanitize=$(SANITIZE)
+	LDFLAGS=$(SHARED_LDFLAGS) $(DBG_LDFLAGS)
+	CXX=clang++ # Force clang if we're sanitizing
 endif
 ifeq "$(SANITIZE)" "memory"
 	CFLAGS += -fsanitize-memory-track-origins
@@ -72,20 +72,19 @@ clean:
 	rm -f *.o stenotype index_fuzz core
 
 
-
 ### Building stenotype, either in normal (g++) or sanitization (clang) modes ###
 
 # Generate g++ object files.
-%_gcc.o: %.cc $(DEPS)
-	$(GCC) $(CFLAGS) -c -o $@ $<
+%_opt.o: %.cc $(DEPS)
+	$(CXX) $(CFLAGS) -c -o $@ $<
 
 # Generate clang object files.
-%_$(SANITIZE)_clang.o: %.cc $(DEPS)
-	$(CLANG) $(CFLAGS) -c -o $@ $<
+%_$(SANITIZE)_dbg.o: %.cc $(DEPS)
+	$(CXX) $(CFLAGS) -c -o $@ $<
 
 # Generate the stenotype binary itself.  You mostly want this :)
 stenotype: $(OBJECTS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CXX) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 
 

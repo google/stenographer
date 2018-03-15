@@ -586,9 +586,7 @@ int Main(int argc, char** argv) {
       // Set up AF_PACKET packet reading.
       PacketsV3::Builder builder;
       CHECK_SUCCESS(builder.SetUp(socktype, options));
-      if (flag_promisc) {
-        CHECK_SUCCESS(builder.SetPromisc(flag_iface));
-      }
+      CHECK_SUCCESS(builder.SetPromisc(flag_promisc));
       int fanout_id = getpid();
       if (flag_fanout_id > 0) {
         fanout_id = flag_fanout_id;

@@ -72,6 +72,14 @@ if [ ! -f /etc/init/stenographer.conf ]; then
   sudo chmod 0644 /etc/init/stenographer.conf
 fi
 
+if [ -d /lib/systemd/system/ ]; then
+  if [ ! -f /lib/systemd/system/stenographer.service ]; then
+    Info "Setting up stenographer systemd config"
+    sudo cp -v configs/systemd.conf /lib/systemd/system/stenographer.service
+    sudo chmod 644 /lib/systemd/system/stenographer.service
+  fi
+fi
+
 if [ ! -d /etc/stenographer/certs ]; then
   Info "Setting up stenographer /etc directory"
   sudo mkdir -p /etc/stenographer/certs
@@ -86,7 +94,8 @@ fi
 
 if grep -q /path/to /etc/stenographer/config; then
   Error "Create directories to output packets/indexes to, then update"
-  Error "/etc/stenographer/config to point to them"
+  Error "/etc/stenographer/config to point to them."
+  Error "Directories should be owned by stenographer:stenographer."
   exit 1
 fi
 

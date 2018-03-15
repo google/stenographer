@@ -201,6 +201,10 @@ class PacketsV3 : public Packets {
     // SetFilter sets a BPF filter on the socket.
     Error SetFilter(const std::string& filter);
 
+    // Determines whether Bind will set the interface into promiscuous sniffing
+    // mode.
+    Error SetPromisc(bool promisc);
+
     // Bind must be the final method called by Builder.  It binds the created
     // socket to the given interface and returns a PacketsV3 object to wrap it.
     Error Bind(const std::string& iface, Packets** out);
@@ -219,6 +223,7 @@ class PacketsV3 : public Packets {
     // to the PacketsV3 object created by Bind.
     State state_;
     int fanout_;
+    bool promisc_;
   };
 
  private:

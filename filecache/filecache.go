@@ -180,6 +180,7 @@ func (cf *CachedFile) closeFile() error {
 	}
 	v(2, "Closing %q", cf.filename)
 	cf.cache.opened--
+	f := cf.f
 	cf.f = nil
-	return cf.f.Close()
+	return f.Close()
 }

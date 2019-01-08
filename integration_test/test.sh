@@ -19,6 +19,7 @@ PORT="${PORT-9123}"
 BASEDIR="${BASEDIR-/tmp}"
 SKIP_CLEANUP="${SKIP_CLEANUP}"
 SANITIZE="${SANITIZE}"
+PCAP_URL="ftp://ftp.ll.mit.edu/outgoing/darpa/data/2000/LLS_DDOS_1.0/data_and_labeling/tcpdump_inside/LLS_DDOS_1.0-inside.dump.gz"
 
 set -e
 cd $(dirname $0)
@@ -27,9 +28,7 @@ source ../lib.sh
 function PullDownTestData {
   if [ ! -f $BASEDIR/steno_integration_test.pcap ]; then
     Info "Pulling down pcap data"
-    # Test data pulled from
-    # http://www.ll.mit.edu/mission/communications/cyber/CSTcorpora/ideval/data/2000/LLS_DDOS_1.0.html
-    curl -L 'http://www.ll.mit.edu/mission/communications/cyber/CSTcorpora/ideval/data/2000/LLS_DDOS_1.0/data_and_labeling/tcpdump_inside/LLS_DDOS_1.0-inside.dump.gz' > $BASEDIR/steno_integration_test.pcap.gz
+    curl -L "$PCAP_URL" > $BASEDIR/steno_integration_test.pcap.gz
     gunzip $BASEDIR/steno_integration_test.pcap.gz
   fi
 }

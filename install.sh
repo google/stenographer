@@ -66,10 +66,12 @@ if [ ! -f /etc/security/limits.d/stenographer.conf ]; then
   sudo cp -v configs/limits.conf /etc/security/limits.d/stenographer.conf
 fi
 
-if [ ! -f /etc/init/stenographer.conf ]; then
-  Info "Setting up stenographer upstart config"
-  sudo cp -v configs/upstart.conf /etc/init/stenographer.conf
-  sudo chmod 0644 /etc/init/stenographer.conf
+if [ -d /etc/init/ ]; then
+  if [ ! -f /etc/init/stenographer.conf ]; then
+    Info "Setting up stenographer upstart config"
+    sudo cp -v configs/upstart.conf /etc/init/stenographer.conf
+    sudo chmod 0644 /etc/init/stenographer.conf
+  fi
 fi
 
 if [ -d /lib/systemd/system/ ]; then

@@ -266,7 +266,7 @@ void DropPrivileges() {
               << flag_uid;
     auto passwd = getpwnam(flag_uid.c_str());
     CHECK(passwd != NULL) << "Unable to get info for user " << flag_uid;
-    flag_uid = passwd->pw_uid;
+    flag_uid = std::to_string(passwd->pw_uid);
     CHECK_SUCCESS(Errno(initgroups(flag_uid.c_str(), getgid())));
     CHECK_SUCCESS(Errno(setuid(passwd->pw_uid)));
   } else {

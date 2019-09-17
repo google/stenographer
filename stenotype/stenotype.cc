@@ -102,6 +102,8 @@ uint16_t flag_fanout_type =
 #else
     PACKET_FANOUT_LB;
 #endif
+
+int64_t blocks_per_file = (flag_filesize_mb * 1024) / flag_blocksize_kb;
 uint16_t flag_fanout_id = 0;
 std::string flag_uid;
 std::string flag_gid;
@@ -138,6 +140,7 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
       break;
     case 305:
       flag_filesize_mb = atoi(arg);
+      blocks_per_file = (flag_filesize_mb * 1024) / flag_blocksize_kb;
       break;
     case 306:
       flag_threads = atoi(arg);
@@ -183,6 +186,7 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
       break;
     case 320:
       flag_blocksize_kb = atoll(arg);
+      blocks_per_file = (flag_filesize_mb * 1024) / flag_blocksize_kb;
       break;
     case 321:
       flag_promisc = false;
@@ -478,7 +482,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
     // Rotate file if necessary.
     int64_t current_file_age_secs =
         (current_micros - micros) / kNumMicrosPerSecond;
-    if (block_offset == flag_filesize_mb ||
+    if (block_offset == blocks_per_file ||
         current_file_age_secs > flag_fileage_sec) {
       VLOG(1) << "Rotating file " << micros << " with " << block_offset
               << " blocks";
@@ -508,7 +512,7 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
     blocks++;
     block_offset++;
 
-    // Log stats every 100MB or at least 1/minute.
+    // Log stats every 100 blocks or at least 1/minute.
     if (blocks % 100 == 0 ||
         lastlog < current_micros - 60 * kNumMicrosPerSecond) {
       lastlog = current_micros;
@@ -516,8 +520,9 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
       Stats stats;
       Error stats_err = v3->GetStats(&stats);
       if (SUCCEEDED(stats_err)) {
-        LOG(INFO) << "Thread " << thread << " stats: MB=" << blocks
-                  << " secs=" << duration << " MBps=" << (blocks / duration)
+          uint64_t mb = (blocks * flag_blocksize_kb) / 1024;
+        LOG(INFO) << "Thread " << thread << " stats: MB=" << mb
+                  << " secs=" << duration << " MBps=" << (mb / duration)
                   << " " << stats.String();
       } else {
         LOG(ERROR) << "Unable to get stats: " << *stats_err;

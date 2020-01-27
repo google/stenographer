@@ -132,6 +132,9 @@ func (a unionQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile) (b
 			return nil, err
 		}
 		positions = positions.Union(pos)
+		if positions.IsAllPositions() {
+			break
+		}
 	}
 	return positions, nil
 }
@@ -155,6 +158,9 @@ func (a intersectQuery) LookupIn(ctx context.Context, index *indexfile.IndexFile
 			return nil, err
 		}
 		positions = positions.Intersect(pos)
+		if positions.Len() == 0 {
+			break
+		}
 	}
 	return positions, nil
 }

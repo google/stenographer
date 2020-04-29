@@ -94,6 +94,8 @@ int64_t flag_filesize_mb = 4 << 10;
 int32_t flag_threads = 1;
 int64_t flag_fileage_sec = 60;
 int64_t flag_blockage_sec = 10;
+int64_t flag_stats_blocks = 100;
+int64_t flag_stats_sec = 60;
 uint64_t flag_blocksize_kb = 1024;
 uint16_t flag_fanout_type =
 // Use rollover as the default if it's available.
@@ -191,6 +193,12 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
     case 321:
       flag_promisc = false;
       break;
+    case 322:
+      flag_stats_blocks = atoi(arg);
+      break;
+    case 323:
+      flag_stats_sec = atoi(arg);
+      break;
   }
   return 0;
 }
@@ -233,6 +241,8 @@ void ParseOptions(int argc, char** argv) {
       {"blockage_sec", 319, n, 0, "A block is written at least every N secs"},
       {"blocksize_kb", 320, n, 0, "Size of a block, in KB"},
       {"no_promisc", 321, 0, 0, "Don't set promiscuous mode"},
+      {"stats_blocks", 322, n, 0, "Size block stats will be displayed, requires verbose, default 100, 0 disables"},
+      {"stats_sec", 323, n, 0, "Seconds stats will be displayed, requires verbose, default 60, 0 disables"},
       {0},
   };
   struct argp argp = {options, &ParseOptions};
@@ -515,8 +525,9 @@ void RunThread(int thread, st::ProducerConsumerQueue* write_index,
     block_offset++;
 
     // Log stats every 100 blocks or at least 1/minute.
-    if (blocks % 100 == 0 ||
-        lastlog < current_micros - 60 * kNumMicrosPerSecond) {
+    if ( (flag_stats_blocks != 0 && blocks % flag_stats_blocks == 0) ||
+        (flag_stats_sec != 0 &&
+         lastlog < current_micros - flag_stats_sec * kNumMicrosPerSecond) ) {
       lastlog = current_micros;
       double duration = (current_micros - start) * 1.0 / kNumMicrosPerSecond;
       Stats stats;

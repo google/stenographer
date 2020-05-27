@@ -73,9 +73,15 @@ const int64_t kNumNanosPerSecond =
 
 inline int64_t GetCurrentTimeNanos() {
   struct timespec tv;
+#ifndef USE_CLOCK_REALTIME
   clock_gettime(clock_mono_id, &tv);
   int64_t secs = clock_realtime.tv_sec - clock_monotonic.tv_sec + tv.tv_sec;
   int64_t nsecs = clock_realtime.tv_nsec - clock_monotonic.tv_nsec + tv.tv_nsec;
+#else
+  clock_gettime(CLOCK_REALTIME, &tv);
+  int64_t secs = tv.tv_sec;
+  int64_t nsecs = tv.tv_nsec;
+#endif  
   return secs * 1000000000 + nsecs;
 }
 inline int64_t GetCurrentTimeMicros() { return GetCurrentTimeNanos() / 1000; }

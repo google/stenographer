@@ -14,7 +14,9 @@
 
 DEPS=Makefile *.h
 
-DEFINES=
+# remove this flag, if a monotonic clock reading is preferred
+# see util.h, GetCurrentTimeNanos()   
+DEFINES=-DUSE_CLOCK_REALTIME
 ifneq (,$(wildcard /usr/include/testimony.h))
 DEFINES += -DTESTIMONY
 DEPS += /usr/include/testimony.h

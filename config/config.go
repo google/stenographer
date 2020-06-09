@@ -49,23 +49,23 @@ type ThreadConfig struct {
 
 // RpcConfig is a json-decoded configuration for running the gRPC server.
 type RpcConfig struct {
-        CaCert                  string
-        ServerKey               string
-        ServerCert              string
-        ServerPort              int
-        ServerPcapPath          string
-        ServerPcapMaxSize       int64
-        ClientPcapChunkSize     int64
-        ClientPcapMaxSize       int64
+	CaCert              string
+	ServerKey           string
+	ServerCert          string
+	ServerPort          int
+	ServerPcapPath      string
+	ServerPcapMaxSize   int64
+	ClientPcapChunkSize int64
+	ClientPcapMaxSize   int64
 }
 
 // Config is a json-decoded configuration for running stenographer.
 type Config struct {
-    Rpc             *RpcConfig
+	Rpc             *RpcConfig
 	StenotypePath   string
 	Threads         []ThreadConfig
 	Interface       string
-    TestimonySocket string
+	TestimonySocket string
 	Flags           []string
 	Port            int
 	Host            string // Location to listen.
@@ -111,9 +111,9 @@ func (c Config) Validate() error {
 		}
 	}
 
-    if len(c.TestimonySocket) > 0 && len(c.Interface) > 0 {
-        return fmt.Errorf("Can't use both \"Interface\" and \"TestimonySocket\" options")
-    }
+	if len(c.TestimonySocket) > 0 && len(c.Interface) > 0 {
+		return fmt.Errorf("Can't use both \"Interface\" and \"TestimonySocket\" options")
+	}
 
 	if host := net.ParseIP(c.Host); host == nil {
 		return fmt.Errorf("invalid listening location %q in configuration", c.Host)

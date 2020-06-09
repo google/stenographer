@@ -61,15 +61,16 @@ type RpcConfig struct {
 
 // Config is a json-decoded configuration for running stenographer.
 type Config struct {
-        Rpc           *RpcConfig
-	StenotypePath string
-	Threads       []ThreadConfig
-	Interface     string
-	Flags         []string
-	Port          int
-	Host          string // Location to listen.
-	CertPath      string // Directory where client and server certs are stored.
-	MaxOpenFiles  int    // Max number of file descriptors opened at once
+    Rpc             *RpcConfig
+	StenotypePath   string
+	Threads         []ThreadConfig
+	Interface       string
+    TestimonySocket string
+	Flags           []string
+	Port            int
+	Host            string // Location to listen.
+	CertPath        string // Directory where client and server certs are stored.
+	MaxOpenFiles    int    // Max number of file descriptors opened at once
 }
 
 // ReadConfigFile reads in the given JSON encoded configuration file and returns
@@ -109,6 +110,10 @@ func (c Config) Validate() error {
 			return fmt.Errorf("No index directory specified for thread %d in configuration", n)
 		}
 	}
+
+    if len(c.TestimonySocket) > 0 && len(c.Interface) > 0 {
+        return fmt.Errorf("Can't use both \"Interface\" and \"TestimonySocket\" options")
+    }
 
 	if host := net.ParseIP(c.Host); host == nil {
 		return fmt.Errorf("invalid listening location %q in configuration", c.Host)

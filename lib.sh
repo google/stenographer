@@ -55,12 +55,50 @@ function ReallyKill {
   fi
 }
 
-function InstallPackage {
-  Info "Checking for package '$1'"
-  if ! dpkg -s $1 >/dev/null 2>/dev/null; then
-    Info "Have to install package $1"
-    sudo apt-get install $1
+function CheckCentosRepos {
+  # snappy-devel is in Power Tools in CentOS 8, which is disabled by default
+  if grep 'VERSION_ID="8"' /etc/os-release >/dev/null && ! yum repolist | grep PowerTools >/dev/null; then
+    Error "You're using CentOS 8 and have Power Tools repository disabled, please enable it before running this script."
+    Error "  # yum config-manager --set-enabled PowerTools"
+    exit 2;
   fi
+}
+
+function InstallJq {
+  local _url="https://github.com/stedolan/jq/releases/download/jq-1.5rc2/jq-linux-x86_64"
+  if (! which jq &>/dev/null); then
+    Info "Installing jq ..."
+    curl -s -L -J $_url | sudo tee /usr/local/bin/jq >/dev/null;
+    sudo chmod +x /usr/local/bin/jq;
+  fi
+}
+
+function InstallDependencies {
+  Info "Installing dependencies"
+
+  case $1 in
+    centos)
+      CheckCentosRepos
+      InstallJq
+      sudo yum install libaio-devel \
+                       leveldb-devel \
+                       snappy-devel \
+                       gcc-c++ \
+                       make \
+                       libcap-devel \
+                       libseccomp-devel
+      ;;
+    debian)
+      sudo apt-get install libaio-dev \
+                           libleveldb-dev \
+                           libsnappy-dev \
+                           g++ \
+                           libcap2-bin \
+                           libseccomp-dev \
+                           jq \
+                           openssl
+      ;;
+  esac
 }
 
 function SetCapabilities {

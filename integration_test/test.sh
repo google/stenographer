@@ -49,7 +49,7 @@ function TestCountPackets {
 Info "Testing sudo access"
 sudo cat /dev/null
 
-InstallPackage tcpreplay
+sudo apt install tcpreplay
 
 PullDownTestData
 

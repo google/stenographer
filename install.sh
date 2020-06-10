@@ -25,17 +25,28 @@ cd "$(dirname $0)"
 source lib.sh
 
 set -e
+
+# Detect distribution for automatic dependency installation
+DISTRO=
+OS_RELEASE_ID=`cat /etc/os-release | perl -n -e '/^ID=\"?([a-zA-Z ]+)\"?/ && print "$1\n"'`
+
+case $OS_RELEASE_ID in
+  debian|ubuntu)
+    DISTRO=debian
+    ;;
+  centos)
+    DISTRO=centos
+    ;;
+  *)
+    Error "Your distribution \"$OS_RELEASE_ID\" is not suported"
+    exit 1
+    ;;
+esac
+
 Info "Making sure we have sudo access"
 sudo cat /dev/null
 
-InstallPackage libaio-dev
-InstallPackage libleveldb-dev
-InstallPackage libsnappy-dev
-InstallPackage g++
-InstallPackage libcap2-bin
-InstallPackage libseccomp-dev
-InstallPackage jq
-InstallPackage openssl
+InstallDependencies $DISTRO
 
 Info "Building stenographer"
 go build

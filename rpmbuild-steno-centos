@@ -37,9 +37,9 @@ cp $TMP/stenographer-$commit/stenographer.spec $TMP/rpmbuild/SPECS/
 rpmbuild --define "_topdir $TMP/rpmbuild" -bs $TMP/rpmbuild/SPECS/stenographer.spec
 
 # use mock to create rpm for centos 7
-sudo mock -r epel-7-x86_64 --init
-sudo mock -r epel-7-x86_64 --clean
-sudo mock -r epel-7-x86_64 rebuild $TMP/rpmbuild/SRPMS/stenographer-*$short_commit.*.src.rpm
+mock -r epel-7-x86_64 --init
+mock -r epel-7-x86_64 --clean
+mock -r epel-7-x86_64 rebuild $TMP/rpmbuild/SRPMS/stenographer-*$short_commit.*.src.rpm
 
 
 

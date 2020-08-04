@@ -43,8 +43,8 @@ case $OS_RELEASE_ID in
     ;;
 esac
 
-Info "Making sure we have sudo access"
-sudo cat /dev/null
+Info "Making sure we have access"
+cat /dev/null
 
 InstallDependencies $DISTRO
 
@@ -58,51 +58,51 @@ popd
 
 set +e
 Info "Killing aleady-running processes"
-sudo service stenographer stop
+systemctl stop stenographer
 ReallyKill stenographer
 ReallyKill stenotype
 set -e
 
 if ! id stenographer >/dev/null 2>&1; then
   Info "Setting up stenographer user"
-  sudo adduser --system --no-create-home stenographer
+  adduser --system --no-create-home stenographer
 fi
 if ! getent group stenographer >/dev/null 2>&1; then
   Info "Setting up stenographer group"
-  sudo addgroup --system stenographer
+  addgroup --system stenographer
 fi
 
 if [ ! -f /etc/security/limits.d/stenographer.conf ]; then
   Info "Setting up stenographer limits"
-  sudo cp -v configs/limits.conf /etc/security/limits.d/stenographer.conf
+  cp -v configs/limits.conf /etc/security/limits.d/stenographer.conf
 fi
 
 if [ -d /etc/init/ ]; then
   if [ ! -f /etc/init/stenographer.conf ]; then
     Info "Setting up stenographer upstart config"
-    sudo cp -v configs/upstart.conf /etc/init/stenographer.conf
-    sudo chmod 0644 /etc/init/stenographer.conf
+    cp -v configs/upstart.conf /etc/init/stenographer.conf
+    chmod 0644 /etc/init/stenographer.conf
   fi
 fi
 
 if [ -d /lib/systemd/system/ ]; then
   if [ ! -f /lib/systemd/system/stenographer.service ]; then
     Info "Setting up stenographer systemd config"
-    sudo cp -v configs/systemd.conf /lib/systemd/system/stenographer.service
-    sudo chmod 644 /lib/systemd/system/stenographer.service
+    cp -v configs/systemd.conf /lib/systemd/system/stenographer.service
+    chmod 644 /lib/systemd/system/stenographer.service
   fi
 fi
 
 if [ ! -d /etc/stenographer/certs ]; then
   Info "Setting up stenographer /etc directory"
-  sudo mkdir -p /etc/stenographer/certs
-  sudo chown -R root:root /etc/stenographer/certs
+  mkdir -p /etc/stenographer/certs
+  chown -R root:root /etc/stenographer/certs
   if [ ! -f /etc/stenographer/config ]; then
-    sudo cp -vf configs/steno.conf /etc/stenographer/config
-    sudo chown root:root /etc/stenographer/config
-    sudo chmod 644 /etc/stenographer/config
+    cp -vf configs/steno.conf /etc/stenographer/config
+    chown root:root /etc/stenographer/config
+    chmod 644 /etc/stenographer/config
   fi
-  sudo chown root:root /etc/stenographer
+  chown root:root /etc/stenographer
 fi
 
 if grep -q /path/to /etc/stenographer/config; then
@@ -112,29 +112,29 @@ if grep -q /path/to /etc/stenographer/config; then
   exit 1
 fi
 
-sudo ./stenokeys.sh stenographer stenographer
+./stenokeys.sh stenographer stenographer
 
 Info "Copying stenographer/stenotype"
-sudo cp -vf stenographer "$BINDIR/stenographer"
-sudo chown stenographer:root "$BINDIR/stenographer"
-sudo chmod 0700 "$BINDIR/stenographer"
-sudo cp -vf stenotype/stenotype "$BINDIR/stenotype"
-sudo chown stenographer:root "$BINDIR/stenotype"
-sudo chmod 0500 "$BINDIR/stenotype"
+cp -vf stenographer "$BINDIR/stenographer"
+chown stenographer:root "$BINDIR/stenographer"
+chmod 0700 "$BINDIR/stenographer"
+cp -vf stenotype/stenotype "$BINDIR/stenotype"
+chown stenographer:root "$BINDIR/stenotype"
+chmod 0500 "$BINDIR/stenotype"
 SetCapabilities "$BINDIR/stenotype"
 
 Info "Copying stenoread/stenocurl"
-sudo cp -vf stenoread "$BINDIR/stenoread"
-sudo chown root:root "$BINDIR/stenoread"
-sudo chmod 0755 "$BINDIR/stenoread"
-sudo cp -vf stenocurl "$BINDIR/stenocurl"
-sudo chown root:root "$BINDIR/stenocurl"
-sudo chmod 0755 "$BINDIR/stenocurl"
+cp -vf stenoread "$BINDIR/stenoread"
+chown root:root "$BINDIR/stenoread"
+chmod 0755 "$BINDIR/stenoread"
+cp -vf stenocurl "$BINDIR/stenocurl"
+chown root:root "$BINDIR/stenocurl"
+chmod 0755 "$BINDIR/stenocurl"
 
 Info "Starting stenographer using upstart"
 # If you're not using upstart, you can replace this with:
-#   sudo -b -u stenographer $BINDIR/stenographer &
-sudo service stenographer start
+#   -b -u stenographer $BINDIR/stenographer &
+systemctl start stenographer
 
 Info "Checking for running processes..."
 sleep 5

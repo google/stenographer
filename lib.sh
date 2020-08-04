@@ -30,7 +30,7 @@ function Error {
 
 function Kill {
   KILLCMD="${KILLCMD-killall}"
-  sudo "$KILLCMD" "$@" 2>/dev/null >/dev/null
+  "$KILLCMD" "$@" 2>/dev/null >/dev/null
 }
 
 function Running {
@@ -60,7 +60,6 @@ function CheckCentosRepos {
   if grep 'VERSION_ID="8"' /etc/os-release >/dev/null && ! yum repolist | grep PowerTools >/dev/null; then
     Error "You're using CentOS 8 and have Power Tools repository disabled, please enable it before running this script."
     Error "  # yum config-manager --set-enabled PowerTools"
-    exit 2;
   fi
 }
 
@@ -68,8 +67,8 @@ function InstallJq {
   local _url="https://github.com/stedolan/jq/releases/download/jq-1.5rc2/jq-linux-x86_64"
   if (! which jq &>/dev/null); then
     Info "Installing jq ..."
-    curl -s -L -J $_url | sudo tee /usr/local/bin/jq >/dev/null;
-    sudo chmod +x /usr/local/bin/jq;
+    curl -s -L -J $_url | tee /usr/local/bin/jq >/dev/null;
+    chmod +x /usr/local/bin/jq;
   fi
 }
 
@@ -80,7 +79,7 @@ function InstallDependencies {
     centos)
       CheckCentosRepos
       InstallJq
-      sudo yum install libaio-devel \
+      yum install -y --enablerepo=PowerTools libaio-devel \
                        leveldb-devel \
                        snappy-devel \
                        gcc-c++ \
@@ -89,7 +88,7 @@ function InstallDependencies {
                        libseccomp-devel
       ;;
     debian)
-      sudo apt-get install libaio-dev \
+      apt-get install libaio-dev \
                            libleveldb-dev \
                            libsnappy-dev \
                            g++ \
@@ -102,7 +101,7 @@ function InstallDependencies {
 }
 
 function SetCapabilities {
-  sudo setcap 'CAP_NET_RAW+ep CAP_NET_ADMIN+ep CAP_IPC_LOCK+ep' "$1"
+  setcap 'CAP_NET_RAW+ep CAP_NET_ADMIN+ep CAP_IPC_LOCK+ep' "$1"
 }
 
 function Sleep {

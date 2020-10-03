@@ -264,7 +264,7 @@ void DropPrivileges() {
     if (flag_gid == "") {
       flag_gid = "nogroup";
     }
-    LOG(INFO) << "Dropping priviledges from " << getgid() << " to GID "
+    LOG(INFO) << "Dropping privileges from " << getgid() << " to GID "
               << flag_gid;
     auto group = getgrnam(flag_gid.c_str());
     CHECK(group != NULL) << "Unable to get info for group " << flag_gid;
@@ -276,7 +276,7 @@ void DropPrivileges() {
     if (flag_uid == "") {
       flag_uid = "nobody";
     }
-    LOG(INFO) << "Dropping priviledges from " << getuid() << " to UID "
+    LOG(INFO) << "Dropping privileges from " << getuid() << " to UID "
               << flag_uid;
     auto passwd = getpwnam(flag_uid.c_str());
     CHECK(passwd != NULL) << "Unable to get info for user " << flag_uid;

@@ -26,7 +26,7 @@ if [ -z "$JQ" ]; then
 fi
 
 if [ "$#" -lt 1 -o "${1:0:1}" != "/" ]; then
-  /bin/cat >&2 <<EOF
+  cat >&2 <<EOF
 USAGE: $0 /<path> [curl args...]
 
 Runs 'curl' against https://stenographerserver/path, returning data on STDOUT.
@@ -39,13 +39,13 @@ the results through tcpdump for easier handling.
 EOF
   exit 1
 fi
-PATH="$1"  # starts with '/'
+URLPATH="$1"  # starts with '/'
 shift
 
 STENOGRAPHER_CONFIG="${STENOGRAPHER_CONFIG-/etc/stenographer/config}"
 
 if [ ! -r "$STENOGRAPHER_CONFIG" ]; then
-  /bin/cat >&2 <<EOF
+  cat >&2 <<EOF
 Unable to access stenographer config at '$STENOGRAPHER_CONFIG'.  You may need
 to set the STENOGRAPHER_CONFIG environmental variable to point to the correct
 location of your config, or you may need to request read access to that file.
@@ -60,20 +60,20 @@ if [ -z "$PORT" -o -z "$CERTPATH" ]; then
   echo "Unable to get port ($PORT) or certpath ($CERTPATH) from config ($STENOGRAPHER_CONFIG)" >&2
   exit 1
 fi
-URL="https://$HOST:$PORT$PATH"  # PATH already starts with /
+URL="https://$HOST:$PORT$URLPATH"  # URLPATH already starts with /
 
-if ! /bin/cat "$CERTPATH/client_key.pem" > /dev/null; then
+if ! cat "$CERTPATH/client_key.pem" > /dev/null; then
   echo "You do not have permission to access Stenographer data" >&2
-  /bin/ls -l "$CERTPATH/client_key.pem" >&2
+  ls -l "$CERTPATH/client_key.pem" >&2
   while [ "$CERTPATH" != "/" ]; do
-    CERTPATH="$(/usr/bin/dirname "$CERTPATH")"
-    /bin/ls -l -d "$CERTPATH" >&2
+    CERTPATH="$(dirname "$CERTPATH")"
+    ls -l -d "$CERTPATH" >&2
   done
-  echo -e "Your permissions: user=$(/usr/bin/id -n -u) groups=$(/usr/bin/groups)" >&2
+  echo -e "Your permissions: user=$(id -n -u) groups=$(groups)" >&2
   exit 1
 fi
 
-/usr/bin/curl \
+curl \
     --cert "$CERTPATH/client_cert.pem" \
     --key "$CERTPATH/client_key.pem" \
     --cacert "$CERTPATH/ca_cert.pem" \

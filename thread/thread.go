@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,6 +45,7 @@ var (
 	v            = base.V // verbose logging
 	currentFiles = stats.S.Get("current_files")
 	agedFiles    = stats.S.Get("aged_files")
+	threadsNum   int
 )
 
 const (
@@ -84,6 +86,7 @@ func Threads(configs []config.ThreadConfig, baseDir string, fc *filecache.Cache)
 			return nil, err
 		}
 		threads[i] = thread
+		threadsNum++
 	}
 	return threads, nil
 }
@@ -361,7 +364,11 @@ func (t *Thread) Lookup(ctx context.Context, q query.Query) *base.PacketChan {
 func (t *Thread) SyncFiles() {
 	t.mu.Lock()
 	t.syncFilesWithDisk()
-	t.cleanUpOnLowDiskSpace()
+	// Quick fix for when several threads writes to same underlying volume
+	if s := rand.Intn(threadsNum) + 1; s == t.id {
+		v(1, "Thread %d of %d checking diskspace", t.id, threadsNum)
+		t.cleanUpOnLowDiskSpace()
+	}
 	t.mu.Unlock()
 }
 

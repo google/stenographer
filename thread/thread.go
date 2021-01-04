@@ -365,8 +365,8 @@ func (t *Thread) SyncFiles() {
 	t.mu.Lock()
 	t.syncFilesWithDisk()
 	// Quick fix for when several threads writes to same underlying volume
-	if s := rand.Intn(threadsNum) + 1; s == t.id {
-		v(1, "Thread %d of %d checking diskspace", t.id, threadsNum)
+	if s := rand.Intn(threadsNum); s == t.id {
+		v(1, "Thread %d of %d checking diskspace", t.id, threadsNum-1)
 		t.cleanUpOnLowDiskSpace()
 	}
 	t.mu.Unlock()

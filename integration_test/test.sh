@@ -68,7 +68,7 @@ OUTDIR="$(mktemp -d $BASEDIR/steno.XXXXXXXXXX)"
 /bin/chmod g+rx "$OUTDIR"
 Info "Writing output to directory '$OUTDIR'"
 
-mkdir $OUTDIR/{pkt,idx,certs}
+mkdir $OUTDIR/{pkt{0,1},idx{0,1},certs}
 
 Info "Setting up $DUMMY interface"
 sudo /sbin/modprobe dummy
@@ -104,8 +104,12 @@ trap CleanUp EXIT
 cat > $OUTDIR/config << EOF
 {
   "Threads": [
-    { "PacketsDirectory": "$OUTDIR/pkt"
-    , "IndexDirectory": "$OUTDIR/idx"
+    { "PacketsDirectory": "$OUTDIR/pkt0"
+    , "IndexDirectory": "$OUTDIR/idx0"
+    , "DiskFreePercentage": 1
+    },
+    { "PacketsDirectory": "$OUTDIR/pkt1"
+    , "IndexDirectory": "$OUTDIR/idx1"
     , "DiskFreePercentage": 1
     }
   ]

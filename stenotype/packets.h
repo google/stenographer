@@ -200,6 +200,9 @@ class PacketsV3 : public Packets {
     // SetFilter sets a BPF filter on the socket.
     Error SetFilter(const std::string& filter);
 
+     // SetBPFFilter sets a BPF filter on the socket.
+    Error SetBPFFilter(const std::string& filter);
+
     // Determines whether Bind will set the interface into promiscuous sniffing
     // mode.
     Error SetPromisc(bool promisc);

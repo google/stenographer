@@ -28,6 +28,9 @@
 #include <unistd.h>           // close(), getpid()
 #include <sys/ioctl.h>        // ioctl()
 
+#include <pcap.h>             // pcap_compile
+
+
 #include <memory>
 #include <string>
 #include <sstream>
@@ -298,6 +301,36 @@ Error PacketsV3::Builder::SetFilter(const std::string& filter) {
       "so_lock_filter");
   errno = 0;
 #endif
+  return SUCCESS;
+}
+
+Error PacketsV3::Builder::SetBPFFilter(const std::string& filter) {
+  RETURN_IF_ERROR(BadState(), "Builder");
+
+  struct bpf_program raw_filter;
+  int linktype = DLT_EN10MB;
+
+ if (pcap_compile_nopcap(0xffff, linktype, &raw_filter, filter.data(), 1, 0) == -1) {
+         return ERROR("invalid filter: too long");
+
+
+  RETURN_IF_ERROR(Errno(setsockopt(state_.fd, SOL_SOCKET, SO_ATTACH_FILTER, &raw_filter, sizeof(raw_filter))),
+                  "so_attach_filter"); }
+
+
+#ifdef SO_LOCK_FILTER
+  int v = 1;
+  // SO_LOCK_FILTER is available only on kernels >= 3.9, so ignore the
+  // ENOPROTOOPT
+  // error here. We use it to make sure that no one can mess with our socket's
+  // filter, so not having it is not really a big concern.
+  RETURN_IF_ERROR(
+      Errno(setsockopt(state_.fd, SOL_SOCKET, SO_LOCK_FILTER, &v, sizeof(v)) ||
+            errno == ENOPROTOOPT),
+      "so_lock_filter");
+  errno = 0;
+#endif
+  pcap_freecode( (struct bpf_program *) &raw_filter);
   return SUCCESS;
 }
 

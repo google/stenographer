@@ -86,6 +86,7 @@ namespace {
 
 std::string flag_iface = "eth0";
 std::string flag_filter = "";
+std::string flag_bpf_filter = "";
 std::string flag_dir = "";
 int64_t flag_count = -1;
 int32_t flag_blocks = 2048;
@@ -199,6 +200,9 @@ int ParseOptions(int key, char* arg, struct argp_state* state) {
     case 323:
       flag_stats_sec = atoi(arg);
       break;
+    case 324:
+      flag_bpf_filter = arg;
+      break;
   }
   return 0;
 }
@@ -243,6 +247,7 @@ void ParseOptions(int argc, char** argv) {
       {"no_promisc", 321, 0, 0, "Don't set promiscuous mode"},
       {"stats_blocks", 322, n, 0, "Size block stats will be displayed, requires verbose, default 100, 0 disables"},
       {"stats_sec", 323, n, 0, "Seconds stats will be displayed, requires verbose, default 60, 0 disables"},
+      {"bpf_filter", 324, s, 0,"string filer"},
       {0},
   };
   struct argp argp = {options, &ParseOptions};
@@ -614,7 +619,10 @@ int Main(int argc, char** argv) {
       }
       if (!flag_filter.empty()) {
         CHECK_SUCCESS(builder.SetFilter(flag_filter));
+      } else if (!flag_bpf_filter.empty()) {
+        CHECK_SUCCESS(builder.SetBPFFilter(flag_bpf_filter));
       }
+
       Packets* v3;
       CHECK_SUCCESS(builder.Bind(flag_iface, &v3));
       sockets.push_back(v3);

@@ -153,6 +153,9 @@ binary.  Here are some flags which may prove particularly useful:
      is NOT a human-readable BPF filter... it's a hex-encoded compiled filter.
      Use the supplied `compile_bpf.sh` script to generate this encoding from a
      human-readable filter.
+   *  `--bpf_filter=BPF`:  Allows users to specify a BPF filter for packet capture
+     only packets which match this filter will be written by `stenotype`.  This
+     is a human-readable BPF as used by tcpdump, ngrep, tshark, etc. 
    * `--seccomp=none|trace|kill`:  We use seccomp to sandbox stenotype, but
      we've found that this can be fragile as we switch between different machine
      configurations.  Some VMs appear to freeze while trying to set up seccomp

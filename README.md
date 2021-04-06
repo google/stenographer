@@ -62,7 +62,7 @@ primitives:
     before 2012-11-03T11:05:00Z      # Packets before a specific time (UTC)
     after 2012-11-03T11:05:00-07:00  # Packets after a specific time (with TZ)
     before 45m ago        # Packets before a relative time
-    before 3h ago         # Packets after a relative time
+    after 3h ago         # Packets after a relative time
 
 **NOTE**: Relative times must be measured in integer values of hours or minutes
 as demonstrated above.
@@ -112,6 +112,7 @@ other Linux distros):
 *   g++
 *   libcap2-bin
 *   libseccomp-dev
+*   libpcap-dev
 
 
 Obligatory Fine Print

@@ -26,7 +26,7 @@ ifneq (,$(wildcard /usr/bin/c++))
 CXX=/usr/bin/c++
 endif
 SHARED_CFLAGS=-std=c++0x -Wall -fno-strict-aliasing $(DEFINES)
-SHARED_LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp
+SHARED_LDFLAGS=-lleveldb -lrt -laio -lpthread -lsnappy -lseccomp -lpcap
 ifneq (,$(wildcard /usr/include/testimony.h))
 SHARED_LDFLAGS += -ltestimony
 endif
@@ -56,12 +56,12 @@ FUZZ_FILES=util index index_bin
 SANITIZE=
 ifndef SANITIZE
 	OBJECTS=$(foreach file,$(FILES),$(file)_opt.o)
-	CFLAGS:=$(CFLAGS) $(SHARED_CFLAGS) $(OPT_CFLAGS)
-	LDFLAGS:=$(LDFLAGS) $(SHARED_LDFLAGS) $(OPT_LDFLAGS)
+	CFLAGS=$(SHARED_CFLAGS) $(OPT_CFLAGS)
+	LDFLAGS=$(SHARED_LDFLAGS) $(OPT_LDFLAGS)
 else
 	OBJECTS=$(foreach file,$(FILES),$(file)_$(SANITIZE)_dbg.o)
-	CFLAGS:=$(CFLAGS) $(SHARED_CFLAGS) $(DBG_CFLAGS) -fsanitize=$(SANITIZE)
-	LDFLAGS:=$(LDFLAGS) $(SHARED_LDFLAGS) $(DBG_LDFLAGS)
+	CFLAGS=$(SHARED_CFLAGS) $(DBG_CFLAGS) -fsanitize=$(SANITIZE)
+	LDFLAGS=$(SHARED_LDFLAGS) $(DBG_LDFLAGS)
 	CXX=clang++ # Force clang if we're sanitizing
 endif
 ifeq "$(SANITIZE)" "memory"
@@ -78,15 +78,15 @@ clean:
 
 # Generate g++ object files.
 %_opt.o: %.cc $(DEPS)
-	$(CXX) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+	$(CXX) $(CFLAGS) -c -o $@ $<
 
 # Generate clang object files.
 %_$(SANITIZE)_dbg.o: %.cc $(DEPS)
-	$(CXX) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+	$(CXX) $(CFLAGS) -c -o $@ $<
 
 # Generate the stenotype binary itself.  You mostly want this :)
 stenotype: $(OBJECTS)
-	$(CXX) $(CFLAGS) $(CPPFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CXX) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 
 
@@ -103,4 +103,3 @@ index_fuzz: $(foreach file,$(FUZZ_FILES),$(file)_afl.o)
 # Run afl-fuzz to fuzz the index_fuzz binary.
 fuzz: index_fuzz
 	afl-fuzz -i afl_tests -o afl_findings ./index_fuzz @@
-

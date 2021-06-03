@@ -130,9 +130,12 @@ func (b *BlockFile) Close() (err error) {
 	return
 }
 
+const blockHeaderSize = 48 // sizeof(tpacket_block_desc);
+
 // allPacketsIter implements Iter.
 type allPacketsIter struct {
 	*BlockFile
+	blockHeaderData  []byte
 	blockData        []byte
 	block            *C.struct_tpacket_hdr_v1
 	pkt              *C.struct_tpacket3_hdr
@@ -150,8 +153,8 @@ func (a *allPacketsIter) Next() bool {
 	}
 	for a.block == nil || a.blockPacketsRead == int(a.block.num_pkts) {
 		packetBlocksRead.Increment()
-		a.blockData = make([]byte, 1<<20)
-		_, err := a.f.ReadAt(a.blockData[:], a.blockOffset)
+		a.blockHeaderData = make([]byte, blockHeaderSize)
+		_, err := a.f.ReadAt(a.blockHeaderData[:], a.blockOffset)
 		if err == io.EOF {
 			a.done = true
 			return false
@@ -159,15 +162,34 @@ func (a *allPacketsIter) Next() bool {
 			a.err = fmt.Errorf("could not read block at %v: %v", a.blockOffset, err)
 			return false
 		}
-		baseHdr := (*C.struct_tpacket_block_desc)(unsafe.Pointer(&a.blockData[0]))
+		baseHdr := (*C.struct_tpacket_block_desc)(unsafe.Pointer(&a.blockHeaderData[0]))
 		a.block = (*C.struct_tpacket_hdr_v1)(unsafe.Pointer(&baseHdr.hdr[0]))
-		a.blockOffset += 1 << 20
+		offset_to_first_pkt := int64(a.block.offset_to_first_pkt)
+		blk_len := int64(a.block.blk_len)
+		if blk_len == 0 {
+			a.err = fmt.Errorf("could not read block at %v: blk_len == 0", a.blockOffset)
+			return false
+		}
+
+		pktsLen := blk_len - offset_to_first_pkt
+		a.blockData = make([]byte, pktsLen)
+
+		_, err = a.f.ReadAt(a.blockData[:], a.blockOffset+offset_to_first_pkt)
+		if err == io.EOF && a.block.num_pkts == 0 {
+			a.done = true
+			return false
+		} else if err != nil {
+			a.err = fmt.Errorf("could not read block at %v: %v", a.blockOffset, err)
+			return false
+		}
+
+		a.blockOffset += blk_len
 		a.blockPacketsRead = 0
 		a.pkt = nil
 	}
 	a.blockPacketsRead++
 	if a.pkt == nil {
-		a.packetOffset = int(a.block.offset_to_first_pkt)
+		a.packetOffset = 0
 	} else if a.pkt.tp_next_offset != 0 {
 		a.packetOffset += int(a.pkt.tp_next_offset)
 	} else {

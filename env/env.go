@@ -103,15 +103,31 @@ func (e *Env) handleQuery(w http.ResponseWriter, r *http.Request) {
 	base.PacketsToFile(packets, w, limit)
 }
 
+func getDirName(c *config.Config) (dirname string, err error) {
+	flagPrefix := "--dir="
+	for _, flag := range c.Flags {
+		if strings.HasPrefix(flag, flagPrefix) {
+			dir := strings.TrimPrefix(flag, flagPrefix)
+			return dir, os.Mkdir(dir, 700)
+		}
+	}
+	tempdirname, temperr := ioutil.TempDir("", "stenographer")
+	c.Flags = append(c.Flags, fmt.Sprintf("--dir=%s", tempdirname))
+	return tempdirname, temperr
+}
+
 // New returns a new Env for use in running Stenotype.
 func New(c config.Config) (_ *Env, returnedErr error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
-	dirname, err := ioutil.TempDir("", "stenographer")
-	if err != nil {
-		return nil, fmt.Errorf("couldn't create temp directory: %v", err)
-	}
+	/*	dirname, err := ioutil.TempDir("", "stenographer")
+		if err != nil {
+			return nil, fmt.Errorf("couldn't create temp directory: %v", err)
+		}*/
+
+	dirname, err := getDirName(&c)
+
 	defer func() {
 		// If this fails, remove the temp dir.
 		if returnedErr != nil {
